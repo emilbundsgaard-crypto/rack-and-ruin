@@ -288,7 +288,6 @@ export function prestige(state, hooks) {
     lifetime: state.legacy.lifetime + state.lifetimeEarnings,
   };
   const fresh = newGame(legacy);
-  fresh.stats = { ...fresh.stats };
   fresh.achievements = [...state.achievements];
   hooks?.log(`Sold the company for ${gain} legacy points. Time to do it properly.`, 'good');
   return fresh;

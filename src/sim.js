@@ -72,6 +72,9 @@ export function modifiers(state) {
 
   // Events currently running.
   for (const ev of state.events.active) {
+    // Outcomes of decision events carry their own modifiers under ids that are
+    // not in the EVENTS table, so apply those before looking the event up.
+    if (ev.mods) for (const k in ev.mods) if (MULT_KEYS.includes(k)) m[k] *= ev.mods[k];
     const def = EVENTS_BY_ID[ev.id];
     if (!def) continue;
     const soften = 1 - Math.min(0.35, state.staff.ops * 0.025);
@@ -82,7 +85,6 @@ export function modifiers(state) {
       if (MULT_KEYS.includes(k)) m[k] *= val;
       else if (ADD_KEYS.includes(k)) m[k] += raw;
     }
-    if (ev.mods) for (const k in ev.mods) if (MULT_KEYS.includes(k)) m[k] *= ev.mods[k];
   }
   return m;
 }
@@ -98,7 +100,7 @@ function chebyshev(ax, ay, bx, by) {
 /** Sun and outside air, both driven by the fractional part of the day. */
 export function daylight(day) {
   const f = day % 1;
-  return clamp(Math.sin((f - 0.22) * Math.PI * 2 / 1) * 1.35, 0, 1);
+  return clamp(Math.sin((f - 0.22) * Math.PI * 2) * 1.35, 0, 1);
 }
 
 export function outsideTemp(state) {

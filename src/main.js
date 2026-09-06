@@ -298,8 +298,8 @@ function handleClick(x, y, shift, painting) {
     markDirty(); renderUI();
     return;
   }
-  view.sel = tileAt(state, x, y) || (view.sel && view.sel.x === x && view.sel.y === y ? null : { x, y });
-  if (view.sel) view.sel = { x, y };
+  const same = view.sel && view.sel.x === x && view.sel.y === y;
+  view.sel = same ? null : { x, y };
   markDirty();
   renderUI();
 }

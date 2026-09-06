@@ -231,7 +231,6 @@ function panelRacks(state, d) {
   const slotsTotal = slotsUsed + d.freeSlots;
 
   const summary = el('div', 'card');
-  summary.append(el('div', 'title', ''), null);
   const kv = el('div', 'kv');
   const row = (k, v) => { kv.append(el('div', 'k', k), el('div', 'v', v)); };
   row('Racks', fmtInt(d.counts.rackAll || 0));
@@ -239,7 +238,7 @@ function panelRacks(state, d) {
   row('Units down', fmtInt(d.brokenTotal));
   row('Repair throughput', fmt(d.repairRate) + ' units/day');
   row('Compute', fmt(d.computeTotal));
-  summary.replaceChildren(kv);
+  summary.append(kv);
   const barWrap = el('div', 'bar');
   barWrap.append(el('i'));
   barWrap.firstChild.style.width = (slotsTotal ? (slotsUsed / slotsTotal) * 100 : 0) + '%';
@@ -796,7 +795,7 @@ export function renderInspector(state, d) {
     row('Compute', fmt(r.output));
     row('Draw', fmt(r.power * r.load) + ' kW');
     row('Heat', fmt(r.liveHeat) + ' kW');
-    row('Failed units', String(r.broken));
+    row('Units down', r.down + (r.broken ? ' (' + r.broken + ' failed)' : ''));
     kids.push(kv);
     if (r.pduFactor < 0.999) kids.push(el('div', 'desc', 'Not enough local power — add a PDU in range or a bigger one.'));
     if (r.cover < 0.999) kids.push(el('div', 'desc', 'Cooling does not reach this rack, or is over capacity.'));
