@@ -243,13 +243,42 @@ export class FloorView {
     ctx.lineWidth = 1.6;
     ctx.stroke();
 
+    const live = r.used - r.down;
+    const blink = 0.55 + 0.45 * Math.sin(this.t * 7 + r.x * 2.1 + r.y * 1.3);
+
+    // Big cabinets and zoomed-out views get a bar instead of one LED per slot;
+    // 84 rectangles per rack across 500 racks is not a frame budget.
+    if (r.cap > 24 || this.zoom < 0.62) {
+      const bw = TILE - pad * 2 - 6, bh = TILE - pad * 2 - 12;
+      const bx = x + pad + 3, by = y + pad + 3;
+      ctx.fillStyle = 'rgba(90,110,132,.22)';
+      ctx.fillRect(bx, by, bw, bh);
+      const used = r.cap > 0 ? r.used / r.cap : 0;
+      const load = r.load * r.throttle;
+      ctx.fillStyle = hot > 0.6
+        ? `rgba(232,97,95,${0.5 + blink * 0.35})`
+        : `rgba(79,220,168,${0.3 + load * blink * 0.55})`;
+      ctx.fillRect(bx, by + bh * (1 - used), bw, bh * used);
+      if (r.down > 0) {
+        const bad = r.used > 0 ? r.down / r.cap : 0;
+        ctx.fillStyle = 'rgba(232,97,95,.9)';
+        ctx.fillRect(bx, by, bw, bh * bad);
+      }
+      if (r.used === 0) {
+        ctx.fillStyle = '#3c556e';
+        ctx.font = '9px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('empty', x + TILE / 2, y + TILE - 8);
+        ctx.textAlign = 'left';
+      }
+      return;
+    }
+
     // Slot LEDs, four per row.
     const cols = 4;
     const rows = Math.max(1, Math.ceil(r.cap / cols));
     const cw = (TILE - pad * 2 - 6) / cols;
     const ch = Math.min(4.4, (TILE - pad * 2 - 6) / rows);
-    const live = r.used - r.broken;
-    const blink = 0.55 + 0.45 * Math.sin(this.t * 7 + r.x * 2.1 + r.y * 1.3);
     for (let i = 0; i < r.cap; i++) {
       const cx = x + pad + 3 + (i % cols) * cw;
       const cy = y + pad + 3 + Math.floor(i / cols) * ch;
@@ -339,6 +368,7 @@ export class FloorView {
     ctx.restore();
 
     ctx.globalAlpha = 1;
+    if (this.zoom < 0.55) return;
     ctx.save();
     ctx.beginPath();
     ctx.rect(x + 1, y + TILE - 14, TILE - 2, 13);

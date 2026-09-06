@@ -9,7 +9,7 @@ import * as A from './actions.js';
 import { FloorView } from './render.js';
 import { initUI, renderUI, refreshLive, markDirty, pushLog, goTab, TABS } from './ui.js';
 
-const TICK = 0.1;          // seconds of simulated time per fixed step
+const TICK = 0.2;          // seconds of simulated time per fixed step
 const MAX_CATCHUP = 0.5;   // never simulate more than this per frame
 
 const app = {
@@ -32,7 +32,7 @@ function toast(text, tone) {
     t.style.opacity = '0';
     setTimeout(() => t.remove(), 400);
   }, 4200);
-  while (box.children.length > 5) box.firstChild.remove();
+  while (box.children.length > 3) box.firstChild.remove();
 }
 
 function logLine(text, tone) {

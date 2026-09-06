@@ -12,6 +12,9 @@ python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
+It is built for a desktop or tablet screen — the floor plan wants room. It
+runs on a phone, but you will spend a lot of time panning.
+
 (A plain `file://` open will not work — the game is written as ES modules, and
 browsers refuse to load modules from the filesystem. Any static server does.)
 
@@ -33,6 +36,8 @@ reputation is what unlocks the next building and the contracts worth having.
 
 That is the whole loop, and it stays the whole loop from the cupboard to the
 campus. Only the numbers and the machinery change.
+
+![A continental site running at full tilt](docs/screenshot-endgame.png)
 
 ## What is in it
 
@@ -122,8 +127,13 @@ want a faster one, raise the market price in `state.js`.
 To check what a change does to a five-hour run without playing five hours:
 
 ```
-node tools/bot.mjs
+node tools/bot.mjs      # a full five-hour run, in about ninety seconds
+node tools/balance.mjs  # the first ten minutes, in detail
 ```
+
+A healthy run has the bot reaching facility tier 7–9 and finishing the
+research tree somewhere around the two-and-a-half hour mark. If it stalls at
+one tier for an hour, something in the ladder is out of step.
 
 It plays the game with a crude strategy and prints a milestone line every ten
 simulated minutes.

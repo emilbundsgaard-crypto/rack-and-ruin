@@ -97,11 +97,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 }
 .tool.on { background: #1d3040; border-color: var(--acc); color: var(--acc); }
 
-#canvaswrap { position: relative; overflow: hidden; background:
-  radial-gradient(900px 600px at 30% 20%, #121b26, #0a0e14 75%); min-height: 0; }
+#canvaswrap { position: relative; overflow: hidden; min-height: 220px; background:
+  radial-gradient(900px 600px at 30% 20%, #121b26, #0a0e14 75%); }
 #view { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 #ghost {
-  position: absolute; left: 10px; top: 10px; pointer-events: none;
+  position: absolute; left: 10px; bottom: 10px; pointer-events: none;
   background: #0e1620ee; border: 1px solid var(--line-solid); border-radius: 6px;
   padding: 5px 9px; font-size: 11.5px; color: var(--dim); max-width: 300px;
 }
@@ -215,8 +215,8 @@ input[type=text], textarea {
 .sheet .sub { color: var(--dim); font-size: 12.5px; margin-bottom: 14px; }
 .sheet p { color: var(--fg); }
 
-#toasts { position: fixed; left: 14px; bottom: 66px; z-index: 55; display: grid; gap: 6px;
-  justify-items: start; pointer-events: none; }
+#toasts { position: absolute; right: 10px; top: 10px; z-index: 20; display: grid; gap: 6px;
+  justify-items: end; pointer-events: none; max-width: min(360px, 70%); }
 .toast { background: #172231; border: 1px solid var(--line-solid); border-left: 3px solid var(--acc);
   border-radius: 6px; padding: 7px 12px; font-size: 12.5px; box-shadow: 0 8px 24px #0008;
   animation: pop .25s ease-out; max-width: 340px; }
@@ -230,7 +230,10 @@ input[type=text], textarea {
   #main { grid-template-columns: 1fr 340px; }
 }
 @media (max-width: 860px) {
-  #main { grid-template-columns: 1fr; grid-template-rows: 1fr 46vh; }
+  .stat { min-width: 74px; padding: 3px 8px; }
+  .stat .v { font-size: 13px; }
+  #inspector { max-height: 22vh; }
+  #main { grid-template-columns: 1fr; grid-template-rows: minmax(300px, 1fr) 44vh; }
   #panel { border-left: 0; border-top: 1px solid var(--line-solid); }
   #inspector { max-height: 24vh; }
   #logbar { grid-template-columns: 1fr; height: auto; }
