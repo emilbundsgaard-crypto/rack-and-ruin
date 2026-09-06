@@ -1045,10 +1045,18 @@ function bankCard(state, d) {
       'Nothing can be bought while the balance is below zero. The hole grows '
       + Math.round(SIM.OVERDRAFT_RATE * 100) + '% a day and your name goes with it. Sell machines '
       + 'you cannot run, or let go of staff you cannot pay.'));
+    // Borrowing is not buying, so it stays open — and taking a loan now at 5%
+    // is far cheaper than what the bank will want if you let it get worse.
+    if (d.creditFree > -state.money) {
+      warn.append(el('div', 'desc acc',
+        'You can still borrow. ' + money(-state.money) + ' would clear it, at '
+        + Math.round(SIM.LOAN_RATE * 100) + '% a day — much cheaper than waiting for the call.'));
+    }
     const next = SIM.rescueThreshold(state.bank?.rescueLevel || 0);
     warn.append(el('div', 'desc', -state.money >= next
       ? 'The bank is waiting for an answer.'
-      : 'At ' + money(next) + ' overdrawn the bank will offer a way out, on bad terms.'));
+      : 'At ' + money(next) + ' overdrawn the bank will offer a way out, on terms you will not '
+        + 'like.'));
     c.append(warn);
   }
 
@@ -1084,6 +1092,15 @@ function bankCard(state, d) {
   }
 
   const row = el('div', 'btnrow');
+  if (state.money < 0 && d.creditFree > -state.money) {
+    const need = -state.money;
+    const clear = el('button', 'btn small primary', 'Clear the overdraft — ' + money(need));
+    clear.dataset.tip = 'Borrow your way out|Puts ' + money(need) + ' in the account, which brings '
+      + 'you back to zero. Interest is ' + Math.round(SIM.LOAN_RATE * 100) + '% a day, against '
+      + Math.round(SIM.OVERDRAFT_RATE * 100) + '% for staying overdrawn.';
+    clear.onclick = () => app.act(() => SIM.borrow(state, d, need, app.hooks));
+    row.append(clear);
+  }
   for (const frac of [0.25, 0.5, 1]) {
     const amount = d.creditFree * frac;
     const b = el('button', 'btn small' + (frac === 1 ? '' : ''), 'Borrow ' + money(amount));

@@ -101,6 +101,10 @@ a loan running is recoverable rather than fatal.
 A loan is a way out of a hole, not a way to skip a tier: a full run to the end
 of the research tree never needs one.
 
+Borrowing is not buying, so the credit line stays open while you are under —
+and clearing the overdraft with a 5% loan is much cheaper than waiting for the
+call. The bank card offers it as one button.
+
 **Sink far enough and the bank rings.** At **$100K**, **$500K** and **$1M**
 overdrawn the clock stops and you get three answers:
 
