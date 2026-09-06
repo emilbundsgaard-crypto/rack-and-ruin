@@ -217,12 +217,17 @@ while (t < total) {
     'cond min/med/max', conds[0]?.toFixed(2), conds[Math.floor(conds.length/2)]?.toFixed(2), conds[conds.length-1]?.toFixed(2));
   console.log('DIAG staff', JSON.stringify(s.staff), 'cap', d.staffCap, 'repairRate', d.repairRate.toFixed(2),
     'powerFactor', d.powerFactor.toFixed(3), 'netFactor', d.netFactor.toFixed(3),
-    'uptime', d.uptime.toFixed(3), 'contracts', s.contracts.active.length, '/', d.contractSlots,
+    'uptime', d.uptime.toFixed(3), 'contracts', s.contracts.active.length,
     'offers', s.contracts.offers.length, 'freeTiles', (facilityOf(s).w*facilityOf(s).h)-Object.keys(s.tiles).length);
   const kinds = {};
   for (const k in s.tiles) kinds[s.tiles[k].b] = (kinds[s.tiles[k].b]||0)+1;
   console.log('DIAG tiles', JSON.stringify(kinds));
   console.log('DIAG contractsDone', s.stats.contractsDone, 'breaches', s.stats.breaches, 'failed', s.stats.failed, 'repaired', s.stats.repaired);
+}
+{
+  const left = OBJECTIVES.filter((o) => !s.objectives.done.includes(o.id));
+  if (left.length) console.log('DIAG objectives not done:',
+    left.map((o) => o.id + ' ' + o.name).join(' | '));
 }
 console.log('wall time', ((Date.now() - t0) / 1000).toFixed(1) + 's');
 console.log('final: tier', s.facility, 'research', s.research.done.length + '/' + RESEARCH.length,

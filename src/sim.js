@@ -845,11 +845,17 @@ export function resolveDecision(state, d, effect, hooks) {
 
 export function checkObjectives(state, d, hooks) {
   const total = RESEARCH.length;
-  // The objective chain is strictly sequential: only the current one can land.
-  const o = OBJECTIVES[state.objectives.done.length];
+  const met = (x) => { try { return !!x.check(d, total); } catch (err) { return false; } };
+  // The chain runs in order, one at a time, because it doubles as the guide.
+  // But it is a guide and not a gate: an objective naming one specific machine
+  // can be overtaken — build a fusion tokamak without ever commissioning the
+  // reactor below it and "Fission" can never be met — which used to strand
+  // every objective after it. If anything further down the chain is already
+  // true, the current one has been passed, so it lands too.
+  const i = state.objectives.done.length;
+  const o = OBJECTIVES[i];
   if (o) {
-    let ok = false;
-    try { ok = o.check(d, total); } catch (err) { ok = false; }
+    const ok = met(o) || OBJECTIVES.slice(i + 1).some(met);
     if (ok) {
       state.objectives.done.push(o.id);
       if (o.reward?.money) { state.money += o.reward.money; state.lifetimeEarnings += o.reward.money; }

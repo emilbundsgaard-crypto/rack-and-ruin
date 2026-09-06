@@ -314,6 +314,49 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// --------------------------------------------- the objective chain cannot jam
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  const r = await page.evaluate(async () => {
+    const app = window.__rr;
+    const sim = await import('/src/sim.js');
+    const P = await import('/src/data/progression.js');
+    const R = await import('/src/data/research.js');
+    const s = app.state;
+    s.tutorial.skipped = true;
+    // Everything a late run has, except the one machine an early objective
+    // names — the case that used to strand the rest of the list forever.
+    s.facility = 9;
+    s.money = 1e21;
+    s.research.done = R.RESEARCH.map((x) => x.id);
+    const before = s.objectives.done.length;
+    for (let i = 0; i < 400; i++) {
+      app.d = sim.derive(s);
+      sim.checkObjectives(s, app.d, { log() {} });
+    }
+    const done = s.objectives.done;
+    return {
+      before,
+      after: done.length,
+      total: P.OBJECTIVES.length,
+      // The chain must have moved past the machine-specific ones it skipped.
+      pastFission: done.includes('o27'),
+      pastQuantum: done.includes('o29'),
+      tree: done.includes('o35'),
+      // The last one is a real grind and must NOT be handed out.
+      town: done.includes('o36'),
+      smr: app.d.counts.smr || 0,
+    };
+  });
+  if (r.after === r.total - 1 && r.pastFission && r.pastQuantum && r.tree && !r.town && r.smr === 0) {
+    pass('the objective chain cannot dead-end', r.after + '/' + r.total + ' without an SMR');
+  } else {
+    fail('the objective chain cannot dead-end', JSON.stringify(r));
+  }
+  await page.close();
+}
+
 // ------------------------------------------------------------- narrow screen
 for (const [w, h] of [[1024, 720], [520, 900]]) {
   const page = await newPage(w, h);
