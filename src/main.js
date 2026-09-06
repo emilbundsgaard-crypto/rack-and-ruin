@@ -37,7 +37,7 @@ function toast(text, tone) {
 }
 
 function logLine(text, tone) {
-  app.log.push({ text, tone });
+  app.log.push({ text, tone, day: app.state ? Math.floor(app.state.day) : 0 });
   if (app.log.length > 200) app.log.shift();
   pushLog(app.log);
   if (tone === 'good' || tone === 'bad') toast(text, tone);

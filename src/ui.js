@@ -6,6 +6,7 @@ import { HARDWARE, HARDWARE_BY_ID } from './data/hardware.js';
 import { BUILDINGS, BUILDINGS_BY_ID, CATEGORIES } from './data/buildings.js';
 import { RESEARCH, RESEARCH_BY_ID, RESEARCH_CATS, available } from './data/research.js';
 import { TEMPLATES_BY_ID } from './data/contracts.js';
+import { EVENTS_BY_ID } from './data/events.js';
 import {
   FACILITIES, STAFF, UPGRADES, OBJECTIVES, ACHIEVEMENTS,
   LEGACY_PERKS, perkCost,
@@ -198,6 +199,7 @@ let liveClock = 0;
 
 export function refreshLive(state, d, dt) {
   renderTop(state, d);
+  renderEvents(state);
   renderObjective(state, d);
   renderInspector(state, d);
   // Panels with live numbers refresh on their own slower clock: rebuilding a
@@ -776,6 +778,52 @@ function panelSite(state, d) {
   });
   out.push(sec('Achievements (' + state.achievements.length + '/' + ACHIEVEMENTS.length + ')', ach));
 
+  const mods = el('div', 'card');
+  const mt = el('table', 'grid');
+  const mrow = (k, v, good) => {
+    const tr = el('tr');
+    const cell = el('td', null, v);
+    cell.style.color = good ? '#6fe0a0' : '#e8b44a';
+    tr.append(el('td', null, k), cell);
+    mt.append(tr);
+  };
+  const pct = (v) => (v >= 1 ? '+' : '') + Math.round((v - 1) * 100) + '%';
+  mrow('Compute per unit', pct(d.mods.computeMult), d.mods.computeMult >= 1);
+  mrow('Hardware power', pct(d.mods.powerMult), d.mods.powerMult <= 1);
+  mrow('Hardware heat', pct(d.mods.heatMult), d.mods.heatMult <= 1);
+  mrow('Cooling capacity', pct(d.mods.coolMult), d.mods.coolMult >= 1);
+  mrow('Cooling water use', pct(d.mods.waterMult), d.mods.waterMult <= 1);
+  mrow('Hardware wear', pct(d.mods.wearMult), d.mods.wearMult <= 1);
+  mrow('Repair speed', pct(d.mods.repairMult), d.mods.repairMult >= 1);
+  mrow('Contract pay', pct(d.mods.priceMult), d.mods.priceMult >= 1);
+  mrow('Electricity price', pct(d.mods.gridCostMult), d.mods.gridCostMult <= 1);
+  mrow('Building cost', pct(d.mods.buildCostMult), d.mods.buildCostMult <= 1);
+  mrow('Hardware cost', pct(d.mods.hwCostMult), d.mods.hwCostMult <= 1);
+  mrow('Slots per rack', '+' + Math.floor(d.mods.rackSlotBonus), true);
+  mods.append(mt);
+  out.push(sec('Everything you have bought so far', mods));
+
+  const hist = el('div', 'card');
+  const entries = (app.log || []).slice(-40).reverse();
+  if (!entries.length) hist.append(el('div', 'desc', 'Nothing has happened yet.'));
+  else {
+    const ht = el('table', 'grid');
+    for (const e of entries) {
+      const tr = el('tr');
+      const day = el('td', null, 'day ' + e.day);
+      day.style.color = '#55677b';
+      day.style.width = '58px';
+      const txt = el('td', null, e.text);
+      txt.style.fontFamily = 'var(--sans)';
+      if (e.tone === 'good') txt.style.color = '#6fe0a0';
+      if (e.tone === 'bad') txt.style.color = '#e8615f';
+      tr.append(day, txt);
+      ht.append(tr);
+    }
+    hist.append(ht);
+  }
+  out.push(sec('Site log', hist));
+
   const st = el('div', 'card');
   const t = el('table', 'grid');
   const rows = [
@@ -916,6 +964,45 @@ export function renderInspector(state, d) {
   btns.append(sellBtn);
   kids.push(btns);
   fill(box, kids);
+}
+
+// -------------------------------------------------------------- live events
+
+/** Chips for whatever is currently distorting the numbers. */
+export function renderEvents(state) {
+  const box = document.getElementById('events');
+  const list = state.events.active;
+  if (!list.length) {
+    if (box.childElementCount) box.replaceChildren();
+    return;
+  }
+  fill(box, list.map((ev) => {
+    const def = EVENTS_BY_ID[ev.id];
+    const tone = ev.tone || def?.tone || 'neutral';
+    const name = ev.label || def?.name || ev.id;
+    const left = Math.max(0, ev.until - state.day);
+    const chip = el('div', 'ev ' + (tone === 'good' ? 'good' : tone === 'bad' ? 'bad' : ''));
+    chip.append(el('b', null, name), el('span', 't', left.toFixed(1) + 'd left'));
+    chip.title = (def?.text || 'In effect until day ' + Math.ceil(ev.until)) + '\n\n'
+      + describeMods(ev.mods || def?.mods || {});
+    return chip;
+  }));
+}
+
+const MOD_NAMES = {
+  coolMult: 'cooling capacity', powerSupplyMult: 'power supply', waterSupplyMult: 'water supply',
+  priceMult: 'contract pay', gridCostMult: 'electricity price', wearMult: 'hardware wear',
+  computeMult: 'compute', researchMult: 'research rate',
+};
+
+function describeMods(mods) {
+  const bits = [];
+  for (const k in mods) {
+    const name = MOD_NAMES[k] || k;
+    const pct = Math.round((mods[k] - 1) * 100);
+    if (pct) bits.push((pct > 0 ? '+' : '') + pct + '% ' + name);
+  }
+  return bits.length ? bits.join(', ') : 'no direct effect on the numbers';
 }
 
 // ------------------------------------------------------------------ tutorial

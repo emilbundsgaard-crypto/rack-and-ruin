@@ -133,9 +133,11 @@ src/
     contracts.js    contract templates
     events.js       random events and decisions
     progression.js  facilities, staff, upgrades, objectives, achievements, legacy
+src/tutorial.js     the five-step guided opening
 tools/
   balance.mjs       headless economy probe
   bot.mjs           an automated player, used to check pacing over a long run
+  browser-check.mjs ten end-to-end checks in a real browser
 ```
 
 `sim.js` is the only file that decides anything. `derive(state)` builds a
@@ -155,6 +157,18 @@ To check what a change does to a five-hour run without playing five hours:
 node tools/bot.mjs      # a full five-hour run, in about ninety seconds
 node tools/balance.mjs  # the first ten minutes, in detail
 ```
+
+And to check nothing is broken in an actual browser — the guided opening, every
+tab and overlay, drag-building, a 660-tile endgame floor, the save round trip
+and the narrow-screen layout:
+
+```
+python3 -m http.server 8099 &
+node tools/browser-check.mjs
+```
+
+It needs Playwright. If it is installed globally rather than locally, point
+`RR_PLAYWRIGHT` at it and `RR_CHROMIUM` at a browser binary.
 
 A healthy run has the bot reaching facility tier 7–9 and finishing the
 research tree somewhere around the two-and-a-half hour mark. If it stalls at

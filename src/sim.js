@@ -613,13 +613,13 @@ export function resolveDecision(state, d, effect, hooks) {
       return 'You paid. The keys arrived. Nobody outside the room knows.';
     }
     case 'ransom_rebuild':
-      state.events.active.push({ id: 'ransom', until: state.day + 2, mods: { computeMult: 0.45 } });
+      state.events.active.push({ id: 'ransom', label: 'Rebuilding from backup', tone: 'bad', until: state.day + 2, mods: { computeMult: 0.45 } });
       state.reputation = Math.max(0, state.reputation - 6 * (1 - d.security));
       return 'Two days of restoring from cold backup, and an awkward customer call.';
     case 'vc_take': {
       const cash = Math.max(50_000, d.netIncome * DAY_SECONDS * 30);
       state.money += cash;
-      state.events.active.push({ id: 'vc', until: state.day + 20, mods: { priceMult: 0.88 } });
+      state.events.active.push({ id: 'vc', label: 'Investor revenue share', tone: 'neutral', until: state.day + 20, mods: { priceMult: 0.88 } });
       return 'The money landed this morning. Revenue share starts immediately.';
     }
     case 'vc_decline':
@@ -643,24 +643,24 @@ export function resolveDecision(state, d, effect, hooks) {
       return `Returned ${removed} units for a partial refund.`;
     }
     case 'recall_keep':
-      state.events.active.push({ id: 'recall', until: state.day + 8, mods: { wearMult: 2 } });
+      state.events.active.push({ id: 'recall', label: 'Recalled boards in service', tone: 'bad', until: state.day + 8, mods: { wearMult: 2 } });
       return 'You kept them in production. Expect them to fail early.';
     case 'anchor_sign': {
       const cash = Math.max(200_000, d.netIncome * DAY_SECONDS * 90);
       state.money += cash;
-      state.events.active.push({ id: 'anchor', until: state.day + 30, mods: { priceMult: 0.82 } });
+      state.events.active.push({ id: 'anchor', label: 'Anchor tenant discount', tone: 'neutral', until: state.day + 30, mods: { priceMult: 0.82 } });
       return 'A year of capacity, sold up front, at their price.';
     }
     case 'anchor_decline':
       state.reputation += 14;
       return 'You held the line on price. Word gets around.';
     case 'grant_take':
-      state.events.active.push({ id: 'grant', until: state.day + 10, mods: { researchMult: 2.6, priceMult: 0.9 } });
+      state.events.active.push({ id: 'grant', label: 'Research grant running', tone: 'good', until: state.day + 10, mods: { researchMult: 2.6, priceMult: 0.9 } });
       return 'Their benchmark now runs on your floor. Research is flying.';
     case 'grant_decline':
       return 'You passed. The paperwork alone would have cost a week.';
     case 'fire_shutdown':
-      state.events.active.push({ id: 'fireoff', until: state.day + 1.5, mods: { computeMult: 0.05, powerSupplyMult: 0.3 } });
+      state.events.active.push({ id: 'fireoff', label: 'Emergency shutdown', tone: 'bad', until: state.day + 1.5, mods: { computeMult: 0.05, powerSupplyMult: 0.3 } });
       return 'Everything down, everything safe. It will be a long day and a half.';
     case 'fire_isolate': {
       let hurt = 0;

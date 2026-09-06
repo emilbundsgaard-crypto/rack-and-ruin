@@ -90,6 +90,18 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 }
 #facilityname { font-weight: 600; }
 #facilityname small { color: var(--dim); font-weight: 400; margin-left: 8px; }
+#events { display: flex; gap: 5px; flex-wrap: wrap; }
+.ev {
+  display: inline-flex; align-items: baseline; gap: 6px; padding: 2px 8px;
+  border-radius: 999px; font-size: 11px; border: 1px solid var(--line-solid);
+  background: #16202c; color: var(--dim); cursor: help;
+}
+.ev b { color: var(--fg); font-weight: 550; }
+.ev .t { font-family: var(--mono); font-size: 10px; color: var(--dimmer); }
+.ev.good { border-color: #2c5c47; background: #14231d; }
+.ev.good b { color: var(--good); }
+.ev.bad { border-color: #5c2c2c; background: #241616; }
+.ev.bad b { color: var(--bad); }
 #floortools { margin-left: auto; display: flex; gap: 5px; flex-wrap: wrap; }
 .tool {
   background: #16202c; border: 1px solid var(--line-solid); border-radius: 6px;
