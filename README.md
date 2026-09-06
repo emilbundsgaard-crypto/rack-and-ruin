@@ -12,6 +12,8 @@ python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
+![The title screen: a server hall receding into the dark](docs/screenshot-title.png)
+
 It is built for a desktop or tablet screen — the floor plan wants room. It
 runs on a phone, but you will spend a lot of time panning.
 
@@ -157,7 +159,19 @@ you a save string; Import takes one back. Nothing is uploaded anywhere.
 Night shift in a control room: warm charcoal, bone type, amber for anything
 that wants your attention, and a cold cyan kept strictly for the cold side of
 the plant — cooling and water. Rules and spacing separate things rather than a
-border round everything. Numbers are tabular mono so they stop jittering.
+border round everything. Numbers are tabular mono so they stop jittering, and
+they roll to a new value rather than snapping, which keeps a large number
+readable while it changes.
+
+The floor takes a lighting wash from the clock — cold after dark, warm at dawn
+and dusk — and rack LEDs brighten as the room darkens. Racks running hot give
+off a shimmer, towers and the recycler steam, machines land in a puff of dust
+and leave as debris. All of it is budgeted and tied to zoom, so a full site
+pays nothing for any of it.
+
+There is sound: a room tone that scales with the draw of the site, and a short
+cue for the few moments worth hearing. It never starts before you click, and
+the speaker button in the top bar or the `M` key turns it off.
 
 ## Layout
 
@@ -171,6 +185,10 @@ src/
   actions.js        everything the player can do, with its cost checks
   render.js         canvas floor view, overlays, pan and zoom
   ui.js             every panel
+  town.js           Ashbrook, and how far gone it is
+  audio.js          room tone and cues, synthesised — no audio files
+  bootart.js        the server hall behind the title card
+  tip.js            the single floating tooltip
   data/
     hardware.js     what goes in a rack
     buildings.js    what goes on the floor
@@ -182,7 +200,8 @@ src/tutorial.js     the five-step guided opening
 tools/
   balance.mjs       headless economy probe
   bot.mjs           an automated player, used to check pacing over a long run
-  browser-check.mjs ten end-to-end checks in a real browser
+  browser-check.mjs sixteen end-to-end checks in a real browser
+  shots.mjs         regenerates every screenshot in docs/
 ```
 
 `sim.js` is the only file that decides anything. `derive(state)` builds a
@@ -214,6 +233,13 @@ node tools/browser-check.mjs
 
 It needs Playwright. If it is installed globally rather than locally, point
 `RR_PLAYWRIGHT` at it and `RR_CHROMIUM` at a browser binary.
+
+The screenshots in this README are generated the same way, so they cannot
+drift from the game:
+
+```
+node tools/shots.mjs
+```
 
 A healthy run has the bot reaching facility tier 7–9 and finishing the
 research tree somewhere around the two-and-a-half hour mark. If it stalls at
