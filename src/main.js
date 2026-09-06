@@ -5,6 +5,7 @@ import { newGame, load, save, wipe, exportSave, importSave, tileAt, roomOf, DAY_
 import { derive, tick, resolveDecision, fireEvent, legacyGain, rescueTerms } from './sim.js';
 import * as SIM from './sim.js';
 import { EVENTS_BY_ID } from './data/events.js';
+import { OBJECTIVES } from './data/progression.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import * as A from './actions.js';
 import { FloorView } from './render.js';
@@ -401,7 +402,7 @@ function step(now) {
         if (!tutActive(state)) {
           showModal(FINISH.title, 'Five steps in, and you have already run the whole loop once.',
             [FINISH.body,
-             'The Site tab keeps a chain of 35 objectives if you want somewhere to aim. '
+             `The Site tab keeps a chain of ${OBJECTIVES.length} objectives if you want somewhere to aim. `
              + 'The overlay buttons above the floor are the fastest way to see what is wrong.'],
             [{ label: 'Get on with it', kind: 'primary' }]);
         }
