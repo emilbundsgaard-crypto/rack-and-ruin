@@ -7,7 +7,8 @@ import { EVENTS_BY_ID } from './data/events.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import * as A from './actions.js';
 import { FloorView } from './render.js';
-import { initUI, renderUI, refreshLive, markDirty, pushLog, goTab, TABS } from './ui.js';
+import { initUI, renderUI, refreshLive, markDirty, pushLog, goTab, TABS, renderTutorial } from './ui.js';
+import { advance as tutAdvance, active as tutActive, FINISH } from './tutorial.js';
 
 const TICK = 0.2;          // seconds of simulated time per fixed step
 const MAX_CATCHUP = 0.5;   // never simulate more than this per frame
@@ -119,6 +120,11 @@ app.openMenu = () => {
         startGame(s, true);
         toast('Save imported.');
       } catch (err) { toast('That is not a valid save.', 'bad'); }
+    } },
+    { label: 'Run the guide again', onClick: () => {
+      state.tutorial = { step: 0, skipped: false };
+      markDirty(); renderUI();
+      toast('Guide restarted.');
     } },
     { label: 'Delete save', kind: 'danger', onClick: () => confirmWipe() },
     { label: 'Close' },
@@ -236,13 +242,28 @@ function frame(now) {
       tick(state, TICK, app.d, app.hooks);
       acc -= TICK;
     }
+    if (tutActive(state)) {
+      const finished = tutAdvance(state, app.d);
+      if (finished) {
+        toast('Step done — ' + finished.title + '.');
+        markDirty();
+        renderTutorial(state);
+        if (!tutActive(state)) {
+          showModal(FINISH.title, 'Five steps in, and you have already run the whole loop once.',
+            [FINISH.body,
+             'The Site tab keeps a chain of 35 objectives if you want somewhere to aim. '
+             + 'The overlay buttons above the floor are the fastest way to see what is wrong.'],
+            [{ label: 'Get on with it', kind: 'primary' }]);
+        }
+      }
+    }
   }
   if (!app.d) app.d = derive(state);
 
   app.view.draw(state, app.d, real);
 
   uiClock += real;
-  if (uiClock > 0.2) { uiClock = 0; refreshLive(state, app.d); }
+  if (uiClock > 0.2) { refreshLive(state, app.d, uiClock); uiClock = 0; }
 
   saveClock += real;
   if (saveClock > 15) { saveClock = 0; save(state); }
@@ -264,7 +285,7 @@ function startGame(state, fresh) {
     const canvas = document.getElementById('view');
     app.view = new FloorView(canvas, {
       onClick: (x, y, shift) => handleClick(x, y, shift),
-      onPaint: (x, y) => { if (app.view.tool && app.view.tool !== 'sell') handleClick(x, y, false, true); },
+      onPaint: (x, y) => { if (app.view.tool) handleClick(x, y, false, true); },
       onHover: (t) => updateGhost(t),
     });
     initUI(app);
@@ -278,7 +299,7 @@ function startGame(state, fresh) {
   app.view.centred = false;
   markDirty();
   renderUI();
-  refreshLive(state, app.d);
+  refreshLive(state, app.d, 0);
   if (fresh) logLine('A cupboard, a socket and an idea.', 'info');
 }
 
@@ -287,7 +308,12 @@ function handleClick(x, y, shift, painting) {
   const view = app.view;
   if (!state) return;
   if (view.tool === 'sell') {
-    if (tileAt(state, x, y)) app.act(() => A.sell(state, app.d, x, y, app.hooks));
+    if (!tileAt(state, x, y)) return;
+    const quiet = painting ? { log: () => {} } : app.hooks;
+    A.sell(state, app.d, x, y, quiet);
+    app.d = derive(state);
+    markDirty();
+    renderUI();
     return;
   }
   if (view.tool) {
@@ -384,7 +410,7 @@ function boot() {
     buttons.append(cont, fresh);
   } else {
     const start = el('button', 'btn primary', 'Start in the cupboard');
-    start.onclick = () => { startGame(newGame(), true); showHelp(); };
+    start.onclick = () => startGame(newGame(), true);
     buttons.append(start);
   }
 
@@ -399,25 +425,67 @@ function boot() {
   requestAnimationFrame((t) => { last = t; requestAnimationFrame(frame); });
 }
 
-function showHelp() {
+function guideSection(title, rows) {
+  const wrap = el('div', 'gsec');
+  wrap.append(el('h4', null, title));
   const list = el('div', 'kv');
-  const row = (k, v) => list.append(el('div', 'k', k), el('div', 'v', v));
-  row('Goal', 'Turn a cupboard into a continental site.');
-  row('Compute', 'Racks hold hardware. Hardware makes compute.');
-  row('Money', 'Compute only pays once it is under contract.');
-  row('Power', 'Racks need a PDU in range, and the site needs supply.');
-  row('Heat', 'Cooling only reaches its radius. Hot racks throttle, then die.');
-  row('Water', 'Cooling drinks water. Run dry and capacity collapses.');
-  row('R&D', 'A slice of your compute buys research points.');
-  row('Keys', '1–9 tabs · O cycles overlays · Space pauses · Esc clears the tool');
-  showModal('How it works', 'Five minutes to learn, rather longer to finish.', [
-    'Place a power strip, a rack and a fan. Install hardware in the rack. Sign a contract. '
-    + 'Then keep the three curves — power, heat and water — ahead of the fleet you keep buying.',
-    list,
-    'The overlay buttons above the floor are the fastest way to find a rack nothing is cooling '
-    + 'or powering. Red hatching means nothing reaches it at all.',
+  for (const [k, v] of rows) list.append(el('div', 'k', k), el('div', 'v', v));
+  wrap.append(list);
+  return wrap;
+}
+
+function showHelp() {
+  const intro = el('div', 'gintro');
+  intro.append(
+    el('p', null, 'You buy compute. Compute earns nothing until it is under contract. '
+      + 'Running it needs power, cooling, water, switching and maintenance — and every one of '
+      + 'those is a thing you place on the floor, inside a radius, out of a budget.'),
+    el('p', null, 'That is the whole game. The machines get bigger; the five problems do not change.'),
+  );
+
+  const legend = el('div', 'glegend');
+  const chip = (colour, label, note) => {
+    const row = el('div', 'grow');
+    const sw = el('span', 'gsw');
+    sw.style.background = colour;
+    row.append(sw, el('b', null, label), el('span', 'gnote', note));
+    return row;
+  };
+  legend.append(
+    chip('#4fdca8', 'Green lights', 'slots running and earning'),
+    chip('#e8615f', 'Red lights or red border', 'too hot, throttling, or failed'),
+    chip('#5a6e84', 'Grey lights', 'empty slots you have paid for and are not using'),
+    chip('#e8b44a', 'Amber triangle', 'no PDU reaches this rack'),
+    chip('#e8615f', 'Red triangle', 'no cooling reaches this rack, or it is over 40 °C'),
+  );
+
+  showModal('How it works', 'Five minutes to learn. Rather longer to finish.', [
+    intro,
+    guideSection('The five constraints', [
+      ['Power', 'A rack needs a PDU within its radius, and the site needs supply. Utilities tab.'],
+      ['Cooling', 'A cooler only serves racks inside its radius. Over 30 °C throttles, over 40 °C kills.'],
+      ['Water', 'Cooling drinks it. Short of water, cooling capacity falls with it.'],
+      ['Switching', 'Compute without bandwidth may as well be switched off. Build → Support.'],
+      ['Maintenance', 'Condition decays with heat. Repair effort is split across every rack you own.'],
+    ]),
+    guideSection('Money', [
+      ['Contracts', 'The only income. Sign what fits inside your spare capacity, not all of it.'],
+      ['SLA', 'Fall below the promised uptime and penalties start and reputation drops.'],
+      ['Reputation', 'Earned by finishing contracts cleanly. Unlocks bigger sites and better customers.'],
+      ['R&D', 'The slider on the R&D tab trades sellable compute for research points.'],
+    ]),
+    el('h4', 'gh', 'Reading the floor'),
+    legend,
+    guideSection('Controls', [
+      ['Overlays', 'The buttons above the floor. Power and Cooling shade what each machine reaches.'],
+      ['Placing', 'Pick a machine, click a tile. Drag with one held to lay a whole row.'],
+      ['Moving about', 'Wheel zooms, dragging empty space pans, Recentre puts you back.'],
+      ['Keys', '1–9 tabs · O cycles overlays · Space pauses · Esc drops the current tool'],
+    ]),
   ], [{ label: 'Got it', kind: 'primary' }]);
 }
+
+app.openGuide = () => showHelp();
 
 boot();
 

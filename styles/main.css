@@ -106,6 +106,44 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
   padding: 5px 9px; font-size: 11.5px; color: var(--dim); max-width: 300px;
 }
 
+/* ------------------------------------------------------------- guided start */
+
+#tutorial {
+  position: absolute; left: 12px; top: 12px; width: min(330px, 62%); z-index: 22;
+  background: linear-gradient(#16263a, #111d2c); border: 1px solid #2f6f8f;
+  border-left: 3px solid var(--acc); border-radius: 10px; padding: 11px 13px 10px;
+  box-shadow: 0 14px 40px #0009; animation: pop .3s ease-out;
+}
+#tutorial .tk { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--acc); }
+#tutorial .tt { font-size: 15px; font-weight: 650; margin: 2px 0 4px; }
+#tutorial .tb { font-size: 12.5px; color: #c3d4e4; }
+#tutorial .tn { font-size: 11.5px; color: var(--dim); margin-top: 5px; font-style: italic; }
+#tutorial .tfoot { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+#tutorial .tdots { display: flex; gap: 4px; margin-right: auto; }
+#tutorial .tdots i { width: 16px; height: 3px; border-radius: 2px; background: #2c3f55; }
+#tutorial .tdots i.on { background: var(--acc); }
+#tutorial .tdots i.now { background: var(--warn); }
+#tutorial .tskip {
+  background: none; border: 0; color: var(--dimmer); font-size: 11px; text-decoration: underline;
+  padding: 2px 4px;
+}
+#tutorial .tskip:hover { color: var(--fg); }
+
+.tut-target {
+  position: relative;
+  animation: aim 1.5s ease-in-out infinite;
+  outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 8px;
+}
+@keyframes aim {
+  0%, 100% { box-shadow: 0 0 0 0 #4fdca866; }
+  50%      { box-shadow: 0 0 0 7px #4fdca800; }
+}
+#canvaswrap.tut-target { outline-offset: -3px; border-radius: 0; }
+
+.stat.jump { cursor: pointer; }
+.stat.jump:hover { background: #1a2635; }
+.stat.jump .s::after { content: ' →'; }
+
 #inspector {
   border-top: 1px solid var(--line-solid); background: #0e151f;
   padding: 8px 12px; min-height: 92px; max-height: 34vh; overflow: auto;
@@ -214,6 +252,17 @@ input[type=text], textarea {
 .sheet h2 { font-size: 19px; margin-bottom: 4px; }
 .sheet .sub { color: var(--dim); font-size: 12.5px; margin-bottom: 14px; }
 .sheet p { color: var(--fg); }
+.sheet h4, .sheet .gh { font-size: 11px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--dimmer); margin: 14px 0 6px; }
+.gintro p { margin: 0 0 8px; color: #c3d4e4; font-size: 13px; }
+.gsec .kv { grid-template-columns: 96px 1fr; gap: 4px 12px; }
+.gsec .kv .v { text-align: left; color: #b8c8d8; font-family: var(--sans); font-size: 12.5px; }
+.gsec .kv .k { color: var(--acc); font-family: var(--sans); font-size: 12.5px; }
+.glegend { display: grid; gap: 5px; }
+.grow { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.gsw { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.grow b { font-weight: 600; }
+.gnote { color: var(--dim); }
 
 #toasts { position: absolute; right: 10px; top: 10px; z-index: 20; display: grid; gap: 6px;
   justify-items: end; pointer-events: none; max-width: min(360px, 70%); }
@@ -232,10 +281,86 @@ input[type=text], textarea {
 @media (max-width: 860px) {
   .stat { min-width: 74px; padding: 3px 8px; }
   .stat .v { font-size: 13px; }
-  #inspector { max-height: 22vh; }
+  /* ------------------------------------------------------------- guided start */
+
+#tutorial {
+  position: absolute; left: 12px; top: 12px; width: min(330px, 62%); z-index: 22;
+  background: linear-gradient(#16263a, #111d2c); border: 1px solid #2f6f8f;
+  border-left: 3px solid var(--acc); border-radius: 10px; padding: 11px 13px 10px;
+  box-shadow: 0 14px 40px #0009; animation: pop .3s ease-out;
+}
+#tutorial .tk { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--acc); }
+#tutorial .tt { font-size: 15px; font-weight: 650; margin: 2px 0 4px; }
+#tutorial .tb { font-size: 12.5px; color: #c3d4e4; }
+#tutorial .tn { font-size: 11.5px; color: var(--dim); margin-top: 5px; font-style: italic; }
+#tutorial .tfoot { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+#tutorial .tdots { display: flex; gap: 4px; margin-right: auto; }
+#tutorial .tdots i { width: 16px; height: 3px; border-radius: 2px; background: #2c3f55; }
+#tutorial .tdots i.on { background: var(--acc); }
+#tutorial .tdots i.now { background: var(--warn); }
+#tutorial .tskip {
+  background: none; border: 0; color: var(--dimmer); font-size: 11px; text-decoration: underline;
+  padding: 2px 4px;
+}
+#tutorial .tskip:hover { color: var(--fg); }
+
+.tut-target {
+  position: relative;
+  animation: aim 1.5s ease-in-out infinite;
+  outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 8px;
+}
+@keyframes aim {
+  0%, 100% { box-shadow: 0 0 0 0 #4fdca866; }
+  50%      { box-shadow: 0 0 0 7px #4fdca800; }
+}
+#canvaswrap.tut-target { outline-offset: -3px; border-radius: 0; }
+
+.stat.jump { cursor: pointer; }
+.stat.jump:hover { background: #1a2635; }
+.stat.jump .s::after { content: ' →'; }
+
+#inspector { max-height: 22vh; }
   #main { grid-template-columns: 1fr; grid-template-rows: minmax(300px, 1fr) 44vh; }
   #panel { border-left: 0; border-top: 1px solid var(--line-solid); }
-  #inspector { max-height: 24vh; }
+  /* ------------------------------------------------------------- guided start */
+
+#tutorial {
+  position: absolute; left: 12px; top: 12px; width: min(330px, 62%); z-index: 22;
+  background: linear-gradient(#16263a, #111d2c); border: 1px solid #2f6f8f;
+  border-left: 3px solid var(--acc); border-radius: 10px; padding: 11px 13px 10px;
+  box-shadow: 0 14px 40px #0009; animation: pop .3s ease-out;
+}
+#tutorial .tk { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--acc); }
+#tutorial .tt { font-size: 15px; font-weight: 650; margin: 2px 0 4px; }
+#tutorial .tb { font-size: 12.5px; color: #c3d4e4; }
+#tutorial .tn { font-size: 11.5px; color: var(--dim); margin-top: 5px; font-style: italic; }
+#tutorial .tfoot { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+#tutorial .tdots { display: flex; gap: 4px; margin-right: auto; }
+#tutorial .tdots i { width: 16px; height: 3px; border-radius: 2px; background: #2c3f55; }
+#tutorial .tdots i.on { background: var(--acc); }
+#tutorial .tdots i.now { background: var(--warn); }
+#tutorial .tskip {
+  background: none; border: 0; color: var(--dimmer); font-size: 11px; text-decoration: underline;
+  padding: 2px 4px;
+}
+#tutorial .tskip:hover { color: var(--fg); }
+
+.tut-target {
+  position: relative;
+  animation: aim 1.5s ease-in-out infinite;
+  outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 8px;
+}
+@keyframes aim {
+  0%, 100% { box-shadow: 0 0 0 0 #4fdca866; }
+  50%      { box-shadow: 0 0 0 7px #4fdca800; }
+}
+#canvaswrap.tut-target { outline-offset: -3px; border-radius: 0; }
+
+.stat.jump { cursor: pointer; }
+.stat.jump:hover { background: #1a2635; }
+.stat.jump .s::after { content: ' →'; }
+
+#inspector { max-height: 24vh; }
   #logbar { grid-template-columns: 1fr; height: auto; }
   #logfeed { display: none; }
 }

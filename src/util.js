@@ -15,9 +15,14 @@ export function fmt(n, digits = 2) {
   if (n === 0) return '0';
   const neg = n < 0;
   n = Math.abs(n);
+  if (n < 1) {
+    // Small rates still need to read as something other than "0.01".
+    return (neg ? '-' : '') + Number(n.toPrecision(2)).toString();
+  }
   if (n < 1000) {
     const d = n < 10 ? digits : n < 100 ? Math.max(1, digits - 1) : 0;
-    return (neg ? '-' : '') + n.toFixed(d).replace(/\.?0+$/, '');
+    // Trim trailing zeros in the fraction only — 400 must not become 4.
+    return (neg ? '-' : '') + n.toFixed(d).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
   }
   const tier = Math.min(SUFFIX.length - 1, Math.floor(Math.log10(n) / 3));
   const scaled = n / Math.pow(10, tier * 3);

@@ -76,13 +76,13 @@ export const RESEARCH = [
 
   // ================================================================= power
   { id: 'rnd_pdu2', name: 'Metered PDUs', cat: 'power', cost: 8, req: [],
-    desc: 'Unlocks the rack PDU: 55 kW over 3 tiles.' },
+    desc: 'Unlocks the rack PDU: 400 kW over 3 tiles.' },
   { id: 'rnd_ups', name: 'Battery backup', cat: 'power', cost: 22, req: ['rnd_pdu2'],
     desc: 'Unlocks the UPS cabinet, which rides through short outages.' },
   { id: 'rnd_genset', name: 'Standby generation', cat: 'power', cost: 35, req: ['rnd_ups'],
     desc: 'Unlocks the diesel genset.' },
   { id: 'rnd_pdu3', name: 'Overhead busway', cat: 'power', cost: 76, req: ['rnd_pdu2'],
-    desc: 'Unlocks the busway tap: 460 kW over 4 tiles.' },
+    desc: 'Unlocks the busway tap: 8 MW over 4 tiles.' },
   { id: 'rnd_solar', name: 'Photovoltaics', cat: 'power', cost: 103, req: ['rnd_genset'],
     desc: 'Unlocks the solar array. Daylight only.' },
   { id: 'rnd_grid1', name: 'Utility negotiation', cat: 'power', cost: 49, req: ['rnd_pdu2'],
@@ -90,7 +90,7 @@ export const RESEARCH = [
   { id: 'rnd_wind', name: 'Wind generation', cat: 'power', cost: 303, req: ['rnd_solar'],
     desc: 'Unlocks the wind turbine.' },
   { id: 'rnd_pdu4', name: 'Own substation', cat: 'power', cost: 621, req: ['rnd_pdu3', 'rnd_grid1'],
-    desc: 'Unlocks the substation bay: 5.2 MW over 6 tiles.' },
+    desc: 'Unlocks the substation bay: 120 MW over 6 tiles.' },
   { id: 'rnd_turbine', name: 'Combined cycle', cat: 'power', cost: 940, req: ['rnd_wind'],
     desc: 'Unlocks the gas turbine.' },
   { id: 'rnd_grid2', name: 'Wholesale contracts', cat: 'power', cost: 781, req: ['rnd_grid1'],
@@ -100,9 +100,9 @@ export const RESEARCH = [
   { id: 'rnd_smr', name: 'Modular fission', cat: 'power', cost: 2_456, req: ['rnd_turbine', 'rnd_pdu4'],
     desc: 'Unlocks the small modular reactor.' },
   { id: 'rnd_pdu5', name: 'HVDC distribution', cat: 'power', cost: 3_641, req: ['rnd_pdu4', 'rnd_smr'],
-    desc: 'Unlocks the HVDC spine: 96 MW over 9 tiles.' },
+    desc: 'Unlocks the HVDC spine: 2 GW over 9 tiles.' },
   { id: 'rnd_fusion', name: 'Magnetic confinement', cat: 'power', cost: 6_356, req: ['rnd_smr', 'rnd_pdu5'],
-    desc: 'Unlocks the fusion tokamak. 2.4 GW on site.' },
+    desc: 'Unlocks the fusion tokamak. 6 GW on site.' },
 
   // =============================================================== cooling
   { id: 'rnd_split', name: 'Refrigerant cooling', cat: 'cooling', cost: 9, req: [],

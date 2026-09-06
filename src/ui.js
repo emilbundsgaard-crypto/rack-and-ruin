@@ -12,13 +12,26 @@ import {
 } from './data/progression.js';
 import * as A from './actions.js';
 import { legacyGain, canPrestige, rackCapacity, signContract } from './sim.js';
-import { tileAt } from './state.js';
+import { tileAt, DAY_SECONDS } from './state.js';
+import { STEPS, current as tutStep, skip as tutSkip } from './tutorial.js';
 
 let app = null;
 let tab = 'build';
 let buildCat = 'compute';
 let researchCat = 'hardware';
 let dirty = true;
+
+/** Which tab actually fixes each bottleneck the simulation can report. */
+const FIX_TAB = {
+  'no hardware installed': 'racks',
+  'short of electricity': 'utils',
+  'a rack has no PDU in range': 'build',
+  'short of switching': 'build',
+  'short of water': 'build',
+  'cooling is behind': 'build',
+  'compute is unsold': 'contracts',
+  'empty rack slots': 'racks',
+};
 
 export const TABS = [
   { id: 'build', name: 'Build' },
@@ -43,9 +56,16 @@ export function initUI(a) {
   }));
 
   const tools = document.getElementById('floortools');
-  const overlays = [['none', 'No overlay'], ['power', 'Power'], ['cool', 'Cooling'], ['heat', 'Heat'], ['net', 'Network']];
-  const overlayBtns = overlays.map(([id, name]) => {
+  const overlays = [
+    ['none', 'No overlay', 'Just the floor.'],
+    ['power', 'Power', 'Shades every tile a PDU reaches. Racks nothing reaches get red hatching.'],
+    ['cool', 'Cooling', 'Shades every tile a cooler reaches. This is the one that finds your hot racks.'],
+    ['heat', 'Heat', 'Colours every rack by temperature, blue to red.'],
+    ['net', 'Network', 'Purple while switching keeps up, red when it does not.'],
+  ];
+  const overlayBtns = overlays.map(([id, name, tip]) => {
     const b = el('button', 'tool' + (id === 'none' ? ' on' : ''), name);
+    b.title = tip;
     b.onclick = () => {
       app.view.overlay = id;
       overlayBtns.forEach((x) => x.classList.remove('on'));
@@ -54,12 +74,14 @@ export function initUI(a) {
     return b;
   });
   const sellBtn = el('button', 'tool', 'Demolish');
+  sellBtn.title = 'Click machines to remove them. You get half the money back.';
   sellBtn.onclick = () => {
     app.view.tool = app.view.tool === 'sell' ? null : 'sell';
     sellBtn.classList.toggle('on', app.view.tool === 'sell');
     markDirty(); renderUI();
   };
   const centreBtn = el('button', 'tool', 'Recentre');
+  centreBtn.title = 'Fit the whole floor back on screen.';
   centreBtn.onclick = () => app.view.centre(app.state);
   fill(tools, [...overlayBtns, sellBtn, centreBtn]);
   app.sellBtn = sellBtn;
@@ -80,8 +102,9 @@ export function goTab(id) { tab = id; syncTabs(); markDirty(); renderUI(); }
 export function renderTop(state, d) {
   const bar = document.getElementById('topbar');
   const stats = [];
-  const stat = (k, v, s, cls) => {
+  const stat = (k, v, s, cls, tip) => {
     const n = el('div', 'stat' + (cls ? ' ' + cls : ''));
+    if (tip) n.title = tip;
     n.append(el('div', 'k', k), el('div', 'v', v));
     if (s) n.append(el('div', 's', s));
     return n;
@@ -89,39 +112,59 @@ export function renderTop(state, d) {
 
   stats.push(stat('Cash', money(state.money),
     (d.netIncome >= 0 ? '+' : '') + rate(d.netIncome),
-    d.netIncome >= 0 ? 'good' : 'bad'));
-  stats.push(stat('Compute', fmt(d.computeTotal), d.bottleneck,
-    d.bottleneck === 'running clean' ? 'good' : 'warn'));
+    d.netIncome >= 0 ? 'good' : 'bad',
+    'What you have, and what the site earns or loses every second after every bill.'));
+
+  const fixTab = FIX_TAB[d.bottleneck];
+  const bn = stat('Compute', fmt(d.computeTotal), d.bottleneck,
+    d.bottleneck === 'running clean' ? 'good' : 'warn',
+    'Total capacity your fleet produces right now, and the one thing holding it back.'
+    + (fixTab ? ' Click to go and fix it.' : ''));
+  if (fixTab) { bn.classList.add('jump'); bn.onclick = () => goTab(fixTab); }
+  stats.push(bn);
+
   stats.push(stat('Contracted', fmt(d.contractDemand),
     Math.round(d.deliverRatio * 100) + '% delivered',
-    d.deliverRatio > 0.995 ? '' : 'warn'));
+    d.deliverRatio > 0.995 ? '' : 'warn',
+    'Compute you have promised customers, and how much of it you are actually delivering.'));
   stats.push(stat('Power', fmt(d.actualDraw) + ' kW',
     fmt(d.supplyKW) + ' kW supply',
-    d.rawPowerFactor > 0.999 ? '' : 'bad'));
+    d.rawPowerFactor > 0.999 ? '' : 'bad',
+    'Draw against supply. Short of supply and everything throttles at once.'));
   stats.push(stat('Cooling', fmt(d.coolCap) + ' kW',
     fmt(d.heatLoad) + ' kW load',
-    d.coolCap >= d.heatLoad ? '' : 'warn'));
+    d.coolCap >= d.heatLoad ? '' : 'warn',
+    'Heat you can remove against heat you are making. Capacity only counts if it reaches the rack.'));
   stats.push(stat('Water', fmt(d.waterSupply) + ' L/s',
     fmt(d.waterDemand) + ' L/s used',
-    d.waterFactor > 0.995 ? '' : 'warn'));
+    d.waterFactor > 0.995 ? '' : 'warn',
+    'Cooling drinks water. Run short and cooling capacity falls with it.'));
   stats.push(stat('Peak temp', d.maxTemp.toFixed(1) + ' °C',
     'avg ' + d.avgTemp.toFixed(1) + ' °C',
-    d.maxTemp > 45 ? 'bad' : d.maxTemp > 34 ? 'warn' : ''));
+    d.maxTemp > 45 ? 'bad' : d.maxTemp > 34 ? 'warn' : '',
+    'The hottest rack you own. Over 30 °C it throttles; over 40 °C it wears out fast.'));
   stats.push(stat('Uptime', (d.uptime * 100).toFixed(2) + '%',
     d.brokenTotal ? d.brokenTotal + ' units down' : 'all healthy',
-    d.uptime > 0.98 ? '' : 'warn'));
-  stats.push(stat('R&D', fmt(state.rp) + ' RP', '+' + fmt(d.rpPerSec) + '/s', 'acc'));
-  stats.push(stat('Reputation', fmt(state.reputation), state.contracts.active.length + ' contracts'));
-  stats.push(stat('Day', Math.floor(state.day) + '', clockOf(state)));
+    d.uptime > 0.98 ? '' : 'warn',
+    'What your SLAs are measured against. Broken hardware and brownouts both drag it down.'));
+  stats.push(stat('R&D', fmt(state.rp) + ' RP', '+' + fmt(d.rpPerSec) + '/s', 'acc',
+    'Research points, earned by the share of compute you allocate to R&D.'));
+  stats.push(stat('Reputation', fmt(state.reputation), state.contracts.active.length + ' contracts',
+    'Earned by finishing contracts cleanly. It unlocks bigger buildings and better customers.'));
+  stats.push(stat('Day', Math.floor(state.day) + '', clockOf(state),
+    'One game day is one real minute. Electricity is cheaper at night.'));
 
   const spacer = el('div', 'spacer');
   const speed = el('button', 'topbtn' + (state.settings.speed === 0 ? ' on' : ''),
     state.settings.speed === 0 ? '▶ Paused' : '❚❚ Pause');
   speed.onclick = () => { state.settings.speed = state.settings.speed === 0 ? 1 : 0; renderTop(state, d); };
+  const guide = el('button', 'topbtn', 'Guide');
+  guide.title = 'How the site works, and what everything on screen means';
+  guide.onclick = () => app.openGuide();
   const menu = el('button', 'topbtn', 'Menu');
   menu.onclick = () => app.openMenu();
 
-  fill(bar, [...stats, spacer, speed, menu]);
+  fill(bar, [...stats, spacer, speed, guide, menu]);
 }
 
 function clockOf(state) {
@@ -150,11 +193,20 @@ export function renderUI() {
 }
 
 /** Called every frame — cheap refresh of live numbers only. */
-export function refreshLive(state, d) {
+const LIVE_TABS = ['contracts', 'utils', 'research'];
+let liveClock = 0;
+
+export function refreshLive(state, d, dt) {
   renderTop(state, d);
   renderObjective(state, d);
   renderInspector(state, d);
-  if (dirty || tab === 'contracts' || tab === 'utils' || tab === 'research') renderUI();
+  // Panels with live numbers refresh on their own slower clock: rebuilding a
+  // list of buttons five times a second makes them feel like they miss clicks.
+  liveClock += dt || 0;
+  const live = LIVE_TABS.includes(tab) && liveClock > 0.6;
+  if (live) liveClock = 0;
+  if (dirty || live) renderUI();
+  renderTutorial(state);
 }
 
 // --------------------------------------------------------------------- build
@@ -180,6 +232,7 @@ function panelBuild(state, d) {
     const cost = A.buildCost(b, d);
     const afford = state.money >= cost;
     const c = el('div', 'card click' + (unlocked ? (afford ? '' : ' cant') : ' locked'));
+    c.dataset.build = b.id;
     const title = el('div', 'title');
     title.append(el('b', null, b.name));
     if (app.view.tool === b.id) title.append(el('span', 'pill acc', 'selected'));
@@ -277,7 +330,21 @@ function panelRacks(state, d) {
 
     if (unlocked) {
       const rowBtns = el('div', 'btnrow');
-      const fillBtn = el('button', 'btn primary small', 'Fill all racks');
+      const perUnit = hw.power * d.mods.powerMult;
+      const headroom = Math.max(0, (d.firmSupply * 0.95) - d.actualDraw);
+      const canFit = Math.min(
+        d.freeSlots,
+        Math.floor(state.money / cost),
+        perUnit > 0 ? Math.floor(headroom / perUnit) : Infinity,
+      );
+      const fillBtn = el('button', 'btn primary small',
+        canFit > 0 ? 'Fill all racks — ' + fmtInt(canFit) : 'Fill all racks');
+      fillBtn.title = canFit > 0
+        ? `Buys ${fmtInt(canFit)} of these: what your free slots, your cash and your power headroom allow.`
+        : (d.freeSlots === 0 ? 'No free rack slots.'
+          : headroom < perUnit ? 'No power headroom — buy supply on the Utilities tab first.'
+          : 'Not enough cash for even one.');
+      fillBtn.dataset.fill = hw.id;
       fillBtn.onclick = () => app.act(() => A.fillAll(state, d, hw.id, app.hooks));
       const oneBtn = el('button', 'btn small', 'Install 1 in selected');
       oneBtn.disabled = !app.selectedRack();
@@ -316,7 +383,7 @@ function panelContracts(state, d) {
   row('Committed compute', fmt(d.contractDemand) + ' / ' + fmt(d.computeSellable));
   row('Delivering', (d.deliverRatio * 100).toFixed(1) + '%');
   row('Market rate', '$' + state.market.compute.toFixed(3) + ' per compute·s');
-  row('Board refresh', fmtTime(state.contracts.nextRefresh * 120));
+  row('Board refresh', fmtTime(state.contracts.nextRefresh * DAY_SECONDS));
   head.append(kv);
   if (state.staff.sales > 0) {
     const auto = el('button', 'btn small' + (state.settings.autoSign ? ' primary' : ''),
@@ -376,7 +443,7 @@ function panelContracts(state, d) {
       ['you hold', (d.uptime * 100).toFixed(1) + '%'],
       ['term', o.days + ' days'],
       ['penalty', '×' + o.penalty + ' on breach'],
-      ['total', money(o.pay * d.mods.priceMult * o.days * 60)],
+      ['total', money(o.pay * d.mods.priceMult * o.days * DAY_SECONDS)],
     ];
     for (const [k, v] of bits) { const s = el('span'); s.append(k + ' ', el('b', null, v)); meta.append(s); }
     card.append(meta);
@@ -388,6 +455,7 @@ function panelContracts(state, d) {
         + 'One bad event and you are under-delivering.'));
     }
     const btn = el('button', 'btn primary small', slot ? 'Sign' : 'No free slot');
+    if (slot && fits) btn.dataset.sign = String(o.cid);
     btn.disabled = !slot;
     btn.onclick = () => app.act(() => signContract(state, d, o, app.hooks));
     const r = el('div', 'btnrow'); r.append(btn); card.append(r);
@@ -430,7 +498,14 @@ function panelResearch(state, d) {
   }
   out.push(sec(null, catRow));
 
-  const nodes = RESEARCH.filter((r) => r.cat === researchCat).map((node) => {
+  const inCat = RESEARCH.filter((r) => r.cat === researchCat);
+  const groups = [
+    ['Ready to buy', inCat.filter((r) => !state.research.done.includes(r.id) && available(r, state) && state.rp >= r.cost)],
+    ['Saving up for', inCat.filter((r) => !state.research.done.includes(r.id) && available(r, state) && state.rp < r.cost)],
+    ['Locked', inCat.filter((r) => !state.research.done.includes(r.id) && !available(r, state))],
+    ['Completed', inCat.filter((r) => state.research.done.includes(r.id))],
+  ];
+  const cardFor = ((node) => {
     const done = state.research.done.includes(node.id);
     const ok = available(node, state);
     const afford = state.rp >= node.cost;
@@ -450,14 +525,22 @@ function panelResearch(state, d) {
     }
     return c;
   });
-  out.push(sec(null, nodes));
+  for (const [name, list] of groups) {
+    if (!list.length) continue;
+    out.push(sec(name + ' (' + list.length + ')', list.map(cardFor)));
+  }
   return out;
 }
 
 // ------------------------------------------------------------------ upgrades
 
 function panelUpgrades(state, d) {
-  const cards = UPGRADES.map((u) => {
+  const order = [...UPGRADES].sort((a, b) => {
+    const ao = state.upgrades.includes(a.id) ? 1 : 0;
+    const bo = state.upgrades.includes(b.id) ? 1 : 0;
+    return ao - bo || a.cost - b.cost;
+  });
+  const cards = order.map((u) => {
     const owned = state.upgrades.includes(u.id);
     const afford = state.money >= u.cost;
     const c = el('div', 'card' + (owned ? ' owned' : afford ? ' click' : ' cant'));
@@ -835,10 +918,72 @@ export function renderInspector(state, d) {
   fill(box, kids);
 }
 
+// ------------------------------------------------------------------ tutorial
+
+let aimed = [];
+let builtStep = -1;
+
+function clearAim() {
+  for (const n of aimed) n.classList.remove('tut-target');
+  aimed = [];
+}
+
+function applyAim(state, step) {
+  clearAim();
+  let sels = [];
+  try { sels = step.aim(state, app.view) || []; } catch (err) { sels = []; }
+  for (const sel of sels) {
+    const n = document.querySelector(sel);
+    if (n) { n.classList.add('tut-target'); aimed.push(n); }
+  }
+}
+
+export function renderTutorial(state) {
+  const box = document.getElementById('tutorial');
+  const step = tutStep(state);
+  if (!step) {
+    if (!box.hidden) { box.hidden = true; box.replaceChildren(); }
+    builtStep = -1;
+    clearAim();
+    return;
+  }
+  const idx = state.tutorial.step;
+  if (builtStep !== idx) {
+    builtStep = idx;
+    // Put the player where the step happens, once, then leave them alone.
+    if (step.tab) tab = step.tab;
+    if (step.cat) buildCat = step.cat;
+    syncTabs();
+    markDirty();
+
+    const kids = [];
+    kids.push(el('div', 'tk', 'Getting started · step ' + (idx + 1) + ' of ' + STEPS.length));
+    kids.push(el('div', 'tt', step.title));
+    kids.push(el('div', 'tb', step.body));
+    if (step.note) kids.push(el('div', 'tn', step.note));
+    const dots = el('div', 'tdots');
+    for (let i = 0; i < STEPS.length; i++) dots.append(el('i', i < idx ? 'on' : i === idx ? 'now' : ''));
+    const skipBtn = el('button', 'tskip', 'Skip the guide');
+    skipBtn.onclick = () => { tutSkip(state); renderTutorial(state); markDirty(); renderUI(); };
+    const foot = el('div', 'tfoot');
+    foot.append(dots, skipBtn);
+    kids.push(foot);
+    fill(box, kids);
+    box.hidden = false;
+  }
+  applyAim(state, step);
+}
+
 // ----------------------------------------------------------------- objective
 
 export function renderObjective(state) {
   const box = document.getElementById('objective');
+  const step = tutStep(state);
+  if (step) {
+    fill(box, el('div', 'k', 'Getting started ' + (state.tutorial.step + 1) + '/' + STEPS.length),
+      el('div', 'n', step.title), el('div', 'h', step.body.split('.')[0] + '.'));
+    return;
+  }
   const i = state.objectives.done.length;
   const o = OBJECTIVES[i];
   const kids = [el('div', 'k', o ? 'Objective ' + (i + 1) + ' of ' + OBJECTIVES.length : 'All objectives complete')];

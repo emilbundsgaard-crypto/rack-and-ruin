@@ -18,6 +18,24 @@ runs on a phone, but you will spend a lot of time panning.
 (A plain `file://` open will not work — the game is written as ES modules, and
 browsers refuse to load modules from the filesystem. Any static server does.)
 
+![The guided opening: five steps, each pointing at the control that does the job](docs/screenshot-guided-start.png)
+
+## The first five minutes
+
+A new game opens with a five-step guide. Each step names one thing to do,
+switches to the tab that does it, and puts a ring around the exact control —
+then completes itself when the game state says you did it.
+
+1. **Give it power.** Place a power strip. Nothing runs without one in reach.
+2. **Somewhere to put servers.** Place a rack inside the strip's two tiles.
+3. **Move the heat.** A box fan, before you fill the rack rather than after.
+4. **Fill it with iron.** One button buys as much as cash and power allow.
+5. **Now get paid.** Sign a contract that fits inside your spare capacity.
+
+That is the entire game in miniature. Skip it from the card, or start it again
+from Menu → Run the guide again. The **Guide** button in the top bar explains
+every number and every colour on screen at any point after that.
+
 ![The cooling overlay, showing which racks nothing is pointed at](docs/screenshot-cooling-overlay.png)
 
 ## The idea
@@ -62,6 +80,13 @@ hours, less if you are ruthless with your floor plan.
 Place a power strip, a rack and a box fan. Put hardware in the rack. Sign a
 contract off the board. From there it is a balancing act:
 
+- **The top bar tells you what is wrong.** The Compute tile names the current
+  bottleneck in plain words — *short of electricity*, *cooling is behind*,
+  *compute is unsold* — and clicking it takes you to the tab that fixes it.
+  Every other tile explains itself on hover.
+- **Racks flag their own problems.** An amber triangle means no PDU reaches
+  this rack; a red one means no cooling does, or it is over 40 °C. You do not
+  need an overlay on to see them.
 - **The overlay buttons** above the floor are the fastest diagnosis you have.
   *Power* and *Cooling* shade the tiles each machine reaches; a rack nothing
   reaches gets red hatching. *Heat* colours every rack by temperature.

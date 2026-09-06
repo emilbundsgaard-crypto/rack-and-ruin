@@ -48,7 +48,7 @@ export const BUILDINGS = [
   {
     id: 'pdu', name: 'Power strip', cat: 'power', cost: 400, radius: 2, powerCap: 30,
     draw: 0.02, upkeep: 1, color: '#d8a13a',
-    desc: 'Eight sockets on a cable. Distributes 8 kW within 2 tiles.',
+    desc: 'Eight sockets on a cable. Spreads 30 kW over two tiles.',
   },
   {
     id: 'pdu2', name: 'Rack PDU', cat: 'power', cost: 6_500, radius: 3, powerCap: 400,
@@ -98,7 +98,7 @@ export const BUILDINGS = [
   {
     id: 'smr', name: 'Small modular reactor', cat: 'power', cost: 2_400_000_000, supplyKW: 260_000,
     upkeep: 1_100_000, color: '#5fd0a8', req: 'rnd_smr', heatOut: 900,
-    desc: '77 MWe behind the fence, refuelled once a decade.',
+    desc: '260 MW behind the fence, refuelled once a decade.',
   },
   {
     id: 'fusion', name: 'Fusion tokamak', cat: 'power', cost: 900_000_000_000, supplyKW: 6_000_000,
@@ -180,7 +180,7 @@ export const BUILDINGS = [
   {
     id: 'switch', name: 'Top-of-rack switch', cat: 'support', cost: 900, net: 12,
     draw: 0.25, upkeep: 6, color: '#8f6fd8',
-    desc: 'Four gigabits of switching for the row.',
+    desc: 'Twelve gigabits of switching for the row.',
   },
   {
     id: 'switch2', name: 'Aggregation switch', cat: 'support', cost: 180_000, net: 700,

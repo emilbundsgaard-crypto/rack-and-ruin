@@ -47,6 +47,7 @@ export function newGame(legacy) {
     contracts: { active: [], offers: [], nextRefresh: 0, seq: 1 },
     events: { active: [], next: 90, pending: null, seq: 1 },
     objectives: { done: [] },
+    tutorial: { step: 0, skipped: false },
     achievements: [],
     legacy: { points: lg.points, perks: { ...lg.perks }, resets: lg.resets, lifetime: lg.lifetime },
 
@@ -131,6 +132,7 @@ export function migrate(data) {
   merged.events = { ...fresh.events, ...(data.events || {}) };
   merged.research = { ...fresh.research, ...(data.research || {}) };
   merged.objectives = { ...fresh.objectives, ...(data.objectives || {}) };
+  merged.tutorial = { ...fresh.tutorial, ...(data.tutorial || {}) };
   merged.legacy = { ...fresh.legacy, ...(data.legacy || {}) };
   merged.version = SAVE_VERSION;
   return merged;

@@ -149,6 +149,7 @@ export class FloorView {
     if (focus) this.drawRange(state, focus);
 
     for (const r of d.racks) this.drawRack(ctx, r);
+    for (const r of d.racks) this.drawWarnings(ctx, r);
     for (const { x, y, tile } of tilesOf(state)) {
       const b = BUILDINGS_BY_ID[tile.b];
       if (!b || b.cat === 'compute') continue;
@@ -301,6 +302,36 @@ export class FloorView {
       ctx.textAlign = 'center';
       ctx.fillText('empty', x + TILE / 2, y + TILE - 8);
       ctx.textAlign = 'left';
+    }
+  }
+
+  /**
+   * A rack starved of power or cooling gets a badge whether or not an overlay
+   * is on, because that is the mistake everybody makes and nobody spots.
+   */
+  drawWarnings(ctx, r) {
+    if (r.used === 0 || this.zoom < 0.45) return;
+    const marks = [];
+    if (r.pduFactor < 0.95) marks.push('#e8b44a');
+    if (r.cover < 0.95 || r.temp > 40) marks.push('#e8615f');
+    if (!marks.length) return;
+    const pulse = 0.55 + 0.45 * Math.sin(this.t * 4 + r.x + r.y);
+    let px = r.x * TILE + TILE - 8;
+    const py = r.y * TILE + 8;
+    for (const colour of marks) {
+      ctx.globalAlpha = pulse;
+      ctx.fillStyle = colour;
+      ctx.beginPath();
+      ctx.moveTo(px, py - 5.5);
+      ctx.lineTo(px + 5, py + 3.5);
+      ctx.lineTo(px - 5, py + 3.5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#121a24';
+      ctx.fillRect(px - 0.7, py - 2.6, 1.4, 3.6);
+      ctx.fillRect(px - 0.7, py + 1.6, 1.4, 1.4);
+      px -= 12;
     }
   }
 
