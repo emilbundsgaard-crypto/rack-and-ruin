@@ -254,7 +254,7 @@ async function clickTile(page, gx, gy) {
   const ratio = one > 0 ? ten / one : 0;
   if (ratio > 6 && ratio < 14) pass('speed control multiplies the clock', ratio.toFixed(1) + '× measured');
   else fail('speed control multiplies the clock', `1x=${one.toFixed(3)} 10x=${ten.toFixed(3)}`);
-  await page.click('.sp:has-text("❚❚")').catch(() => {});
+  await page.click(`.sp:has-text("Pause")`).catch(() => {});
   await page.waitForTimeout(300);
   const stopped = await page.evaluate(async () => {
     const a = window.__rr.state.day;

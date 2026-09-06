@@ -320,12 +320,14 @@ export class FloorView {
     const focus = this.tool && this.tool !== 'sell' ? this.hover : this.sel;
     if (focus) this.drawRange(ctx, state, focus, d);
 
-    // Ground markers sit under the volumes so a tall rack never hides them.
-    if (this.sel) this.markTile(ctx, this.sel, '#eaf2fa', true);
-    if (this.hover && inRoom(f, this.hover)) {
-      const taken = !!tileAt(state, this.hover.x, this.hover.y);
-      const bad = this.tool === 'sell' ? !taken : this.tool ? taken : false;
-      this.markTile(ctx, this.hover, bad ? '#e8615f' : this.tool === 'sell' ? '#e8615f' : '#4fdca8');
+    // Ground rings, but only for bare floor. A machine gets its own outline
+    // after it is drawn, because that is where the cursor actually is: your
+    // pointer is up on the body, not down at its feet.
+    const selEmpty = this.sel && !tileAt(state, this.sel.x, this.sel.y);
+    const hoverTile = this.hover && inRoom(f, this.hover) ? tileAt(state, this.hover.x, this.hover.y) : null;
+    if (selEmpty) this.markTile(ctx, this.sel, '#fff6e6', true);
+    if (this.hover && inRoom(f, this.hover) && !hoverTile) {
+      this.markTile(ctx, this.hover, this.tool === 'sell' ? '#e5614f' : '#f2a83c');
     }
 
     // Everything on the floor, back to front.
@@ -341,11 +343,21 @@ export class FloorView {
     for (const r of d.racks) rackAt.set(r.x + ',' + r.y, r);
 
     this.hits.length = 0;
+    const hv = this.hover;
     for (const item of order) {
       const b = BUILDINGS_BY_ID[item.tile.b];
       if (!b) continue;
       const rack = rackAt.get(item.gx + ',' + item.gy);
-      this.drawSolid(ctx, item.gx, item.gy, b, rack, d);
+      const lifted = hv && hv.x === item.gx && hv.y === item.gy ? 5 : 0;
+      this.drawSolid(ctx, item.gx, item.gy, b, rack, d, false, lifted);
+    }
+
+    // Outline whatever the cursor and the selection are actually on.
+    if (this.sel && !selEmpty) this.outlineSolid(ctx, this.sel, '#fff6e6', 2, true);
+    if (hoverTile) {
+      const bad = this.tool === 'sell' || (this.tool && this.tool !== 'sell');
+      this.outlineSolid(ctx, this.hover, this.tool === 'sell' ? '#ff8a80'
+        : this.tool ? '#f2c14e' : '#ffe0a8', 2.4, false);
     }
 
     // A ghost of what you are about to place.
@@ -413,26 +425,44 @@ export class FloorView {
     const c0 = this.isoR(-0.5, -0.5), c1 = this.isoR(f.w - 0.5, -0.5);
     const c2 = this.isoR(f.w - 0.5, f.h - 0.5), c3 = this.isoR(-0.5, f.h - 0.5);
     const drop = 13;
-    ctx.fillStyle = '#0a1017';
+    ctx.fillStyle = '#0b0907';
     ctx.beginPath();
     ctx.moveTo(c3.x, c3.y); ctx.lineTo(c2.x, c2.y); ctx.lineTo(c2.x, c2.y + drop);
     ctx.lineTo(c3.x, c3.y + drop); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#0c141d';
+    ctx.fillStyle = '#100d0a';
     ctx.beginPath();
     ctx.moveTo(c2.x, c2.y); ctx.lineTo(c1.x, c1.y); ctx.lineTo(c1.x, c1.y + drop);
     ctx.lineTo(c2.x, c2.y + drop); ctx.closePath(); ctx.fill();
 
-    ctx.strokeStyle = '#212e3d';
+    ctx.strokeStyle = '#2b241b';
     ctx.lineWidth = 1;
     for (let gy = 0; gy < f.h; gy++) {
       for (let gx = 0; gx < f.w; gx++) {
         const p = this.isoR(gx, gy);
         this.diamond(ctx, p);
-        ctx.fillStyle = (gx + gy) % 2 ? '#16212e' : '#121c27';
+        ctx.fillStyle = (gx + gy) % 2 ? '#1d1913' : '#191510';
         ctx.fill();
         ctx.stroke();
       }
     }
+  }
+
+  /** Trace the silhouette of whatever stands on a tile. */
+  outlineSolid(ctx, t, colour, width, dashed) {
+    const hit = this.hits.find((x) => x.gx === t.x && x.gy === t.y);
+    if (!hit) return;
+    ctx.save();
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = width;
+    ctx.lineJoin = 'round';
+    if (dashed) ctx.setLineDash([6, 4]);
+    ctx.shadowColor = colour;
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    hit.poly.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y)));
+    ctx.closePath();
+    ctx.stroke();
+    ctx.restore();
   }
 
   markTile(ctx, t, colour, dashed) {
@@ -507,8 +537,9 @@ export class FloorView {
    * One machine: a prism with a lit top, a shaded left face and a darker right
    * face, plus whatever detail the zoom level can carry.
    */
-  drawSolid(ctx, gx, gy, b, rack, d, ghost) {
-    const p = this.iso(gx, gy, this._fac);
+  drawSolid(ctx, gx, gy, b, rack, d, ghost, lift) {
+    const base = this.iso(gx, gy, this._fac);
+    const p = lift ? { x: base.x, y: base.y - lift } : base;
     const hw = TW / 2 - 4;
     const hh = TH / 2 - 2;
     let height = b.h * HSCALE;
@@ -521,14 +552,14 @@ export class FloorView {
       height = b.h * HSCALE * (0.6 + 0.4 * fill);
       const hot = clamp((rack.temp - 30) / 32, 0, 1);
       // Cabinets are dark steel; the colour lives in the edges and the lights.
-      body = hot > 0.05 ? mix('#141c26', '#40181c', hot) : '#141c26';
+      body = hot > 0.05 ? mix('#191b20', '#40181c', hot) : '#191b20';
     }
 
     // A soft contact shadow stops everything floating.
     if (!ghost && this.zoom > 0.5) {
       ctx.fillStyle = 'rgba(0,0,0,.35)';
       ctx.beginPath();
-      ctx.ellipse(p.x, p.y + 3, TW / 2 - 7, TH / 2 - 5, 0, 0, 6.283);
+      ctx.ellipse(base.x, base.y + 3, TW / 2 - 7, TH / 2 - 5, 0, 0, 6.283);
       ctx.fill();
     }
 
@@ -542,19 +573,19 @@ export class FloorView {
     const D0 = { x: p.x - hw, y: p.y };
 
     // Left face.
-    ctx.fillStyle = body ? shade(body, 0.72) : shade(colour, 0.40, '#0a1017');
+    ctx.fillStyle = body ? shade(body, 0.72) : shade(colour, 0.42, '#0d0a07');
     ctx.beginPath();
     ctx.moveTo(D.x, D.y); ctx.lineTo(C.x, C.y); ctx.lineTo(C0.x, C0.y); ctx.lineTo(D0.x, D0.y);
     ctx.closePath(); ctx.fill();
 
     // Right face.
-    ctx.fillStyle = body ? shade(body, 0.48) : shade(colour, 0.26, '#0a1017');
+    ctx.fillStyle = body ? shade(body, 0.48) : shade(colour, 0.27, '#0d0a07');
     ctx.beginPath();
     ctx.moveTo(C.x, C.y); ctx.lineTo(B.x, B.y); ctx.lineTo(B0.x, B0.y); ctx.lineTo(C0.x, C0.y);
     ctx.closePath(); ctx.fill();
 
     // Top face.
-    ctx.fillStyle = body ? shade(body, 1.25) : shade(colour, 0.80, '#16202c');
+    ctx.fillStyle = body ? shade(body, 1.3) : shade(colour, 0.84, '#1c1610');
     ctx.beginPath();
     ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.lineTo(C.x, C.y); ctx.lineTo(D.x, D.y);
     ctx.closePath(); ctx.fill();

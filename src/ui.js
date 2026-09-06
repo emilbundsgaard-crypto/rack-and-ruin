@@ -43,7 +43,7 @@ export const TABS = [
   { id: 'racks', name: 'Machines' },
   { id: 'deals', name: 'Deals' },
   { id: 'upgrade', name: 'Upgrade' },
-  { id: 'ops', name: 'Running it' },
+  { id: 'ops', name: 'Running' },
   { id: 'site', name: 'Site' },
   { id: 'town', name: 'Town' },
 ];
@@ -151,8 +151,10 @@ export function renderTop(state, d) {
     minis.append(mini('x_temp', 'Temp'), mini('x_up', 'Uptime'), mini('x_rp', 'Points'),
       mini('x_rep', 'Name'), mini('x_con', 'Deals'), mini('x_town', 'Town'));
 
-    // Speed is a segmented control: pause, then 1x through 10x.
+    // Speed is a labelled segmented control. It is one of the two things a new
+    // player looks for, so it is not allowed to be subtle.
     const speed = el('div', 'speeds');
+    speed.append(el('div', 'speedlbl', 'Speed'));
     const speedBtns = [];
     for (const [v, label, tip] of SPEEDS) {
       const btn = el('button', 'sp', label);
@@ -182,7 +184,6 @@ export function renderTop(state, d) {
       meters,
       el('div', 'divider'),
       minis,
-      el('div', 'spacer'),
       right);
     topBuilt = mk;
 
@@ -265,7 +266,7 @@ export function renderTop(state, d) {
 }
 
 export const SPEEDS = [
-  [0, '\u275A\u275A', 'Stop the clock. Nothing decays, nothing earns. Space toggles it.'],
+  [0, 'Pause', 'Stop the clock. Nothing decays, nothing earns. Space toggles it.'],
   [1, '1\u00D7', 'Real time: one game day per minute.'],
   [2, '2\u00D7', 'Twice as fast. Everything scales — earnings, wear, events.'],
   [5, '5\u00D7', 'Five times as fast. Good for waiting out a contract.'],
@@ -610,7 +611,7 @@ function panelContracts(state, d) {
   flow.append(legend);
   flow.append(el('div', 'desc',
     'Contracts buy compute, not racks. The machines stay on your floor; what you sell is the '
-    + 'capacity they produce. Deliver less than you promised and the SLA penalty starts.'));
+    + 'capacity they produce. Promise more than you can deliver and you start paying a fine.'));
   out.push(sec(null, flow));
 
   const head = el('div', 'card');

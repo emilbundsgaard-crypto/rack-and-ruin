@@ -95,8 +95,13 @@ contract off the board. From there it is a balancing act:
   bottleneck in plain words — *short of electricity*, *cooling is behind*,
   *compute is unsold* — and clicking it takes you to the tab that fixes it.
   Every other tile explains itself on hover.
-- **Speed control.** 1×, 2×, 5× and 10× in the top bar, or `+` and `−`. Space
-  pauses. A day is a minute at 1×, six seconds at 10×.
+- **Speed control.** A labelled `Pause 1× 2× 5× 10×` control in the top bar, or
+  `+` and `−` on the keyboard. A day is a minute at 1×, six seconds at 10×.
+- **Hovering picks the machine, not the ground under it.** On an isometric
+  floor a rack is drawn well above the tile it stands on, so the outline goes
+  round the machine itself and it lifts slightly. Pointing at something and
+  having the highlight appear at its feet is the single most confusing thing an
+  isometric view can do.
 - **Ashbrook.** The village next door. It does nothing to you; it is the bill.
   The dial follows your footprint — megawatts, litres, acres — and only ever
   goes one way. Ruining it completely is the other thing to aim at.
@@ -136,6 +141,13 @@ The game autosaves to `localStorage` every fifteen seconds and gives you
 offline progress when you come back (capped by research and legacy perks, and
 deliberately gentle — nothing breaks while you are away). Menu → Export hands
 you a save string; Import takes one back. Nothing is uploaded anywhere.
+
+## The look
+
+Night shift in a control room: warm charcoal, bone type, amber for anything
+that wants your attention, and a cold cyan kept strictly for the cold side of
+the plant — cooling and water. Rules and spacing separate things rather than a
+border round everything. Numbers are tabular mono so they stop jittering.
 
 ## Layout
 
