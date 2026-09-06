@@ -420,12 +420,21 @@ async function clickTile(page, gx, gy) {
     out.borrowed = Math.round(s.bank.debt);
     out.cappedAtLimit = Math.abs(s.bank.debt - app.d.creditLimit) < 1;
 
-    // Interest accrues, and shows up as a cost the ledger can see.
+    // Interest accrues, and shows up as a cost the ledger can see. Pay some
+    // back first: at the ceiling interest is deliberately not charged, so a
+    // balance sitting on the line is the wrong place to measure it from.
+    s.money = 5000;
+    sim.repay(s, 5000, { log() {} });
     app.d = sim.derive(s);
     out.interestIsACost = app.d.interestCost > 0;
     const before = s.bank.debt;
     for (let i = 0; i < 40; i++) { sim.tick(s, 0.2, app.d); app.d = sim.derive(s); }
     out.interestAccrues = s.bank.debt > before;
+
+    // And it never compounds past the credit line, however long you are away.
+    s.bank.debt = app.d.creditLimit;
+    for (let i = 0; i < 200; i++) { sim.tick(s, 20, app.d); app.d = sim.derive(s); }
+    out.cappedAtCeiling = s.bank.debt <= app.d.creditLimit + 1;
 
     // A site that cannot pay builds debt rather than having it forgiven.
     s.money = 50_000; s.bank.debt = 0; s.staff.tech = 4; s.gridPower = 400;
@@ -453,9 +462,66 @@ async function clickTile(page, gx, gy) {
   const ok = r.startLimit === 9000 && r.cappedAtLimit && r.interestIsACost && r.interestAccrues
     && r.built
     && r.cashNeverNegative && r.debtBuilt && r.insolvent && r.buyBlocked && r.sellStillWorks
-    && r.repaid;
+    && r.repaid && r.cappedAtCeiling;
   if (ok) pass('debt is real, and the bank stops lending', 'limit ' + r.startLimit);
   else fail('debt is real, and the bank stops lending', JSON.stringify(r));
+  await page.close();
+}
+
+// ------------------------------------------- the economy holds under any state
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  const r = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const A = await import('/src/actions.js');
+    const S = await import('/src/state.js');
+    const B = await import('/src/data/buildings.js');
+    const H = await import('/src/data/hardware.js');
+    const R = await import('/src/data/research.js');
+    const ids = B.BUILDINGS.map((x) => x.id);
+    const hw = H.HARDWARE.map((x) => x.id);
+    const bad = [];
+    let ticks = 0;
+    // Scattered sites at every tier, some solvent and some not, some carrying a
+    // loan, run at four different step sizes including the long ones the
+    // offline catch-up uses.
+    for (let run = 0; run < 24 && !bad.length; run++) {
+      const s = S.newGame();
+      s.tutorial.skipped = true;
+      s.facility = run % 10;
+      s.money = [0, 1, 500, 1e5, 1e12][run % 5];
+      s.gridPower = [6, 200, 5000, 1e6][run % 4];
+      s.staff.tech = run % 7; s.staff.eng = run % 4;
+      for (const r2 of R.RESEARCH.slice(0, (run * 11) % R.RESEARCH.length)) s.research.done.push(r2.id);
+      let d = sim.derive(s);
+      for (let k = 0; k < 20; k++) {
+        A.place(s, d, (k * 7 + run) % 12, (k * 3 + run) % 8, ids[(k + run) % ids.length], null);
+        d = sim.derive(s);
+      }
+      A.fillAll(s, d, hw[run % hw.length], null);
+      d = sim.derive(s);
+      if (run % 3 === 0) sim.borrow(s, d, 1e9, { log() {} });
+      for (let i = 0; i < 150; i++) {
+        sim.tick(s, [0.2, 1, 6, 20][i % 4], d);
+        d = sim.derive(s);
+        ticks++;
+        if (!(s.money >= 0) || !isFinite(s.money)) { bad.push(`run${run} cash ${s.money}`); break; }
+        if (!isFinite(s.bank.debt) || s.bank.debt < 0) { bad.push(`run${run} debt ${s.bank.debt}`); break; }
+        // Interest must never compound past the credit line, or an idle site
+        // comes back to a number no amount of selling could clear.
+        if (s.bank.debt > d.creditLimit + 1) {
+          bad.push(`run${run} debt ${Math.round(s.bank.debt)} over line ${Math.round(d.creditLimit)}`);
+          break;
+        }
+        if (!isFinite(d.netIncome)) { bad.push(`run${run} net not finite`); break; }
+        if (!(s.reputation >= 0) || !isFinite(s.reputation)) { bad.push(`run${run} rep ${s.reputation}`); break; }
+      }
+    }
+    return { bad: bad.slice(0, 3), ticks };
+  });
+  if (!r.bad.length) pass('cash and debt stay sane in every state', r.ticks + ' ticks');
+  else fail('cash and debt stay sane in every state', r.bad.join(' | '));
   await page.close();
 }
 

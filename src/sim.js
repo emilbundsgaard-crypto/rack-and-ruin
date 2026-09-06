@@ -520,11 +520,18 @@ export function tick(state, dt, d, hooks) {
   if (d.revenue > 0) state.lifetimeEarnings += d.revenue * dt;
 
   if (bank) {
-    // Interest, charged on the balance, every day it is outstanding.
+    // Interest, charged on the balance, every day it is outstanding — but the
+    // balance never grows past the credit line. Without that ceiling, coming
+    // back to an idle site after a couple of hours (a hundred game days, and
+    // more with offline research) would compound a small loan into a number
+    // no amount of selling could clear. At the ceiling the bank simply stops:
+    // you are insolvent, which is recoverable, rather than buried, which is not.
+    const ceiling = creditLimit(state, d);
     if (bank.debt > 0) {
       const interest = bank.debt * LOAN_RATE * days;
-      bank.debt += interest;
-      bank.interestPaid += interest;
+      const charged = Math.max(0, Math.min(interest, ceiling - bank.debt));
+      bank.debt += charged;
+      bank.interestPaid += charged;
     }
 
     // A share of what you actually make goes back to the bank before it is
@@ -543,7 +550,9 @@ export function tick(state, dt, d, hooks) {
     if (state.money < 0) {
       const short = -state.money;
       const room = creditFree(state, d);
-      const drawn = Math.min(short, room);
+      // The fee is part of what the draw costs you, so it has to fit inside
+      // the remaining room too — otherwise the balance creeps past the line.
+      const drawn = Math.max(0, Math.min(short, room / (1 + OVERDRAFT_FEE)));
       if (drawn > 0) {
         const fee = drawn * OVERDRAFT_FEE;
         bank.debt += drawn + fee;

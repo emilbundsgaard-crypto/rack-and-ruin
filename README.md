@@ -96,6 +96,8 @@ forgiven — there is a bank, and it is deliberately a poor deal:
 - A shortfall you cannot cover draws on the overdraft, with a fee on top.
 - Past the limit the bank stops. Nothing new can be bought and your name starts
   to suffer. Selling and demolishing stay open, because they are the way out.
+- The balance never grows past the credit line, so leaving an idle site with a
+  loan running is recoverable rather than fatal.
 
 A loan is a way out of a hole, not a way to skip a tier: a full run to the end
 of the research tree never needs one.
@@ -223,7 +225,7 @@ src/tutorial.js     the five-step guided opening
 tools/
   balance.mjs       headless economy probe
   bot.mjs           an automated player, used to check pacing over a long run
-  browser-check.mjs twenty end-to-end checks in a real browser
+  browser-check.mjs twenty-one end-to-end checks in a real browser
   shots.mjs         regenerates every screenshot in docs/
 ```
 
