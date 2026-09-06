@@ -7,9 +7,11 @@ import { EVENTS_BY_ID } from './data/events.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import * as A from './actions.js';
 import { FloorView } from './render.js';
-import { initUI, renderUI, refreshLive, markDirty, pushLog, goTab, TABS, renderTutorial } from './ui.js';
+import { initUI, renderUI, refreshLive, markDirty, pushLog, goTab, TABS, renderTutorial, tickNumbers } from './ui.js';
 import { initTips, hide as hideTip } from './tip.js';
+import { startAudio, setEnabled as setSound, isEnabled as soundOn, ambience, sfx } from './audio.js';
 import { advance as tutAdvance, active as tutActive, FINISH } from './tutorial.js';
+import { BootArt } from './bootart.js';
 
 const TICK = 0.2;          // seconds of simulated time per fixed step
 const MAX_CATCHUP = 0.5;   // seconds of simulation per frame at 1x
@@ -42,6 +44,8 @@ function logLine(text, tone) {
   if (app.log.length > 200) app.log.shift();
   pushLog(app.log);
   if (tone === 'good' || tone === 'bad') toast(text, tone);
+  if (tone === 'bad') sfx.alarm();
+  else if (tone === 'good') sfx.good();
 }
 
 // -------------------------------------------------------------------- modal
@@ -280,6 +284,9 @@ function step(now) {
 
   app.view.draw(state, app.d, real);
 
+  tickNumbers(state, app.d, real);
+  ambience(app.d, speed === 0);
+
   uiClock += real;
   if (uiClock > 0.2) { refreshLive(state, app.d, uiClock); uiClock = 0; }
 
@@ -290,10 +297,12 @@ function step(now) {
 // ------------------------------------------------------------------ startup
 
 function startGame(state, fresh) {
+  startAudio(state.settings.sound !== false);
   app.state = state;
   app.d = derive(state);
   app.running = true;
   app.log = [];
+  if (app.bootart) { app.bootart.stop(); app.bootart = null; }
   document.getElementById('boot').hidden = true;
   document.getElementById('app').hidden = false;
 
@@ -327,6 +336,8 @@ function handleClick(x, y, shift, painting) {
   if (view.tool === 'sell') {
     if (!tileAt(state, x, y)) return;
     const quiet = painting ? { log: () => {} } : app.hooks;
+    view.pop(x, y, 'dust');
+    sfx.demolish();
     A.sell(state, app.d, x, y, quiet);
     app.d = derive(state);
     markDirty();
@@ -336,6 +347,7 @@ function handleClick(x, y, shift, painting) {
   if (view.tool) {
     const err = A.place(state, app.d, x, y, view.tool, painting ? { log: () => {} } : app.hooks);
     if (err && !painting) toast(err, 'warn');
+    if (!err) { view.pop(x, y, 'place'); sfx.place(); }
     app.d = derive(state);
     if (!painting) { view.sel = { x, y }; }
     markDirty(); renderUI();
@@ -394,6 +406,8 @@ function bindKeys() {
     } else if (e.key >= '1' && e.key <= '9') {
       const t = TABS[Number(e.key) - 1];
       if (t) goTab(t.id);
+    } else if (e.key === 'm' || e.key === 'M') {
+      app.toggleSound();
     } else if (e.key === 'r' || e.key === 'R') {
       app.view.turn(e.shiftKey ? -1 : 1);
     } else if (e.key === 'o' || e.key === 'O') {
@@ -409,6 +423,17 @@ function bindKeys() {
 }
 
 function boot() {
+  const sky = document.getElementById('bootsky');
+  if (sky) {
+    try {
+      app.bootart = new BootArt(sky);
+      app.bootart.start();
+    } catch (e) {
+      // The backdrop is decoration; the title card stands on its own without it.
+      sky.hidden = true;
+    }
+  }
+
   app.hooks = {
     log: logLine,
     onDecision,
@@ -529,10 +554,22 @@ function showHelp() {
       ['Placing', 'Pick a machine, click a tile. Drag with one held to lay a whole row.'],
       ['Moving about', 'Wheel zooms, dragging empty space pans, R turns the room a quarter.'],
       ['Speed', 'The 1× to 10× control in the top bar, or +/− on the keyboard.'],
-      ['Keys', '1–9 tabs · O overlays · R turns the room · +/− speed · Space pauses · Esc clears the tool'],
+      ['Sound', 'A room tone that follows the site, and a cue for the things worth hearing. '
+        + 'The speaker in the top bar turns it off.'],
+      ['Keys', '1–9 tabs · O overlays · R turns the room · +/− speed · M mutes · Space pauses · Esc clears the tool'],
     ]),
   ], [{ label: 'Got it', kind: 'primary' }]);
 }
+
+app.toggleSound = () => {
+  const on = !(app.state.settings.sound !== false);
+  app.state.settings.sound = on;
+  setSound(on);
+  startAudio(on);
+  markDirty();
+  renderUI();
+  return on;
+};
 
 app.openGuide = () => showHelp();
 

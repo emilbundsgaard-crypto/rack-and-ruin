@@ -63,7 +63,7 @@ export function newGame(legacy) {
       contractsDone: 0, dryDays: 0, brownDays: 0, nineDays: 0,
       peakCompute: 0, peakIncome: 0, spentBuild: 0, spentHw: 0, powerBought: 0,
     },
-    settings: { overlay: 'none', speed: 1, lastSpeed: 1, notify: true, autoSign: false },
+    settings: { overlay: 'none', speed: 1, lastSpeed: 1, notify: true, autoSign: false, sound: true },
     log: [],
   };
   return state;

@@ -8,6 +8,7 @@
 import { clamp } from './util.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import { roomOf, tileAt } from './state.js';
+import { daylight } from './sim.js';
 
 export const TW = 68;            // tile width on screen
 export const TH = 34;            // tile height on screen (2:1 isometric)
@@ -17,6 +18,7 @@ const DETAIL = 0.5;              // below this zoom, decals are skipped
 const BAYS = 0.78;               // and below this, racks lose their server bays
 const LID = 0.34;                // and below this, machines are plain blocks
 const HSCALE = 1.35;             // volumes read better a little taller than life
+const STEAMY = new Set(['cooltower', 'coil', 'recycle', 'louvre']);
 
 // ------------------------------------------------------------ colour tools
 
@@ -109,6 +111,9 @@ export class FloorView {
     this.panned = false;
     this.centred = false;
     this.hits = [];
+    this.fx = [];
+    this.sun = 1;
+    this.night = 0;
     this._bind();
   }
 
@@ -345,6 +350,10 @@ export class FloorView {
     const ctx = this.ctx;
     const f = roomOf(state);
     this._fac = f;
+    // Daylight drives the atmosphere: how dark the room is, how hard the
+    // machine lights read, and what colour the air is at dawn and dusk.
+    this.sun = daylight(state.day);
+    this.night = 1 - this.sun;
     if (!this.centred && this.w) this.centre(state);
     ctx.clearRect(0, 0, this.w, this.h);
     ctx.save();
@@ -397,6 +406,8 @@ export class FloorView {
         : this.tool ? '#f2c14e' : '#ffe0a8', 2.4, false);
     }
 
+    this.drawFx(ctx);
+
     // A ghost of what you are about to place.
     if (this.tool && this.tool !== 'sell' && this.hover && inRoom(f, this.hover)
         && !tileAt(state, this.hover.x, this.hover.y)) {
@@ -409,6 +420,102 @@ export class FloorView {
     }
 
     ctx.restore();
+
+    // One wash over the finished scene for the hour of the day. It is a single
+    // fill, and it ties the room to the clock in the top bar.
+    const hour = state.day % 1;
+    const warm = Math.max(
+      Math.max(0, 1 - Math.abs(hour - 0.78) * 9),
+      Math.max(0, 1 - Math.abs(hour - 0.24) * 9),
+    );
+    if (this.night > 0.02 || warm > 0.02) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-atop';
+      if (this.night > 0.02) {
+        ctx.fillStyle = `rgba(16,26,52,${this.night * 0.32})`;
+        ctx.fillRect(0, 0, this.w, this.h);
+      }
+      if (warm > 0.02) {
+        ctx.fillStyle = `rgba(232,124,44,${warm * 0.15})`;
+        ctx.fillRect(0, 0, this.w, this.h);
+      }
+      ctx.restore();
+    }
+  }
+
+  /** Heat haze: a couple of wobbling threads rising off a cooking rack. */
+  shimmer(ctx, gx, gy, strength) {
+    const p = this.iso(gx, gy, this._fac);
+    const top = p.y - 34;
+    ctx.strokeStyle = `rgba(255,190,150,${0.10 + strength * 0.16})`;
+    ctx.lineWidth = 1.4;
+    for (let i = 0; i < 2; i++) {
+      const off = (i - 0.5) * 13;
+      const phase = this.t * 1.6 + gx * 1.7 + gy + i * 2.2;
+      ctx.beginPath();
+      for (let k = 0; k <= 8; k++) {
+        const y = top - k * 4.5;
+        const x = p.x + off + Math.sin(phase + k * 0.7) * (2 + k * 0.55);
+        k ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  /** Steam off a tower, a chiller or a recycler. */
+  steam(ctx, gx, gy, b) {
+    const p = this.iso(gx, gy, this._fac);
+    const top = p.y - b.h * HSCALE - 6;
+    for (let i = 0; i < 3; i++) {
+      const life = ((this.t * 0.5 + i * 0.34 + gx * 0.13 + gy * 0.07) % 1);
+      const rise = life * 34;
+      const rr = 4 + life * 9;
+      ctx.fillStyle = `rgba(214,206,196,${(1 - life) * 0.20})`;
+      ctx.beginPath();
+      ctx.arc(p.x + Math.sin(this.t * 0.7 + i * 2) * (3 + life * 6), top - rise, rr, 0, 6.283);
+      ctx.fill();
+    }
+  }
+
+  // -------------------------------------------------------------------- fx
+
+  /** A machine dropping into place, or the dust where one used to be. */
+  pop(gx, gy, kind) {
+    this.fx.push({ gx, gy, kind: kind || 'place', t: 0 });
+    if (this.fx.length > 40) this.fx.shift();
+  }
+
+  drawFx(ctx) {
+    if (!this.fx.length) return;
+    const keep = [];
+    for (const e of this.fx) {
+      e.t += 1 / 60;
+      const life = e.kind === 'place' ? 0.42 : 0.6;
+      if (e.t > life) continue;
+      keep.push(e);
+      const k = e.t / life;
+      const p = this.iso(e.gx, e.gy, this._fac);
+      if (e.kind === 'place') {
+        const r = 6 + k * (TW * 0.44);
+        ctx.strokeStyle = `rgba(226,206,176,${(1 - k) * 0.5})`;
+        ctx.lineWidth = 2 * (1 - k) + 0.4;
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y + 2, r, r * (TH / TW), 0, 0, 6.283);
+        ctx.stroke();
+      } else {
+        for (let i = 0; i < 7; i++) {
+          const a = (i / 7) * 6.283 + e.gx;
+          const spread = k * (TW * 0.4);
+          const rise = Math.sin(k * Math.PI) * 16;
+          ctx.fillStyle = `rgba(158,142,120,${(1 - k) * 0.55})`;
+          ctx.beginPath();
+          ctx.arc(p.x + Math.cos(a) * spread, p.y - rise + Math.sin(a) * spread * (TH / TW),
+            2.8 * (1 - k) + 0.6, 0, 6.283);
+          ctx.fill();
+        }
+      }
+    }
+    this.fx = keep;
   }
 
   /** Bounds of the whole room in world space, including the plinth. */
@@ -686,9 +793,11 @@ export class FloorView {
         }
         // Lit strip along the bottom of the bay.
         const blink = 0.55 + 0.45 * Math.sin(this.t * 6 + i * 1.7 + r.x * 2.1 + r.y * 1.3);
+        // Lights read harder after dark, which is when a rack row looks best.
+        const glow = 1 + this.night * 0.5;
         const style = dead ? 'rgba(255,105,100,.95)'
-          : hot > 0.55 ? `rgba(255,150,135,${0.7 + blink * 0.3})`
-          : `rgba(120,255,205,${0.45 + load * blink * 0.55})`;
+          : hot > 0.55 ? `rgba(255,150,135,${Math.min(1, (0.7 + blink * 0.3) * glow)})`
+          : `rgba(120,255,205,${Math.min(1, (0.45 + load * blink * 0.55) * glow)})`;
         const lo = bEdge - 0.22 / bays;
         quad(ctx, lerpP(P, P0, lo), lerpP(Q, Q0, lo), lerpP(Q, Q0, bEdge), lerpP(P, P0, bEdge),
           0.14, 0.86, style);

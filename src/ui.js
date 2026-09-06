@@ -114,6 +114,12 @@ let topBuilt = null;
  * read as headlines, the four utilities as meters, everything else as small
  * pairs. Eleven identical boxes was a spreadsheet, not a control room.
  */
+const SPK = '<svg viewBox="0 0 20 16" aria-hidden="true"><path d="M2 6h3l4-3.5v11L5 10H2z"/>';
+const WAVE = '<path class="w1" d="M12 5.6a4.4 4.4 0 0 1 0 4.8"/><path class="w2" d="M14.6 3.4a7.6 7.6 0 0 1 0 9.2"/>';
+const MUTE = '<path class="x" d="M12.4 5.4l4.4 5.2M16.8 5.4l-4.4 5.2"/>';
+/** Line-art speaker, on or muted. */
+function speaker(on) { return SPK + (on ? WAVE : MUTE) + '</svg>'; }
+
 export function renderTop(state, d) {
   const bar = document.getElementById('topbar');
   if (!topBuilt) {
@@ -168,6 +174,11 @@ export function renderTop(state, d) {
       speed.append(btn);
     }
     mk._speeds = speedBtns;
+    const soundBtn = el('button', 'topbtn icon', '');
+    soundBtn.type = 'button';
+    soundBtn.innerHTML = speaker(true);
+    soundBtn.onclick = () => { app.toggleSound(); renderTop(app.state, app.d); };
+    mk._sound = { n: soundBtn };
     const guide = el('button', 'topbtn', 'Guide');
     guide.dataset.tip = 'Guide|How the site works, and what everything on screen means.';
     guide.onclick = () => app.openGuide();
@@ -176,7 +187,7 @@ export function renderTop(state, d) {
     menu.onclick = () => app.openMenu();
 
     const right = el('div', 'topright');
-    right.append(speed, guide, menu);
+    right.append(speed, soundBtn, guide, menu);
     fill(bar,
       vital('v_cash', 'Cash'),
       vital('v_compute', 'Compute'),
@@ -232,11 +243,11 @@ export function renderTop(state, d) {
     if (cell.n.className !== c) cell.n.className = c;
   };
 
-  set(t.v_cash, money(state.money), (d.netIncome >= 0 ? '+' : '') + rate(d.netIncome),
+  set(t.v_cash, t.v_cash.big.textContent, (d.netIncome >= 0 ? '+' : '') + rate(d.netIncome),
     d.netIncome >= 0 ? 'good' : 'bad');
 
   const fixTab = FIX_TAB[d.bottleneck];
-  set(t.v_compute, fmt(d.computeTotal), d.bottleneck,
+  set(t.v_compute, t.v_compute.big.textContent, d.bottleneck,
     (d.bottleneck === 'running clean' ? '' : 'warn') + (fixTab ? ' jump' : ''));
   t.v_compute.n.onclick = fixTab ? () => goTab(fixTab) : null;
   t.v_compute.n.dataset.tip = 'Compute|Capacity your fleet produces right now, and the one thing '
@@ -255,6 +266,15 @@ export function renderTop(state, d) {
     d.freeCompute > d.computeSellable * 0.15 ? 'acc' : '');
   small(t.x_town, ((state.town?.damage || 0) * 100).toFixed(0) + '%',
     (state.town?.damage || 0) > 0.5 ? 'bad' : (state.town?.damage || 0) > 0.2 ? 'warn' : '');
+
+  const snd = state.settings.sound !== false;
+  const sb = t._sound.n;
+  if (sb._on !== snd) { sb._on = snd; sb.innerHTML = speaker(snd); }
+  sb.className = 'topbtn icon' + (snd ? '' : ' off');
+  sb.setAttribute('aria-label', snd ? 'Sound on' : 'Sound off');
+  sb.setAttribute('aria-pressed', snd ? 'true' : 'false');
+  sb.dataset.tip = (snd ? 'Sound on' : 'Sound off') + '|A room tone that follows the site, and a '
+    + 'cue for the things worth hearing. M toggles it.';
 
   const pausedBox = document.getElementById('paused');
   if (pausedBox) pausedBox.hidden = state.settings.speed !== 0;
@@ -299,6 +319,28 @@ export function renderUI() {
 
 /** Called every frame — cheap refresh of live numbers only. */
 const LIVE_TABS = ['deals', 'ops', 'upgrade', 'town'];
+
+// Big figures ease toward their target rather than snapping five times a
+// second. It costs two text writes a frame and makes the whole thing feel
+// like it is running rather than refreshing.
+const roll = { cash: null, compute: null };
+
+export function tickNumbers(state, d, dt) {
+  if (!topBuilt) return;
+  const ease = Math.min(1, dt * 9);
+  const step = (key, target, cell, fmtFn) => {
+    if (roll[key] === null || !isFinite(roll[key])) roll[key] = target;
+    const gap = Math.abs(target - roll[key]);
+    // A prestige or a big purchase should land, not crawl.
+    roll[key] = gap > Math.max(1, Math.abs(target)) * 4 ? target
+      : roll[key] + (target - roll[key]) * ease;
+    if (Math.abs(target - roll[key]) < Math.max(0.01, Math.abs(target) * 1e-4)) roll[key] = target;
+    const text = fmtFn(roll[key]);
+    if (cell.big.textContent !== text) cell.big.textContent = text;
+  };
+  step('cash', state.money, topBuilt.v_cash, money);
+  step('compute', d.computeTotal, topBuilt.v_compute, fmt);
+}
 let liveClock = 0;
 
 export function refreshLive(state, d, dt) {
