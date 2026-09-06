@@ -858,7 +858,15 @@ function panelStaff(state, d) {
   const head = el('div', 'card');
   const kv = el('div', 'kv');
   kv.append(el('div', 'k', 'Headcount'), el('div', 'v', d.staffTotal + ' / ' + d.staffCap));
-  kv.append(el('div', 'k', 'Salaries'), el('div', 'v', money(d.salaries * d.mods.upkeepMult) + '/day'));
+  kv.append(el('div', 'k', 'Wage bill'),
+    el('div', 'v', money(d.salaries * d.mods.upkeepMult) + '/day'));
+  kv.append(el('div', 'k', 'Per second'), el('div', 'v', money(d.salaryCost) + '/s'));
+  // Wages are usually the first cost to get out of hand, so say plainly how
+  // much of the money coming in is going straight back out as pay.
+  const share = d.revenue > 0 ? d.salaryCost / d.revenue : null;
+  kv.append(el('div', 'k', 'Share of income'),
+    el('div', 'v' + (share !== null && share > 0.5 ? ' bad' : share !== null && share > 0.3 ? ' warn' : ''),
+      share === null ? 'No income yet' : Math.round(share * 100) + '% of what you earn'));
   head.append(kv);
   out.push(sec('Payroll', head));
 
