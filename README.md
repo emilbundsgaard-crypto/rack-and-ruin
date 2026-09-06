@@ -69,6 +69,7 @@ campus. Only the numbers and the machinery change.
 | Contract types | 18, gated behind reputation |
 | Random events | 20, seven of which stop and ask you a question |
 | Machine icons | 32 hand-drawn glyphs, on the floor and in the build list |
+| The town next door | Ashbrook, in nine stages, from cricket pitch to nothing |
 | Objectives | 35, in a guided chain |
 | Achievements | 36 |
 | Legacy perks | 15, bought with the points from selling the company |
@@ -76,7 +77,7 @@ campus. Only the numbers and the machinery change.
 A full run to the end of the research tree is a long evening — roughly five
 hours, less if you are ruthless with your floor plan.
 
-![A campus at tier six](docs/screenshot-campus.png)
+![Ashbrook, halfway gone](docs/screenshot-town.png)
 
 ## Playing
 
@@ -94,10 +95,18 @@ contract off the board. From there it is a balancing act:
   bottleneck in plain words — *short of electricity*, *cooling is behind*,
   *compute is unsold* — and clicking it takes you to the tab that fixes it.
   Every other tile explains itself on hover.
+- **Speed control.** 1×, 2×, 5× and 10× in the top bar, or `+` and `−`. Space
+  pauses. A day is a minute at 1×, six seconds at 10×.
+- **Ashbrook.** The village next door. It does nothing to you; it is the bill.
+  The dial follows your footprint — megawatts, litres, acres — and only ever
+  goes one way. Ruining it completely is the other thing to aim at.
+- **Buy floor.** Extra rows and columns on the Site tab, on top of whatever
+  footprint your facility came with, and they carry over when you move.
 - **The floor is isometric.** Machines stand on it as real volumes: racks are
   steel cabinets whose lit server bays show how full and how healthy they are,
   and a rack grows taller as you fill it. Everything else is identified by its
   silhouette, its height and the glyph on its top face — hover to name it.
+- **Turn the room** with `R` when a tall machine is hiding what is behind it.
 - **Racks flag their own problems.** An amber triangle means no PDU reaches
   this rack; a red one means no cooling does, or it is over 40 °C. You do not
   need an overlay on to see them.

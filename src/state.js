@@ -37,6 +37,7 @@ export function newGame(legacy) {
     rpLifetime: 0,
 
     facility: headStart,
+    expand: { w: 0, h: 0 },
     tiles: {},
     gridPower: 6,            // kW of utility connection bought so far
     researchAlloc: 0.15,     // fraction of compute diverted to R&D
@@ -52,6 +53,8 @@ export function newGame(legacy) {
     legacy: { points: lg.points, perks: { ...lg.perks }, resets: lg.resets, lifetime: lg.lifetime },
 
     market: { power: 0.16, compute: 3.36, phase: Math.random() * 1000 },
+    history: { at: 0, income: [], compute: [], temp: [] },
+    town: { damage: 0, seen: [], sinceDay: {} },
     uptimeAvg: 1,
     upsCharge: 1,
 
@@ -60,7 +63,7 @@ export function newGame(legacy) {
       contractsDone: 0, dryDays: 0, brownDays: 0, nineDays: 0,
       peakCompute: 0, peakIncome: 0, spentBuild: 0, spentHw: 0, powerBought: 0,
     },
-    settings: { overlay: 'none', speed: 1, notify: true, autoSign: false },
+    settings: { overlay: 'none', speed: 1, lastSpeed: 1, notify: true, autoSign: false },
     log: [],
   };
   return state;
@@ -70,6 +73,25 @@ export function facilityOf(state) {
   return FACILITIES[Math.min(state.facility, FACILITIES.length - 1)];
 }
 
+/** How much floor you can buy on top of the facility's own footprint. */
+export const EXPAND_CAP = 8;
+
+/**
+ * The room you actually have: the facility's footprint plus whatever extra
+ * rows and columns you have paid for. Everything that asks how big the floor
+ * is asks this, not the facility.
+ */
+export function roomOf(state) {
+  const f = facilityOf(state);
+  const e = state.expand || { w: 0, h: 0 };
+  return {
+    id: f.id, name: f.name, ambient: f.ambient, gridCap: f.gridCap, desc: f.desc,
+    baseW: f.w, baseH: f.h,
+    w: f.w + Math.min(EXPAND_CAP, e.w || 0),
+    h: f.h + Math.min(EXPAND_CAP, e.h || 0),
+  };
+}
+
 export const key = (x, y) => x + ',' + y;
 
 export function tileAt(state, x, y) {
@@ -77,7 +99,7 @@ export function tileAt(state, x, y) {
 }
 
 export function inBounds(state, x, y) {
-  const f = facilityOf(state);
+  const f = roomOf(state);
   return x >= 0 && y >= 0 && x < f.w && y < f.h;
 }
 
@@ -134,6 +156,9 @@ export function migrate(data) {
   merged.objectives = { ...fresh.objectives, ...(data.objectives || {}) };
   merged.tutorial = { ...fresh.tutorial, ...(data.tutorial || {}) };
   merged.legacy = { ...fresh.legacy, ...(data.legacy || {}) };
+  merged.history = { ...fresh.history, ...(data.history || {}) };
+  merged.expand = { ...fresh.expand, ...(data.expand || {}) };
+  merged.town = { ...fresh.town, ...(data.town || {}) };
   merged.version = SAVE_VERSION;
   return merged;
 }

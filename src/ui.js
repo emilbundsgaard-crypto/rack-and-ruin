@@ -12,9 +12,12 @@ import {
   LEGACY_PERKS, perkCost,
 } from './data/progression.js';
 import * as A from './actions.js';
+import { BUILDINGS as ALL_BUILDINGS } from './data/buildings.js';
 import { legacyGain, canPrestige, rackCapacity, signContract } from './sim.js';
 import { tileAt, DAY_SECONDS } from './state.js';
 import { iconFor } from './render.js';
+import { STAGES, stageOf, drawTown } from './town.js';
+import { roomOf, EXPAND_CAP } from './state.js';
 import { STEPS, current as tutStep, skip as tutSkip } from './tutorial.js';
 
 let app = null;
@@ -25,26 +28,24 @@ let dirty = true;
 
 /** Which tab actually fixes each bottleneck the simulation can report. */
 const FIX_TAB = {
-  'no hardware installed': 'racks',
-  'short of electricity': 'utils',
-  'a rack has no PDU in range': 'build',
-  'short of switching': 'build',
-  'short of water': 'build',
-  'cooling is behind': 'build',
-  'compute is unsold': 'contracts',
-  'empty rack slots': 'racks',
+  'no machines installed': 'racks',
+  'not enough electricity': 'ops',
+  'a rack has no power nearby': 'build',
+  'not enough network': 'build',
+  'not enough water': 'build',
+  'not enough cooling': 'build',
+  'compute going to waste': 'deals',
+  'empty space in your racks': 'racks',
 };
 
 export const TABS = [
   { id: 'build', name: 'Build' },
-  { id: 'racks', name: 'Hardware' },
-  { id: 'contracts', name: 'Contracts' },
-  { id: 'research', name: 'R&D' },
-  { id: 'upgrades', name: 'Upgrades' },
-  { id: 'staff', name: 'Staff' },
-  { id: 'utils', name: 'Utilities' },
+  { id: 'racks', name: 'Machines' },
+  { id: 'deals', name: 'Deals' },
+  { id: 'upgrade', name: 'Upgrade' },
+  { id: 'ops', name: 'Running it' },
   { id: 'site', name: 'Site' },
-  { id: 'legacy', name: 'Legacy' },
+  { id: 'town', name: 'Town' },
 ];
 
 export function initUI(a) {
@@ -82,10 +83,14 @@ export function initUI(a) {
     sellBtn.classList.toggle('on', app.view.tool === 'sell');
     markDirty(); renderUI();
   };
+  const turnBtn = el('button', 'tool', '\u21BB Turn');
+  turnBtn.dataset.tip = 'Turn the room|A quarter turn anticlockwise, so you can see behind the '
+    + 'tall machines. R does the same.';
+  turnBtn.onclick = () => { app.view.turn(1); };
   const centreBtn = el('button', 'tool', 'Recentre');
   centreBtn.dataset.tip = 'Recentre|Fit the whole floor back on screen.';
   centreBtn.onclick = () => app.view.centre(app.state);
-  fill(tools, [...overlayBtns, sellBtn, centreBtn]);
+  fill(tools, [...overlayBtns, sellBtn, turnBtn, centreBtn]);
   app.sellBtn = sellBtn;
 }
 
@@ -143,22 +148,33 @@ export function renderTop(state, d) {
     meters.append(meter('m_power', 'PWR'), meter('m_cool', 'COOL'),
       meter('m_water', 'H2O'), meter('m_net', 'NET'));
     const minis = el('div', 'minis');
-    minis.append(mini('x_temp', 'Temp'), mini('x_up', 'Uptime'), mini('x_rp', 'R&D'),
-      mini('x_rep', 'Rep'), mini('x_con', 'Deals'), mini('x_day', 'Day'));
+    minis.append(mini('x_temp', 'Temp'), mini('x_up', 'Uptime'), mini('x_rp', 'Points'),
+      mini('x_rep', 'Name'), mini('x_con', 'Deals'), mini('x_town', 'Town'));
 
-    const speed = el('button', 'topbtn', '');
-    speed.onclick = () => {
-      app.state.settings.speed = app.state.settings.speed === 0 ? 1 : 0;
-      renderTop(app.state, app.d);
-    };
+    // Speed is a segmented control: pause, then 1x through 10x.
+    const speed = el('div', 'speeds');
+    const speedBtns = [];
+    for (const [v, label, tip] of SPEEDS) {
+      const btn = el('button', 'sp', label);
+      btn.dataset.tip = (v === 0 ? 'Pause' : label + ' speed') + '|' + tip;
+      btn.onclick = () => {
+        app.state.settings.speed = v;
+        if (v > 0) app.state.settings.lastSpeed = v;
+        renderTop(app.state, app.d);
+      };
+      speedBtns.push({ v, btn });
+      speed.append(btn);
+    }
+    mk._speeds = speedBtns;
     const guide = el('button', 'topbtn', 'Guide');
     guide.dataset.tip = 'Guide|How the site works, and what everything on screen means.';
     guide.onclick = () => app.openGuide();
     const menu = el('button', 'topbtn', 'Menu');
     menu.dataset.tip = 'Menu|Save, export, import, restart the guide, or wipe and start over.';
     menu.onclick = () => app.openMenu();
-    mk._speed = { n: speed };
 
+    const right = el('div', 'topright');
+    right.append(speed, guide, menu);
     fill(bar,
       vital('v_cash', 'Cash'),
       vital('v_compute', 'Compute'),
@@ -167,7 +183,7 @@ export function renderTop(state, d) {
       el('div', 'divider'),
       minis,
       el('div', 'spacer'),
-      speed, guide, menu);
+      right);
     topBuilt = mk;
 
     mk.v_cash.n.dataset.tip = 'Cash|What you have, and what the site earns or loses every '
@@ -182,11 +198,15 @@ export function renderTop(state, d) {
       + 'over 40 °C it wears out fast.';
     mk.x_up.n.dataset.tip = 'Uptime|What your SLAs are measured against. Broken hardware and '
       + 'brownouts both drag it down.';
-    mk.x_rp.n.dataset.tip = 'Research|Points earned by the share of compute you allocate to R&D.';
-    mk.x_rep.n.dataset.tip = 'Reputation|Earned by finishing contracts cleanly. It unlocks bigger '
-      + 'buildings and better customers.';
+    mk.x_rp.n.dataset.tip = 'Upgrade points|Earned by the share of your compute set aside for '
+      + 'research. Spend them on the Upgrade tab.';
+    mk.x_rep.n.dataset.tip = 'Your name|Earned by finishing deals without letting customers down. '
+      + 'It unlocks bigger sites and better customers.';
     mk.x_con.n.dataset.tip = 'Contracts|Signed against slots available.';
-    mk.x_day.n.dataset.tip = 'Day|One game day is one real minute. Electricity is cheaper at night.';
+    mk.x_town.n.dataset.tip = 'Ashbrook|How much of the town next door your site has ruined. '
+      + 'Open the Town tab to watch it happen.';
+    mk.x_town.n.style.cursor = 'pointer';
+    mk.x_town.n.onclick = () => goTab('town');
   }
 
   const t = topBuilt;
@@ -231,14 +251,26 @@ export function renderTop(state, d) {
   small(t.x_rep, fmt(state.reputation));
   small(t.x_con, state.contracts.active.length + '/' + d.contractSlots,
     state.contracts.active.length < d.contractSlots ? 'acc' : '');
-  small(t.x_day, Math.floor(state.day) + ' · ' + clockOf(state));
+  small(t.x_town, ((state.town?.damage || 0) * 100).toFixed(0) + '%',
+    (state.town?.damage || 0) > 0.5 ? 'bad' : (state.town?.damage || 0) > 0.2 ? 'warn' : '');
 
-  const speed = t._speed.n;
-  const label = state.settings.speed === 0 ? '\u25B6 Paused' : '\u275A\u275A Pause';
-  if (speed.textContent !== label) speed.textContent = label;
-  speed.className = 'topbtn' + (state.settings.speed === 0 ? ' on' : '');
-  speed.dataset.tip = 'Pause|Space also does it. The simulation stops; nothing decays.';
+  const pausedBox = document.getElementById('paused');
+  if (pausedBox) pausedBox.hidden = state.settings.speed !== 0;
+
+  for (const { v, btn } of t._speeds) {
+    const on = state.settings.speed === v;
+    const cls = 'sp' + (on ? ' on' : '') + (v === 0 && on ? ' paused' : '');
+    if (btn.className !== cls) btn.className = cls;
+  }
 }
+
+export const SPEEDS = [
+  [0, '\u275A\u275A', 'Stop the clock. Nothing decays, nothing earns. Space toggles it.'],
+  [1, '1\u00D7', 'Real time: one game day per minute.'],
+  [2, '2\u00D7', 'Twice as fast. Everything scales — earnings, wear, events.'],
+  [5, '5\u00D7', 'Five times as fast. Good for waiting out a contract.'],
+  [10, '10\u00D7', 'Ten times as fast. A game day every six seconds.'],
+];
 
 function clockOf(state) {
   const f = state.day % 1;
@@ -254,19 +286,17 @@ export function renderUI() {
   const scroll = body.scrollTop;
   if (tab === 'build') fill(body, panelBuild(state, d));
   else if (tab === 'racks') fill(body, panelRacks(state, d));
-  else if (tab === 'contracts') fill(body, panelContracts(state, d));
-  else if (tab === 'research') fill(body, panelResearch(state, d));
-  else if (tab === 'upgrades') fill(body, panelUpgrades(state, d));
-  else if (tab === 'staff') fill(body, panelStaff(state, d));
-  else if (tab === 'utils') fill(body, panelUtilities(state, d));
-  else if (tab === 'site') fill(body, panelSite(state, d));
-  else if (tab === 'legacy') fill(body, panelLegacy(state, d));
+  else if (tab === 'deals') fill(body, panelContracts(state, d));
+  else if (tab === 'upgrade') fill(body, [...panelResearch(state, d), ...panelUpgrades(state, d)]);
+  else if (tab === 'ops') fill(body, [...panelStaff(state, d), ...panelUtilities(state, d)]);
+  else if (tab === 'site') fill(body, [...panelSite(state, d), ...panelLegacy(state, d)]);
+  else if (tab === 'town') fill(body, panelTown(state, d));
   body.scrollTop = scroll;
   dirty = false;
 }
 
 /** Called every frame — cheap refresh of live numbers only. */
-const LIVE_TABS = ['contracts', 'utils', 'research'];
+const LIVE_TABS = ['deals', 'ops', 'upgrade', 'town'];
 let liveClock = 0;
 
 export function refreshLive(state, d, dt) {
@@ -324,6 +354,50 @@ function listRow(o) {
   return n;
 }
 
+/**
+ * A small SVG plot of one series. Money and compute span too many orders of
+ * magnitude for a linear axis, so those are drawn on a log scale.
+ */
+function sparkline(values, opts) {
+  const o = opts || {};
+  const w = 300, h = 46, pad = 3;
+  const wrap = el('div', 'spark');
+  if (!values || values.length < 2) {
+    wrap.append(el('div', 'sparkempty', 'Not enough history yet.'));
+    return wrap;
+  }
+  const map = o.log ? (v) => Math.log10(Math.max(0, v) + 1) : (v) => v;
+  const pts = values.map(map);
+  const lo = Math.min(...pts), hi = Math.max(...pts);
+  const span = hi - lo || 1;
+  const step = (w - pad * 2) / (pts.length - 1);
+  let d = '';
+  pts.forEach((v, i) => {
+    const x = pad + i * step;
+    const y = h - pad - ((v - lo) / span) * (h - pad * 2);
+    d += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1);
+  });
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.setAttribute('preserveAspectRatio', 'none');
+  const area = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  area.setAttribute('d', d + `L${(pad + (pts.length - 1) * step).toFixed(1)} ${h} L${pad} ${h} Z`);
+  area.setAttribute('fill', (o.colour || '#4fe0ac') + '22');
+  const line = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  line.setAttribute('d', d);
+  line.setAttribute('fill', 'none');
+  line.setAttribute('stroke', o.colour || '#4fe0ac');
+  line.setAttribute('stroke-width', '1.6');
+  line.setAttribute('vector-effect', 'non-scaling-stroke');
+  svg.append(area, line);
+  wrap.append(svg);
+  const ends = el('div', 'sparkends');
+  ends.append(el('span', null, (o.fmt || fmt)(values[0])),
+    el('span', null, (o.fmt || fmt)(values[values.length - 1])));
+  wrap.append(ends);
+  return wrap;
+}
+
 function sec(title, ...kids) {
   const s = el('div', 'sec');
   if (title) s.append(el('h3', null, title));
@@ -344,21 +418,26 @@ function panelBuild(state, d) {
     const unlocked = !b.req || state.research.done.includes(b.req);
     const cost = A.buildCost(b, d);
     const afford = state.money >= cost;
+    // Headline facts on the row; everything else waits in the tooltip.
     const meta = [];
-    if (b.slots) meta.push(['slots', rackCapacity(b, d.mods)]);
-    if (b.radius) meta.push(['radius', b.radius + ' tiles']);
-    if (b.powerCap) meta.push(['distributes', fmt(b.powerCap) + ' kW']);
-    if (b.coolCap) meta.push(['removes', fmt(b.coolCap * d.mods.coolMult) + ' kW']);
-    if (b.supplyKW) meta.push(['generates', fmt(b.supplyKW) + ' kW']);
-    if (b.supplyWater) meta.push(['supplies', fmt(b.supplyWater) + ' L/s']);
-    if (b.water) meta.push(['water', (b.water * 1000).toFixed(1) + ' L/s per MW']);
-    if (b.net) meta.push(['switching', fmt(b.net) + ' Gbps']);
-    if (b.draw) meta.push(['draws', fmt(b.draw) + ' kW']);
-    if (b.upkeep) meta.push(['upkeep', money(b.upkeep) + '/day']);
-    if (b.fuel) meta.push(['fuel', '$' + b.fuel + '/kWh']);
+    if (b.slots) meta.push(['holds', rackCapacity(b, d.mods) + ' machines']);
+    if (b.powerCap) meta.push(['powers', fmt(b.powerCap) + ' kW']);
+    if (b.coolCap) meta.push(['cools', fmt(b.coolCap * d.mods.coolMult) + ' kW']);
+    if (b.supplyKW) meta.push(['makes', fmt(b.supplyKW) + ' kW']);
+    if (b.supplyWater) meta.push(['gives', fmt(b.supplyWater) + ' L/s water']);
+    if (b.net) meta.push(['carries', fmt(b.net) + ' Gbps']);
     if (b.staff) meta.push(['desks', '+' + b.staff]);
-    if (b.ride) meta.push(['ride-through', b.ride + ' s']);
-    if (b.coolSelf) meta.push(['self-cools', Math.round(b.coolSelf * 100) + '%']);
+    if (b.radius) meta.push(['reaches', b.radius + ' tiles']);
+    meta.length = Math.min(meta.length, 3);
+
+    const detail = [];
+    if (b.radius) detail.push('Serves anything within ' + b.radius + ' tiles.');
+    if (b.draw) detail.push('Uses ' + fmt(b.draw) + ' kW itself.');
+    if (b.water) detail.push('Drinks ' + (b.water * 1000).toFixed(1) + ' L/s for every MW it removes.');
+    if (b.upkeep) detail.push('Costs ' + money(b.upkeep) + ' a day to run.');
+    if (b.fuel) detail.push('Burns $' + b.fuel + ' of fuel per kWh.');
+    if (b.ride) detail.push('Rides through ' + b.ride + ' seconds of grid loss.');
+    if (b.coolSelf) detail.push('Removes ' + Math.round(b.coolSelf * 100) + '% of its own heat.');
 
     list.push(listRow({
       icon: iconFor(b),
@@ -371,6 +450,14 @@ function panelBuild(state, d) {
       meta: unlocked ? meta : null,
       note: unlocked ? null : 'Locked — needs ' + (RESEARCH_BY_ID[b.req]?.name || b.req) + '.',
       cls: unlocked ? (afford ? '' : 'cant') : 'locked',
+      buttons: unlocked && b.cat === 'compute' && (d.counts.rackAll || 0) > 1 ? [(() => {
+        const up = el('button', 'btn small', 'Upgrade every rack');
+        up.dataset.tip = 'Upgrade every rack|Swaps every smaller cabinet on the floor for this '
+          + 'one, keeping the hardware inside. You pay the difference.';
+        up.onclick = (e) => { e.stopPropagation(); app.act(() => A.upgradeRacks(state, d, b.id, app.hooks)); };
+        return up;
+      })()] : null,
+      tip: b.name + '|' + b.desc + (detail.length ? '\n' + detail.join(' ') : ''),
       data: { build: b.id },
       onClick: unlocked ? () => {
         app.view.tool = app.view.tool === b.id ? null : b.id;
@@ -381,8 +468,8 @@ function panelBuild(state, d) {
   }
 
   const help = el('div', 'hint',
-    'Pick a machine, then click the floor to place it. Drag with a tool held to place a row. '
-    + 'Right-drag or drag empty space to pan, wheel to zoom.');
+    'Click a machine below, then click the floor to put it down. Hold and drag to lay a whole row. '
+    + 'Drag empty floor to move around, scroll to zoom, and press R to turn the room.');
   return [sec(null, catRow), sec(null, help), sec(null, list)];
 }
 
@@ -469,11 +556,13 @@ function panelRacks(state, d) {
       priceOk: state.money >= cost,
       desc: hw.desc,
       meta: [
-        ['compute', fmt(hw.compute * d.mods.computeMult)],
-        ['power', fmt(perUnit) + ' kW'],
-        ['heat', fmt(hw.heat * d.mods.heatMult) + ' kW'],
-        ['per kW', fmt(hw.compute * d.mods.computeMult / perUnit)],
+        ['makes', fmt(hw.compute * d.mods.computeMult) + ' compute'],
+        ['uses', fmt(perUnit) + ' kW'],
       ],
+      tip: hw.name + '|' + hw.desc + '\nMakes ' + fmt(hw.compute * d.mods.computeMult)
+        + ' compute, uses ' + fmt(perUnit) + ' kW and puts out '
+        + fmt(hw.heat * d.mods.heatMult) + ' kW of heat. That is '
+        + fmt(hw.compute * d.mods.computeMult / perUnit) + ' compute per kW.',
       cls: state.money >= cost ? '' : 'cant',
       buttons,
     }));
@@ -486,6 +575,44 @@ function panelRacks(state, d) {
 
 function panelContracts(state, d) {
   const out = [];
+
+  // What you actually sell. Contracts buy capacity, not machines.
+  const booked = d.contractDemand;
+  const unsold = Math.max(0, d.computeSellable - booked);
+  const total = Math.max(1e-9, d.computeTotal);
+  const flow = el('div', 'card');
+  const stack = el('div', 'stack');
+  const seg = (frac, cls, label) => {
+    const n = el('div', 'seg ' + cls);
+    n.style.width = (frac * 100).toFixed(2) + '%';
+    n.dataset.tip = label;
+    return n;
+  };
+  stack.append(
+    seg(booked / total, 'sold', 'Under contract|Capacity a customer is paying for right now.'),
+    seg(unsold / total, 'free', 'Unsold|Capacity you produce and nobody is buying. Sign more contracts.'),
+    seg(d.computeResearch / total, 'rnd', 'On R&D|Diverted to research by the slider on the R&D tab.'),
+  );
+  flow.append(el('div', 'sparklabel', 'Compute output'));
+  flow.append(el('div', 'bignum', fmt(d.computeTotal)));
+  flow.append(stack);
+  const legend = el('div', 'stacklegend');
+  const item = (cls, k, v) => {
+    const n = el('div', 'sl');
+    n.append(el('i', cls), el('span', 'k', k), el('span', 'v', v));
+    return n;
+  };
+  legend.append(
+    item('sold', 'Under contract', fmt(booked)),
+    item('free', 'Unsold', fmt(unsold)),
+    item('rnd', 'On R&D', fmt(d.computeResearch)),
+  );
+  flow.append(legend);
+  flow.append(el('div', 'desc',
+    'Contracts buy compute, not racks. The machines stay on your floor; what you sell is the '
+    + 'capacity they produce. Deliver less than you promised and the SLA penalty starts.'));
+  out.push(sec(null, flow));
+
   const head = el('div', 'card');
   const kv = el('div', 'kv');
   const row = (k, v) => kv.append(el('div', 'k', k), el('div', 'v', v));
@@ -509,14 +636,14 @@ function panelContracts(state, d) {
     const card = el('div', 'card' + (breached ? '' : ' owned'));
     const title = el('div', 'title');
     title.append(el('b', null, c.name));
-    title.append(el('span', breached ? 'pill bad' : 'pill acc', breached ? 'SLA breach' : 'on track'));
+    title.append(el('span', breached ? 'pill bad' : 'pill acc', breached ? 'missing the promise' : 'on track'));
     title.append(el('span', 'price ok', rate(c.livePay || c.pay)));
     card.append(title, el('div', 'desc', c.client + ' — ' + (t?.blurb || '')));
     const meta = el('div', 'meta');
     const bits = [
       ['needs', fmt(c.demand) + ' compute'],
-      ['SLA', (c.uptimeReq * 100).toFixed(1) + '%'],
-      ['actual', (c.effUptime * 100).toFixed(1) + '%'],
+      ['promised', (c.uptimeReq * 100).toFixed(1) + '%'],
+      ['delivering', (c.effUptime * 100).toFixed(1) + '%'],
       ['ends', 'day ' + Math.ceil(c.endDay)],
       ['left', Math.max(0, c.endDay - state.day).toFixed(1) + ' days'],
     ];
@@ -548,23 +675,23 @@ function panelContracts(state, d) {
     const meta = el('div', 'meta');
     const bits = [
       ['needs', fmt(o.demand) + ' compute'],
-      ['uses', (isFinite(useFrac) ? Math.round(useFrac * 100) : 999) + '% of headroom'],
+      ['uses', (isFinite(useFrac) ? Math.round(useFrac * 100) : 999) + '% of your spare'],
       ['bandwidth', fmt(o.net) + ' Gbps'],
-      ['SLA', (o.uptimeReq * 100).toFixed(1) + '%'],
-      ['you hold', (d.uptime * 100).toFixed(1) + '%'],
+      ['must stay up', (o.uptimeReq * 100).toFixed(1) + '%'],
+      ['you manage', (d.uptime * 100).toFixed(1) + '%'],
       ['term', o.days + ' days'],
-      ['penalty', '×' + o.penalty + ' on breach'],
+      ['fine if you miss it', '×' + o.penalty + ' a day'],
       ['expires', Math.max(0, (o.expires ?? state.day) - state.day).toFixed(1) + ' days'],
       ['total', money(o.pay * d.mods.priceMult * o.days * DAY_SECONDS)],
     ];
     for (const [k, v] of bits) { const s = el('span'); s.append(k + ' ', el('b', null, v)); meta.append(s); }
     card.append(meta);
     if (d.uptime < o.uptimeReq) {
-      card.append(el('div', 'desc', 'Your uptime is below this SLA right now. '
-        + 'Sign it and the penalty starts as soon as the ink dries.'));
+      card.append(el('div', 'desc', 'You cannot stay up as much as this deal asks. '
+        + 'Sign it and you start paying a fine straight away.'));
     } else if (useFrac > 0.85) {
-      card.append(el('div', 'desc', 'This takes almost everything you have spare. '
-        + 'One bad event and you are under-delivering.'));
+      card.append(el('div', 'desc', 'This uses almost all your spare compute. '
+        + 'One bad day and you will not be able to deliver it.'));
     }
     const btn = el('button', 'btn primary small', slot ? 'Sign' : 'No free slot');
     if (slot && fits) btn.dataset.sign = String(o.cid);
@@ -843,11 +970,26 @@ function panelSite(state, d) {
   const c = el('div', 'card');
   const kv = el('div', 'kv');
   kv.append(el('div', 'k', 'Facility'), el('div', 'v', f.name));
-  kv.append(el('div', 'k', 'Floor'), el('div', 'v', f.w + ' × ' + f.h + ' tiles'));
-  kv.append(el('div', 'k', 'Used'), el('div', 'v', Object.keys(state.tiles).length + ' / ' + (f.w * f.h)));
+  kv.append(el('div', 'k', 'Floor'), el('div', 'v', d.fac.w + ' × ' + d.fac.h + ' tiles'));
+  kv.append(el('div', 'k', 'Used'), el('div', 'v', Object.keys(state.tiles).length + ' / ' + (d.fac.w * d.fac.h)));
   kv.append(el('div', 'k', 'Ambient'), el('div', 'v', f.ambient + ' °C'));
   kv.append(el('div', 'k', 'Utility cap'), el('div', 'v', fmt(f.gridCap) + ' kW'));
   c.append(kv, el('div', 'desc', f.desc));
+  const room = roomOf(state);
+  const exCost = A.expandCost(state, d);
+  const exRow = el('div', 'btnrow');
+  for (const [axis, label] of [['w', '+1 column'], ['h', '+1 row']]) {
+    const btn = el('button', 'btn small', label + ' — ' + money(exCost));
+    btn.disabled = !A.canExpand(state, axis) || state.money < exCost;
+    btn.dataset.tip = 'Buy floor|Knocks through into the next ' + (axis === 'w' ? 'bay' : 'aisle')
+      + '. You keep it when you move to a bigger site. '
+      + (state.expand[axis] || 0) + ' of ' + EXPAND_CAP + ' bought on this axis.';
+    btn.onclick = () => app.act(() => A.expand(state, d, axis, app.hooks));
+    exRow.append(btn);
+  }
+  c.append(el('div', 'desc', 'Floor bought: +' + (state.expand.w || 0) + ' columns, +'
+    + (state.expand.h || 0) + ' rows, out of ' + EXPAND_CAP + ' each.'), exRow);
+
   if (next) {
     const need = [];
     if (state.reputation < (next.rep || 0)) need.push(fmt(next.rep) + ' reputation');
@@ -892,6 +1034,16 @@ function panelSite(state, d) {
     return card;
   });
   out.push(sec('Achievements (' + state.achievements.length + '/' + ACHIEVEMENTS.length + ')', ach));
+
+  const runHist = el('div', 'card');
+  const hs = state.history || { income: [], compute: [], temp: [] };
+  runHist.append(el('div', 'sparklabel', 'Net income'),
+    sparkline(hs.income, { log: true, colour: '#6fe6ab', fmt: (v) => money(v) + '/s' }));
+  runHist.append(el('div', 'sparklabel', 'Compute'),
+    sparkline(hs.compute, { log: true, colour: '#55a0f0' }));
+  runHist.append(el('div', 'sparklabel', 'Hottest rack'),
+    sparkline(hs.temp, { colour: '#f0b950', fmt: (v) => v.toFixed(0) + ' °C' }));
+  out.push(sec('The run so far', runHist));
 
   const mods = el('div', 'card');
   const mt = el('table', 'grid');
@@ -964,6 +1116,71 @@ function panelSite(state, d) {
   return out;
 }
 
+// ---------------------------------------------------------------------- town
+
+let townCanvas = null;
+
+function panelTown(state, d) {
+  const out = [];
+  const town = state.town || { damage: 0, seen: [], sinceDay: {} };
+  const dmg = town.damage;
+  const stage = STAGES[stageOf(dmg)];
+
+  if (!townCanvas) townCanvas = document.createElement('canvas');
+  const c = townCanvas;
+  const cssW = 340, cssH = 190;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  c.width = cssW * dpr; c.height = cssH * dpr;
+  c.style.width = '100%';
+  c.style.height = 'auto';
+  c.style.borderRadius = '10px';
+  c.style.display = 'block';
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawTown(ctx, cssW, cssH, dmg, performance.now() / 1000);
+
+  const head = el('div', 'card');
+  head.append(c);
+  head.append(el('div', 'townstage', stage.title));
+  head.append(el('div', 'desc', stage.line));
+  const bar = el('div', 'bar bad');
+  bar.append(el('i'));
+  bar.firstChild.style.width = (dmg * 100).toFixed(1) + '%';
+  head.append(bar);
+  const kv = el('div', 'kv');
+  kv.append(el('div', 'k', 'Ruined'), el('div', 'v', (dmg * 100).toFixed(1) + '%'));
+  kv.append(el('div', 'k', 'Draw'), el('div', 'v', fmt(d.actualDraw) + ' kW'));
+  kv.append(el('div', 'k', 'Water taken'), el('div', 'v', fmt(d.waterDemand) + ' L/s'));
+  kv.append(el('div', 'k', 'Land taken'), el('div', 'v', Object.keys(state.tiles).length + ' tiles'));
+  head.append(kv);
+  out.push(sec('Ashbrook', head));
+
+  out.push(sec(null, el('div', 'hint',
+    'Ashbrook was here first. Nothing it does affects your site — it is simply the bill. '
+    + 'The dial follows your footprint: megawatts drawn, litres taken, acres covered. '
+    + 'It only ever goes one way.')));
+
+  const list = STAGES.map((st, i) => {
+    const reached = dmg >= st.at;
+    const row = el('div', 'row' + (reached ? '' : ' locked'));
+    const ico = el('div', 'ico');
+    ico.textContent = Math.round(st.at * 100) + '%';
+    ico.style.cssText += ';display:flex;align-items:center;justify-content:center;'
+      + 'font:600 10px var(--mono);color:' + (reached ? 'var(--bad)' : 'var(--dimmer)');
+    const body = el('div', 'body');
+    const h = el('div', 'head');
+    h.append(el('b', null, st.title));
+    if (reached && town.sinceDay && town.sinceDay[i] !== undefined) {
+      h.append(el('span', 'price', 'day ' + town.sinceDay[i]));
+    }
+    body.append(h, el('div', 'desc', st.line));
+    row.append(ico, body);
+    return row;
+  });
+  out.push(sec('How it went', list));
+  return out;
+}
+
 // -------------------------------------------------------------------- legacy
 
 function panelLegacy(state, d) {
@@ -1020,8 +1237,11 @@ export function renderInspector(state, d) {
     }
     for (const p of d.problems.slice(0, 6)) {
       const row = el('button', 'todo ' + p.tone);
-      row.append(el('span', 'dot'), el('span', 'txt', p.text), el('span', 'go', 'fix →'));
+      row.append(el('span', 'dot'), el('span', 'txt', p.text));
+      row.append(el('span', 'go', 'fix →'));
+      if (p.focus) row.append(el('span', 'go', 'show me'));
       row.onclick = () => {
+        if (p.focus) app.focusTile(p.focus.x, p.focus.y);
         if (p.overlay) app.setOverlay(p.overlay);
         if (p.cat) setBuildCat(p.cat);
         goTab(p.tab);

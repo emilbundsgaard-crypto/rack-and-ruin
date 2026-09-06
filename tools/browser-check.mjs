@@ -179,6 +179,93 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------------------ the canvas keeps up with its own layout
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(600);
+  const measure = () => page.evaluate(() => {
+    const v = window.__rr.view;
+    const c = document.getElementById('view');
+    const r = c.getBoundingClientRect();
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    return {
+      drift: Math.abs(v.w - r.width) + Math.abs(v.h - r.height),
+      buffer: Math.abs(c.width - Math.round(r.width * dpr)) + Math.abs(c.height - Math.round(r.height * dpr)),
+    };
+  });
+  const before = await measure();
+  // Fill the floor enough to make the to-do list, and so the layout, change.
+  await page.evaluate(async () => {
+    const app = window.__rr;
+    const A = await import('/src/actions.js');
+    const sim = await import('/src/sim.js');
+    const s = app.state;
+    s.money = 1e7; s.rp = 400;
+    A.buyResearch(s, 'rnd_rails', { log() {} });
+    app.d = sim.derive(s);
+    for (let x = 0; x < 5; x++) { A.place(s, app.d, x, 1, 'rack', null); app.d = sim.derive(s); }
+    A.fillAll(s, app.d, 'desktop', null);
+    app.d = sim.derive(s);
+  });
+  await page.waitForTimeout(800);
+  const after = await measure();
+  if (before.drift < 1 && before.buffer < 2 && after.drift < 1 && after.buffer < 2) {
+    pass('canvas buffer tracks its CSS box');
+  } else {
+    fail('canvas buffer tracks its CSS box', JSON.stringify({ before, after }));
+  }
+
+  // And the pointer lands where the cursor is, in every rotation.
+  await page.evaluate(() => { window.__rr.view.tool = 'rack'; });
+  const off = [];
+  for (let r = 0; r < 4; r++) {
+    for (const [gx, gy] of [[1, 1], [3, 2], [0, 3]]) {
+      const p = await tileAt(page, gx, gy);
+      await page.mouse.move(p.x, p.y);
+      await page.waitForTimeout(40);
+      const h = await page.evaluate(() => window.__rr.view.hover);
+      if (!h || h.x !== gx || h.y !== gy) off.push(`rot${r} ${gx},${gy}->${h && h.x},${h && h.y}`);
+    }
+    await page.evaluate(() => window.__rr.view.turn(1));
+    await page.waitForTimeout(250);
+  }
+  if (!off.length) pass('cursor picks the tile under it, in all four rotations');
+  else fail('cursor picks the tile under it, in all four rotations', off.join(' '));
+  await page.close();
+}
+
+// ------------------------------------------------------------ speed control
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(400);
+  const dayAfter = async (label, ms) => {
+    await page.click(`.sp:has-text("${label}")`);
+    const a = await page.evaluate(() => window.__rr.state.day);
+    await page.waitForTimeout(ms);
+    const b = await page.evaluate(() => window.__rr.state.day);
+    return b - a;
+  };
+  const one = await dayAfter('1×', 1500);
+  const ten = await dayAfter('10×', 1500);
+  const ratio = one > 0 ? ten / one : 0;
+  if (ratio > 6 && ratio < 14) pass('speed control multiplies the clock', ratio.toFixed(1) + '× measured');
+  else fail('speed control multiplies the clock', `1x=${one.toFixed(3)} 10x=${ten.toFixed(3)}`);
+  await page.click('.sp:has-text("❚❚")').catch(() => {});
+  await page.waitForTimeout(300);
+  const stopped = await page.evaluate(async () => {
+    const a = window.__rr.state.day;
+    await new Promise((r) => setTimeout(r, 500));
+    return Math.abs(window.__rr.state.day - a) < 1e-6;
+  });
+  if (stopped) pass('pause stops the clock');
+  else fail('pause stops the clock');
+  await page.close();
+}
+
 // ------------------------------------------------------------- narrow screen
 for (const [w, h] of [[1024, 720], [520, 900]]) {
   const page = await newPage(w, h);

@@ -197,6 +197,7 @@ while (t < total) {
       '| obj', String(s.objectives.done.length).padStart(2),
       '| temp', d.maxTemp.toFixed(0).padStart(3),
       '| up', (d.uptime * 100).toFixed(1),
+      '| town', ((s.town?.damage || 0) * 100).toFixed(0) + '%',
       '| LP', legacyGain(s));
   }
 }
@@ -224,4 +225,5 @@ console.log('wall time', ((Date.now() - t0) / 1000).toFixed(1) + 's');
 console.log('final: tier', s.facility, 'research', s.research.done.length + '/' + RESEARCH.length,
   'upgrades', s.upgrades.length + '/' + UPGRADES.length,
   'objectives', s.objectives.done.length, 'achievements', s.achievements.length,
+  'town', ((s.town?.damage || 0) * 100).toFixed(0) + '%',
   'lifetime', money(s.lifetimeEarnings), 'legacy', legacyGain(s));

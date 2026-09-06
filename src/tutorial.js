@@ -10,17 +10,17 @@ export const STEPS = [
   {
     id: 't1',
     title: 'Give it power',
-    body: 'Nothing runs without a distribution point. Pick the Power strip, then click a tile on the floor to place it.',
-    note: 'It powers anything within two tiles.',
+    body: 'Machines need somewhere to plug in. Click the Power strip below, then click a tile on the floor.',
+    note: 'It powers anything within two tiles of itself.',
     tab: 'build', cat: 'power',
     aim: (state, view) => (view.tool === 'pdu' ? ['#canvaswrap'] : ['[data-build="pdu"]']),
     done: (d) => (d.counts.anyPdu || 0) > 0,
   },
   {
     id: 't2',
-    title: 'Somewhere to put servers',
-    body: 'Place an Open frame rack next to the power strip — inside its two-tile reach, or it gets nothing.',
-    note: 'A rack is just slots. It is the hardware inside that earns.',
+    title: 'Somewhere to put them',
+    body: 'Put an Open frame rack next to the power strip. It has to be within two tiles or it gets no power.',
+    note: 'A rack is just shelves. The machines inside are what earn.',
     tab: 'build', cat: 'compute',
     aim: (state, view) => (view.tool === 'rack' ? ['#canvaswrap'] : ['[data-build="rack"]']),
     done: (d) => (d.counts.rackAll || 0) > 0,
@@ -28,17 +28,17 @@ export const STEPS = [
   {
     id: 't3',
     title: 'Move the heat',
-    body: 'Servers turn every watt into heat. Put a Box fan within two tiles of the rack before you fill it, not after.',
-    note: 'A cooler only serves racks inside its radius.',
+    body: 'Machines turn every watt into heat. Put a Box fan within two tiles of the rack — before you fill it, not after.',
+    note: 'Cooling only helps racks close enough to reach.',
     tab: 'build', cat: 'cooling',
     aim: (state, view) => (view.tool === 'fan' ? ['#canvaswrap'] : ['[data-build="fan"]']),
     done: (d) => (d.counts.anyCooling || 0) > 0,
   },
   {
     id: 't4',
-    title: 'Fill it with iron',
-    body: 'On the Hardware tab, press "Fill all racks" under Salvaged desktop. It buys as many as your cash and your power supply allow.',
-    note: 'It never overfills you into a brownout. Watch Peak temp as they come online.',
+    title: 'Put machines in it',
+    body: 'On the Machines tab, press "Fill all racks" under Salvaged desktop. It buys as many as your money and your power allow.',
+    note: 'It will not buy more than you can power. Watch the Temp number as they switch on.',
     tab: 'racks',
     aim: () => ['[data-fill="desktop"]'],
     done: (d) => d.unitsTotal >= 1,
@@ -46,9 +46,9 @@ export const STEPS = [
   {
     id: 't5',
     title: 'Now get paid',
-    body: 'Compute earns nothing until it is sold. Open Contracts and sign an offer that fits inside your capacity.',
-    note: 'Sign more than you can deliver and the SLA penalty starts immediately.',
-    tab: 'contracts',
+    body: 'Your machines make compute, and compute earns nothing until somebody buys it. Open Deals and sign one that fits.',
+    note: 'Promise more than you can make and you start paying a fine.',
+    tab: 'deals',
     aim: () => ['[data-sign]'],
     done: (d) => d.state.contracts.active.length > 0,
   },
@@ -56,9 +56,10 @@ export const STEPS = [
 
 export const FINISH = {
   title: 'That is the whole game',
-  body: 'Power, cooling, water, switching, maintenance — and contracts to pay for all of it. '
-    + 'Everything from here is those same five problems at a larger scale, with better machines. '
-    + 'Offers keep arriving on the board, so there is always something to sign.',
+  body: 'Power, cooling, water, network, repairs — and deals to pay for all of it. '
+    + 'Everything from here is the same handful of problems, just bigger. '
+    + 'When something is wrong, the list under the floor will tell you, and clicking it takes you '
+    + 'straight to the fix.',
 };
 
 export function current(state) {

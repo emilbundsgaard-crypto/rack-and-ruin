@@ -11,7 +11,8 @@ import {
   FACILITIES, STAFF_BY_ID, UPGRADES_BY_ID, LEGACY_BY_ID,
   OBJECTIVES, ACHIEVEMENTS,
 } from './data/progression.js';
-import { facilityOf, allTiles, DAY_SECONDS, ENERGY_RATE, WATER_RATE } from './state.js';
+import { facilityOf, roomOf, allTiles, DAY_SECONDS, ENERGY_RATE, WATER_RATE } from './state.js';
+import { tickTown } from './town.js';
 
 const MULT_KEYS = [
   'computeMult', 'powerMult', 'heatMult', 'coolMult', 'coolDrawMult', 'waterMult',
@@ -113,7 +114,7 @@ export function outsideTemp(state) {
 
 export function derive(state) {
   const mods = modifiers(state);
-  const fac = facilityOf(state);
+  const fac = roomOf(state);
   const tiles = allTiles(state);
 
   const racks = [];
@@ -228,7 +229,9 @@ export function derive(state) {
     * mods.waterMult * (coolCapRaw > 0 ? heatToRemove / coolCapRaw : 0);
   const waterAvail = waterSupply * mods.waterSupplyMult;
   const waterFactor = waterDemand > 0 ? clamp(waterAvail / waterDemand, 0, 1) : 1;
-  const waterEff = 0.35 + 0.65 * waterFactor;
+  // Without water a wet cooling plant is very nearly useless. It used to keep
+  // 35% of its rating, which made water optional; it does not now.
+  const waterEff = 0.08 + 0.92 * waterFactor;
 
   // --- pass C: cooling distribution, temperature, throttling.
   for (const r of racks) {
@@ -323,14 +326,14 @@ export function derive(state) {
   let bottleneck = null;
   const worstCover = racks.length ? Math.min(...racks.map((r) => (r.used > 0 ? r.cover : 1))) : 1;
   const worstPdu = racks.length ? Math.min(...racks.map((r) => (r.used > 0 ? r.pduFactor : 1))) : 1;
-  if (unitsTotal === 0) bottleneck = 'no hardware installed';
-  else if (rawPowerFactor < 0.98) bottleneck = 'short of electricity';
-  else if (worstPdu < 0.95) bottleneck = 'a rack has no PDU in range';
-  else if (netFactor < 0.98) bottleneck = 'short of switching';
-  else if (waterFactor < 0.95) bottleneck = 'short of water';
-  else if (worstCover < 0.95 || maxTemp > 34) bottleneck = 'cooling is behind';
-  else if (contractDemand < computeSellable * 0.8) bottleneck = 'compute is unsold';
-  else if (freeSlots > unitsTotal * 0.25) bottleneck = 'empty rack slots';
+  if (unitsTotal === 0) bottleneck = 'no machines installed';
+  else if (rawPowerFactor < 0.98) bottleneck = 'not enough electricity';
+  else if (worstPdu < 0.95) bottleneck = 'a rack has no power nearby';
+  else if (netFactor < 0.98) bottleneck = 'not enough network';
+  else if (waterFactor < 0.95) bottleneck = 'not enough water';
+  else if (worstCover < 0.95 || maxTemp > 34) bottleneck = 'not enough cooling';
+  else if (contractDemand < computeSellable * 0.8) bottleneck = 'compute going to waste';
+  else if (freeSlots > unitsTotal * 0.25) bottleneck = 'empty space in your racks';
   else bottleneck = 'running clean';
 
   // A concrete to-do list. Only things the player can act on, worst first.
@@ -339,72 +342,88 @@ export function derive(state) {
   const noCool = racks.filter((r) => r.used > 0 && r.cover < 0.95).length;
   if (rawPowerFactor < 0.98) {
     problems.push({
-      tone: 'bad', tab: 'utils',
-      text: `Power supply is short by ${Math.ceil(demandKW - supplyKW)} kW — everything is throttling.`,
+      tone: 'bad', tab: 'ops',
+      text: `You need ${Math.ceil(demandKW - supplyKW)} kW more electricity. Everything is running slow.`,
     });
   }
   if (noPower) {
+    const worst = racks.filter((r) => r.used > 0).sort((a, b) => a.pduFactor - b.pduFactor)[0];
     problems.push({
       tone: 'bad', tab: 'build', cat: 'power', overlay: 'power',
-      text: `${noPower} rack${noPower > 1 ? 's have' : ' has'} no PDU in range.`,
+      focus: worst && { x: worst.x, y: worst.y },
+      text: `${noPower} rack${noPower > 1 ? 's have' : ' has'} no power point nearby.`,
     });
   }
   if (noCool) {
+    const worst = racks.filter((r) => r.used > 0).sort((a, b) => a.cover - b.cover)[0];
     problems.push({
       tone: 'bad', tab: 'build', cat: 'cooling', overlay: 'cool',
-      text: `${noCool} rack${noCool > 1 ? 's are' : ' is'} short of cooling.`,
+      focus: worst && { x: worst.x, y: worst.y },
+      text: `${noCool} rack${noCool > 1 ? 's need' : ' needs'} more cooling nearby.`,
     });
   }
   if (maxTemp > 40) {
+    const worst = racks.filter((r) => r.used > 0).sort((a, b) => b.temp - a.temp)[0];
     problems.push({
       tone: 'bad', tab: 'build', cat: 'cooling', overlay: 'heat',
-      text: `Hottest rack is ${maxTemp.toFixed(0)} °C. Above 40 °C hardware wears out fast.`,
+      focus: worst && { x: worst.x, y: worst.y },
+      text: `Your hottest rack is ${maxTemp.toFixed(0)} °C. Over 40 °C the machines break quickly.`,
     });
   }
   if (waterFactor < 0.95) {
     problems.push({
       tone: 'bad', tab: 'build', cat: 'water',
-      text: `Water is short — cooling is running at ${Math.round(waterEff * 100)}% of nameplate.`,
+      text: `Not enough water — your cooling is only working at ${Math.round(waterEff * 100)}%.`,
+    });
+  }
+  if (brokenTotal > 0) {
+    const perRack = repairRateOf(state, repairBoost, mods) / Math.max(1, racks.length);
+    problems.push({
+      tone: brokenTotal > unitsTotal * 0.05 ? 'bad' : 'warn',
+      tab: 'ops',
+      text: brokenTotal + ' broken machine' + (brokenTotal > 1 ? 's' : '')
+        + (state.staff.tech < 1 ? '. Hire a technician to get them fixed.'
+          : '. Your technicians are falling behind — hire another.'),
     });
   }
   if (netFactor < 0.98) {
     problems.push({
       tone: 'warn', tab: 'build', cat: 'support',
-      text: `Switching covers ${Math.round(netFactor * 100)}% of the fleet. The rest is idle.`,
+      text: `Your network only reaches ${Math.round(netFactor * 100)}% of your machines. The rest sit idle.`,
     });
   }
   const freeSlotsNow = state.contracts.active.length < Math.floor(mods.contractSlots + contractSlots);
   if (freeSlotsNow && state.contracts.offers.length) {
     problems.push({
-      tone: 'good', tab: 'contracts',
-      text: `${state.contracts.offers.length} offer${state.contracts.offers.length > 1 ? 's' : ''} on the board and a free contract slot.`,
+      tone: 'good', tab: 'deals',
+      text: `${state.contracts.offers.length} deal${state.contracts.offers.length > 1 ? 's' : ''} waiting, and you have room to sign one.`,
     });
   }
   if (contractDemand < computeSellable * 0.7 && computeSellable > 1) {
     problems.push({
-      tone: 'warn', tab: 'contracts',
-      text: `${fmtShort(computeSellable - contractDemand)} of compute is sitting unsold.`,
+      tone: 'warn', tab: 'deals',
+      text: `You make ${fmtShort(computeSellable - contractDemand)} of compute nobody is paying for.`,
     });
   }
   if (freeSlots > 0 && unitsTotal > 0) {
     problems.push({
       tone: 'info', tab: 'racks',
-      text: `${freeSlots} empty rack slot${freeSlots > 1 ? 's' : ''} waiting for hardware.`,
+      text: `${freeSlots} empty slot${freeSlots > 1 ? 's' : ''} in your racks. Put machines in them.`,
     });
   }
   const affordableRnD = RESEARCH.filter((r) => !state.research.done.includes(r.id)
     && r.req.every((q) => state.research.done.includes(q)) && state.rp >= r.cost).length;
   if (affordableRnD) {
     problems.push({
-      tone: 'good', tab: 'research',
-      text: `${affordableRnD} research node${affordableRnD > 1 ? 's' : ''} you can afford right now.`,
+      tone: 'good', tab: 'upgrade',
+      text: `You can afford ${affordableRnD} upgrade${affordableRnD > 1 ? 's' : ''} right now.`,
     });
   }
   const nextFac = FACILITIES[state.facility + 1];
   if (nextFac && state.money >= nextFac.cost && state.reputation >= (nextFac.rep || 0)) {
     problems.push({
       tone: 'good', tab: 'site',
-      text: `You can afford to move into the ${nextFac.name}.`,
+      text: `You can afford to move into the ${nextFac.name}. More floor, more machines.`,
     });
   }
 
@@ -420,10 +439,14 @@ export function derive(state) {
     revenue, costs, netIncome: revenue - costs,
     powerCost, fuelCost, waterBill, upkeepCost, penalties, salaries,
     rpPerSec, contractSlots: Math.floor(mods.contractSlots + contractSlots),
-    repairRate: (0.8 + state.staff.tech * 1.2) * repairBoost * mods.repairMult,
+    repairRate: (0.12 + state.staff.tech * 1.35) * repairBoost * mods.repairMult,
     rackCount: Math.max(1, racks.length),
     security: clamp(security, 0, 0.9), sun, sellPrice: state.market.compute,
   };
+}
+
+function repairRateOf(state, repairBoost, mods) {
+  return (0.12 + state.staff.tech * 1.35) * repairBoost * mods.repairMult;
 }
 
 function coolerAmbientBonus(c, state) {
@@ -493,6 +516,20 @@ export function tick(state, dt, d, hooks) {
   state.stats.peakCompute = Math.max(state.stats.peakCompute, d.computeTotal);
   state.stats.peakIncome = Math.max(state.stats.peakIncome, d.netIncome);
 
+  // A rolling picture of the run, sampled every couple of game days.
+  const h = state.history;
+  h.at = (h.at || 0) + days;
+  if (h.at >= 0.5) {
+    h.at = 0;
+    h.income.push(d.netIncome);
+    h.compute.push(d.computeTotal);
+    h.temp.push(d.maxTemp);
+    for (const key of ['income', 'compute', 'temp']) {
+      if (h[key].length > 240) h[key].shift();
+    }
+  }
+
+  tickTown(state, d, hooks);
   contractsTick(state, d, days, hooks);
   eventsTick(state, d, dt, hooks);
   checkObjectives(state, d, hooks);

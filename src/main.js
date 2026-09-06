@@ -1,7 +1,7 @@
 // Boot, the game loop, and everything that glues the simulation to the UI.
 
 import { el, fill, fmt, fmtTime, money } from './util.js';
-import { newGame, load, save, wipe, exportSave, importSave, tileAt, DAY_SECONDS } from './state.js';
+import { newGame, load, save, wipe, exportSave, importSave, tileAt, roomOf, DAY_SECONDS } from './state.js';
 import { derive, tick, resolveDecision, fireEvent, legacyGain } from './sim.js';
 import { EVENTS_BY_ID } from './data/events.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
@@ -12,7 +12,7 @@ import { initTips, hide as hideTip } from './tip.js';
 import { advance as tutAdvance, active as tutActive, FINISH } from './tutorial.js';
 
 const TICK = 0.2;          // seconds of simulated time per fixed step
-const MAX_CATCHUP = 0.5;   // never simulate more than this per frame
+const MAX_CATCHUP = 0.5;   // seconds of simulation per frame at 1x
 
 const app = {
   state: null,
@@ -159,7 +159,7 @@ app.confirmPrestige = () => {
       const fresh = A.prestige(app.state, app.hooks);
       if (typeof fresh === 'string') { toast(fresh, 'warn'); return; }
       startGame(fresh, true);
-      goTab('legacy');
+      goTab('site');
     } },
     { label: 'Keep building' },
   ]);
@@ -237,9 +237,10 @@ function frame(now) {
   const speed = state.settings.speed;
   if (speed > 0 && !state.events.pending) {
     acc += real * speed;
-    if (acc > MAX_CATCHUP) acc = MAX_CATCHUP;
+    const cap = MAX_CATCHUP * Math.max(1, speed);
+    if (acc > cap) acc = cap;
     let guard = 0;
-    while (acc >= TICK && guard++ < 20) {
+    while (acc >= TICK && guard++ < 40) {
       app.d = derive(state);
       tick(state, TICK, app.d, app.hooks);
       acc -= TICK;
@@ -291,8 +292,9 @@ function startGame(state, fresh) {
       onHover: (t) => updateGhost(t),
     });
     initUI(app);
-    window.addEventListener('resize', () => { app.view.resize(); });
+    window.addEventListener('resize', () => app.view.resize());
     app.view.resize();
+    app.view.observe();
   } else {
     app.view.sel = null;
     app.view.tool = null;
@@ -354,6 +356,8 @@ function updateGhost(t) {
   }
 }
 
+const clampIdx = (i, n) => (i < 0 ? 0 : i >= n ? n - 1 : i);
+
 function bindKeys() {
   window.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
@@ -365,10 +369,20 @@ function bindKeys() {
       markDirty(); renderUI();
     } else if (e.key === ' ') {
       e.preventDefault();
-      app.state.settings.speed = app.state.settings.speed === 0 ? 1 : 0;
+      const st = app.state.settings;
+      st.speed = st.speed === 0 ? (st.lastSpeed || 1) : 0;
+    } else if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') {
+      // Step through the speed ladder without reaching for the mouse.
+      const ladder = [0, 1, 2, 5, 10];
+      const at = Math.max(0, ladder.indexOf(app.state.settings.speed));
+      const next = clampIdx(at + (e.key === '-' || e.key === '_' ? -1 : 1), ladder.length);
+      app.state.settings.speed = ladder[next];
+      if (ladder[next] > 0) app.state.settings.lastSpeed = ladder[next];
     } else if (e.key >= '1' && e.key <= '9') {
       const t = TABS[Number(e.key) - 1];
       if (t) goTab(t.id);
+    } else if (e.key === 'r' || e.key === 'R') {
+      app.view.turn(e.shiftKey ? -1 : 1);
     } else if (e.key === 'o' || e.key === 'O') {
       const modes = ['none', 'power', 'cool', 'heat', 'net'];
       const i = modes.indexOf(app.view.overlay);
@@ -471,12 +485,23 @@ function showHelp() {
       ['Switching', 'Compute without bandwidth may as well be switched off. Build → Support.'],
       ['Maintenance', 'Condition decays with heat. Repair effort is split across every rack you own.'],
     ]),
+    guideSection('The floor', [
+      ['Space', 'Buy extra rows and columns on the Site tab, or move to a bigger facility.'],
+      ['Turning', 'R turns the room a quarter, so tall machines stop hiding what is behind them.'],
+    ]),
     guideSection('Money', [
       ['Contracts', 'The only income. Offers arrive a couple a day and go stale after about a week.'],
       ['Capacity', 'Sign what fits inside your spare capacity, not all of it.'],
       ['SLA', 'Fall below the promised uptime and penalties start and reputation drops.'],
       ['Reputation', 'Earned by finishing contracts cleanly. Unlocks bigger sites and better customers.'],
       ['R&D', 'The slider on the R&D tab trades sellable compute for research points.'],
+      ['What you sell', 'Compute, not machines. The Contracts tab breaks your output into '
+        + 'sold, unsold and diverted to research.'],
+    ]),
+    guideSection('Ashbrook', [
+      ['The town', 'The village next door. It does nothing to you; it is simply the bill.'],
+      ['The dial', 'Follows your footprint — megawatts, litres, acres — and only goes one way.'],
+      ['The goal', 'Ruin it completely. There is an objective and an achievement waiting.'],
     ]),
     el('h4', 'gh', 'Reading the floor'),
     legend,
@@ -484,13 +509,24 @@ function showHelp() {
       ['To-do list', 'With no tile selected, the strip under the floor lists what needs attention. Click a row to jump to the fix.'],
       ['Overlays', 'The buttons above the floor. Power and Cooling shade what each machine reaches.'],
       ['Placing', 'Pick a machine, click a tile. Drag with one held to lay a whole row.'],
-      ['Moving about', 'Wheel zooms, dragging empty space pans, Recentre puts you back.'],
-      ['Keys', '1–9 tabs · O cycles overlays · Space pauses · Esc drops the current tool'],
+      ['Moving about', 'Wheel zooms, dragging empty space pans, R turns the room a quarter.'],
+      ['Speed', 'The 1× to 10× control in the top bar, or +/− on the keyboard.'],
+      ['Keys', '1–9 tabs · O overlays · R turns the room · +/− speed · Space pauses · Esc clears the tool'],
     ]),
   ], [{ label: 'Got it', kind: 'primary' }]);
 }
 
 app.openGuide = () => showHelp();
+
+/** Pan the view so a given tile sits in the middle, and select it. */
+app.focusTile = (x, y) => {
+  const v = app.view;
+  const p = v.iso(x, y, roomOf(app.state));
+  v.ox = v.w / 2 - p.x * v.zoom;
+  v.oy = v.h / 2 - p.y * v.zoom;
+  v.sel = { x, y };
+  markDirty();
+};
 
 app.setOverlay = (id) => {
   app.view.overlay = id;

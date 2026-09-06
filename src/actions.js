@@ -6,7 +6,7 @@ import { HARDWARE_BY_ID } from './data/hardware.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import { RESEARCH_BY_ID, available } from './data/research.js';
 import { UPGRADES_BY_ID, FACILITIES, STAFF_BY_ID, LEGACY_BY_ID, perkCost } from './data/progression.js';
-import { key, tileAt, inBounds, facilityOf, newGame } from './state.js';
+import { key, tileAt, inBounds, facilityOf, roomOf, EXPAND_CAP, newGame } from './state.js';
 import { rackCapacity, legacyGain } from './sim.js';
 
 export const buildCost = (b, d) => b.cost * d.mods.buildCostMult;
@@ -151,6 +151,36 @@ export function retireOlderThan(state, d, hardwareId, hooks) {
   return null;
 }
 
+/**
+ * Swap every rack on the floor for a roomier model, keeping whatever is
+ * installed. Late on you own two hundred cabinets; replacing them one at a
+ * time is not a decision, it is a chore.
+ */
+export function upgradeRacks(state, d, buildingId, hooks) {
+  const target = BUILDINGS_BY_ID[buildingId];
+  if (!target || target.cat !== 'compute') return 'Not a rack.';
+  if (target.req && !state.research.done.includes(target.req)) return 'Not researched yet.';
+  const unit = buildCost(target, d);
+  let done = 0, spent = 0;
+  for (const k in state.tiles) {
+    const tile = state.tiles[k];
+    const old = BUILDINGS_BY_ID[tile.b];
+    if (!old || old.cat !== 'compute' || old.slots >= target.slots) continue;
+    const net = unit - buildCost(old, d) * 0.5;
+    if (state.money < net) break;
+    state.money -= net;
+    spent += net;
+    tile.b = target.id;
+    done++;
+  }
+  state.stats.spentBuild += spent;
+  hooks?.log(done
+    ? `Swapped ${done} rack${done > 1 ? 's' : ''} for ${target.name.toLowerCase()}s, hardware and all.`
+    : 'Nothing to upgrade — either they are all this good already, or you cannot afford it.',
+    done ? 'good' : 'bad');
+  return null;
+}
+
 // ------------------------------------------------------------- utility feed
 
 /** The utility will only sell so much to a site of this size. */
@@ -246,6 +276,33 @@ export function buyUpgrade(state, d, id, hooks) {
   return null;
 }
 
+// -------------------------------------------------------------------- floor
+
+/** Extra rows and columns get steadily dearer, and cap out per facility. */
+export function expandCost(state, d) {
+  const f = facilityOf(state);
+  const bought = (state.expand.w || 0) + (state.expand.h || 0);
+  const base = Math.max(600, f.cost > 0 ? f.cost * 0.055 : 3_000);
+  return base * Math.pow(1.42, bought) * (d ? d.mods.buildCostMult : 1);
+}
+
+export function canExpand(state, axis) {
+  return (state.expand[axis] || 0) < EXPAND_CAP;
+}
+
+export function expand(state, d, axis, hooks) {
+  if (axis !== 'w' && axis !== 'h') return 'Unknown direction.';
+  if (!canExpand(state, axis)) return 'This site cannot take any more floor. Move somewhere bigger.';
+  const cost = expandCost(state, d);
+  if (state.money < cost) return 'Not enough money.';
+  state.money -= cost;
+  state.stats.spentBuild += cost;
+  state.expand[axis] = (state.expand[axis] || 0) + 1;
+  const r = roomOf(state);
+  hooks?.log(`Knocked through. The floor is now ${r.w} × ${r.h} tiles.`, 'good');
+  return null;
+}
+
 // ----------------------------------------------------------------- facility
 
 export function nextFacility(state) {
@@ -259,6 +316,7 @@ export function upgradeFacility(state, hooks) {
   if (state.money < next.cost) return 'Not enough money.';
   state.money -= next.cost;
   state.facility++;
+  // Bought floor carries over as the site grows.
   hooks?.log(`Moved into the ${next.name}. The floor just got bigger.`, 'good');
   return null;
 }

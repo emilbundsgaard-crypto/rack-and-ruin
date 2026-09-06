@@ -7,7 +7,7 @@
 
 import { clamp } from './util.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
-import { facilityOf, tileAt } from './state.js';
+import { roomOf, tileAt } from './state.js';
 
 export const TW = 68;            // tile width on screen
 export const TH = 34;            // tile height on screen (2:1 isometric)
@@ -103,6 +103,7 @@ export class FloorView {
     this.sel = null;
     this.tool = null;
     this.overlay = 'none';
+    this.rot = 0;            // 0-3, quarter turns of the room
     this.t = 0;
     this.dragging = false;
     this.panned = false;
@@ -111,22 +112,83 @@ export class FloorView {
     this._bind();
   }
 
+  /**
+   * Keep the backing store the same size as the CSS box. Anything that changes
+   * the layout — the to-do list growing, a panel opening — resizes the canvas
+   * element, and if the buffer does not follow the browser simply stretches the
+   * last frame. Everything then sits a little away from the pointer, which is
+   * exactly as maddening as it sounds.
+   */
   resize() {
     const dpr = Math.min(2, window.devicePixelRatio || 1);
     const r = this.c.getBoundingClientRect();
-    this.w = r.width; this.h = r.height;
-    this.c.width = Math.max(1, Math.round(r.width * dpr));
-    this.c.height = Math.max(1, Math.round(r.height * dpr));
+    if (!r.width || !r.height) return;
+    this.w = r.width;
+    this.h = r.height;
+    this.dpr = dpr;
+    const bw = Math.max(1, Math.round(r.width * dpr));
+    const bh = Math.max(1, Math.round(r.height * dpr));
+    if (this.c.width !== bw || this.c.height !== bh) {
+      this.c.width = bw;
+      this.c.height = bh;
+      this._groundKey = null;
+    }
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
-  /** World position of a tile's ground centre, before pan and zoom. */
-  iso(gx, gy) {
-    return { x: (gx - gy) * (TW / 2), y: (gx + gy) * (TH / 2) };
+  /** Watch the element itself, not just the window. */
+  observe() {
+    if (this._ro || typeof ResizeObserver === 'undefined') return;
+    this._ro = new ResizeObserver(() => this.resize());
+    this._ro.observe(this.c);
+  }
+
+  /** World position of a rotated grid position, before pan and zoom. */
+  isoR(rx, ry) {
+    return { x: (rx - ry) * (TW / 2), y: (rx + ry) * (TH / 2) };
+  }
+
+  /** Room dimensions as seen from the current corner. */
+  dims(f) {
+    return this.rot % 2 ? { w: f.h, h: f.w } : { w: f.w, h: f.h };
+  }
+
+  /** Tile coordinates into the rotated grid the camera is looking at. */
+  rotate(gx, gy, f) {
+    switch (this.rot) {
+      case 1: return { x: (f.h - 1) - gy, y: gx };
+      case 2: return { x: (f.w - 1) - gx, y: (f.h - 1) - gy };
+      case 3: return { x: gy, y: (f.w - 1) - gx };
+      default: return { x: gx, y: gy };
+    }
+  }
+
+  /** And back again, for turning a picked position into a real tile. */
+  unrotate(rx, ry, f) {
+    switch (this.rot) {
+      case 1: return { x: ry, y: (f.h - 1) - rx };
+      case 2: return { x: (f.w - 1) - rx, y: (f.h - 1) - ry };
+      case 3: return { x: (f.w - 1) - ry, y: rx };
+      default: return { x: rx, y: ry };
+    }
+  }
+
+  /** World position of a tile's ground centre, in the current rotation. */
+  iso(gx, gy, f) {
+    const r = f ? this.rotate(gx, gy, f) : { x: gx, y: gy };
+    return this.isoR(r.x, r.y);
+  }
+
+  /** Turn the room a quarter, keeping the middle of the view where it is. */
+  turn(dir) {
+    this.rot = (this.rot + (dir || 1) + 4) % 4;
+    this._groundKey = null;
+    this.centred = false;
   }
 
   centre(state) {
-    const f = facilityOf(state);
+    const fac = roomOf(state);
+    const f = this.dims(fac);
     const spanX = (f.w + f.h) * (TW / 2);
     const spanY = (f.w + f.h) * (TH / 2) + 90;
     this.zoom = clamp(Math.min((this.w - 40) / spanX, (this.h - 40) / spanY), 0.22, 1.6);
@@ -138,9 +200,9 @@ export class FloorView {
   }
 
   /** Screen coordinates of a tile centre — used by the automated checks. */
-  tileCentre(gx, gy) {
+  tileCentre(gx, gy, f) {
     const r = this.c.getBoundingClientRect();
-    const p = this.iso(gx, gy);
+    const p = this.iso(gx, gy, f || this._fac);
     return { x: r.left + this.ox + p.x * this.zoom, y: r.top + this.oy + p.y * this.zoom };
   }
 
@@ -151,15 +213,24 @@ export class FloorView {
   pick(px, py) {
     // Hit polygons are recorded in world space during the draw, so convert the
     // pointer once and walk the list backwards: whatever is in front wins.
+    //
+    // While a machine is held, skip that and read the floor instead. A tall
+    // cabinet covers the tile behind it, and when you are placing something you
+    // mean the ground under the cursor, not the box in front of it.
     const wx = (px - this.ox) / this.zoom;
     const wy = (py - this.oy) / this.zoom;
-    for (let i = this.hits.length - 1; i >= 0; i--) {
-      const hit = this.hits[i];
-      if (pointInPoly(wx, wy, hit.poly)) return { x: hit.gx, y: hit.gy };
+    const onGround = this.tool && this.tool !== 'sell';
+    if (!onGround) {
+      for (let i = this.hits.length - 1; i >= 0; i--) {
+        const hit = this.hits[i];
+        if (pointInPoly(wx, wy, hit.poly)) return { x: hit.gx, y: hit.gy };
+      }
     }
     const a = wx / (TW / 2);
     const b = wy / (TH / 2);
-    return { x: Math.round((a + b) / 2), y: Math.round((b - a) / 2) };
+    const rx = Math.round((a + b) / 2);
+    const ry = Math.round((b - a) / 2);
+    return this._fac ? this.unrotate(rx, ry, this._fac) : { x: rx, y: ry };
   }
 
   _bind() {
@@ -235,7 +306,8 @@ export class FloorView {
   draw(state, d, dt) {
     this.t += dt;
     const ctx = this.ctx;
-    const f = facilityOf(state);
+    const f = roomOf(state);
+    this._fac = f;
     if (!this.centred && this.w) this.centre(state);
     ctx.clearRect(0, 0, this.w, this.h);
     ctx.save();
@@ -260,9 +332,10 @@ export class FloorView {
     const order = [];
     for (const k in state.tiles) {
       const [gx, gy] = k.split(',').map(Number);
-      order.push({ gx, gy, tile: state.tiles[k] });
+      const r = this.rotate(gx, gy, f);
+      order.push({ gx, gy, depth: r.x + r.y, tie: r.x, tile: state.tiles[k] });
     }
-    order.sort((a, b) => (a.gx + a.gy) - (b.gx + b.gy) || a.gx - b.gx);
+    order.sort((a, b) => a.depth - b.depth || a.tie - b.tie);
 
     const rackAt = new Map();
     for (const r of d.racks) rackAt.set(r.x + ',' + r.y, r);
@@ -290,7 +363,8 @@ export class FloorView {
   }
 
   /** Bounds of the whole room in world space, including the plinth. */
-  groundBounds(f) {
+  groundBounds(fac) {
+    const f = this.dims(fac);
     return {
       minX: -(f.h - 0.5) * (TW / 2) - 4,
       maxX: (f.w - 0.5) * (TW / 2) + 4,
@@ -305,8 +379,8 @@ export class FloorView {
    * budget at full site size.
    */
   drawGround(ctx, state, d, f) {
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
-    const key = f.id + ':' + this.zoom.toFixed(3) + ':' + dpr;
+    const dpr = this.dpr || Math.min(2, window.devicePixelRatio || 1);
+    const key = f.id + ':' + this.rot + ':' + this.zoom.toFixed(3) + ':' + dpr;
     if (this._groundKey !== key) {
       const b = this.groundBounds(f);
       const cw = Math.ceil((b.maxX - b.minX) * this.zoom * dpr);
@@ -324,9 +398,8 @@ export class FloorView {
     if (this._groundKey === key) {
       const b = this._groundBox;
       ctx.save();
-      ctx.setTransform(1, 0, 0, 1, 0, 0);
-      const dp = Math.min(2, window.devicePixelRatio || 1);
-      ctx.scale(dp, dp);
+      const dp = this.dpr || Math.min(2, window.devicePixelRatio || 1);
+      ctx.setTransform(dp, 0, 0, dp, 0, 0);
       ctx.drawImage(this._ground,
         this.ox + b.minX * this.zoom, this.oy + b.minY * this.zoom,
         (b.maxX - b.minX) * this.zoom, (b.maxY - b.minY) * this.zoom);
@@ -334,10 +407,11 @@ export class FloorView {
     }
   }
 
-  paintGround(ctx, f) {
+  paintGround(ctx, fac) {
+    const f = this.dims(fac);
     // A plinth under the room reads as a building rather than a spreadsheet.
-    const c0 = this.iso(-0.5, -0.5), c1 = this.iso(f.w - 0.5, -0.5);
-    const c2 = this.iso(f.w - 0.5, f.h - 0.5), c3 = this.iso(-0.5, f.h - 0.5);
+    const c0 = this.isoR(-0.5, -0.5), c1 = this.isoR(f.w - 0.5, -0.5);
+    const c2 = this.isoR(f.w - 0.5, f.h - 0.5), c3 = this.isoR(-0.5, f.h - 0.5);
     const drop = 13;
     ctx.fillStyle = '#0a1017';
     ctx.beginPath();
@@ -352,7 +426,7 @@ export class FloorView {
     ctx.lineWidth = 1;
     for (let gy = 0; gy < f.h; gy++) {
       for (let gx = 0; gx < f.w; gx++) {
-        const p = this.iso(gx, gy);
+        const p = this.isoR(gx, gy);
         this.diamond(ctx, p);
         ctx.fillStyle = (gx + gy) % 2 ? '#16212e' : '#121c27';
         ctx.fill();
@@ -362,7 +436,7 @@ export class FloorView {
   }
 
   markTile(ctx, t, colour, dashed) {
-    const p = this.iso(t.x, t.y);
+    const p = this.iso(t.x, t.y, this._fac);
     ctx.strokeStyle = colour;
     ctx.lineWidth = 2;
     if (dashed) ctx.setLineDash([5, 4]);
@@ -373,7 +447,7 @@ export class FloorView {
 
   drawOverlay(ctx, state, d, f) {
     const paint = (gx, gy, style) => {
-      this.diamond(ctx, this.iso(gx, gy));
+      this.diamond(ctx, this.iso(gx, gy, f));
       ctx.fillStyle = style;
       ctx.fill();
     };
@@ -423,7 +497,7 @@ export class FloorView {
     for (let gy = t.y - r; gy <= t.y + r; gy++) {
       for (let gx = t.x - r; gx <= t.x + r; gx++) {
         if (gx < 0 || gy < 0) continue;
-        this.diamond(ctx, this.iso(gx, gy), 1);
+        this.diamond(ctx, this.iso(gx, gy, this._fac), 1);
         ctx.fill();
       }
     }
@@ -434,7 +508,7 @@ export class FloorView {
    * face, plus whatever detail the zoom level can carry.
    */
   drawSolid(ctx, gx, gy, b, rack, d, ghost) {
-    const p = this.iso(gx, gy);
+    const p = this.iso(gx, gy, this._fac);
     const hw = TW / 2 - 4;
     const hh = TH / 2 - 2;
     let height = b.h * HSCALE;

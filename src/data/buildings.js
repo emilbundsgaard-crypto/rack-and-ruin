@@ -114,33 +114,33 @@ export const BUILDINGS = [
   },
   {
     id: 'split', name: 'Split AC unit', glyph: 'fan', tag: 'AC UNIT', h: 16, cat: 'cooling', cost: 5_200, radius: 3, coolCap: 22,
-    draw: 0.9, water: 0.004, upkeep: 8, color: '#45c99a', req: 'rnd_split',
+    draw: 0.9, water: 0.012, upkeep: 8, color: '#45c99a', req: 'rnd_split',
     desc: 'A real compressor with a condenser hanging off the wall.',
   },
   {
     id: 'crac', name: 'CRAC unit', glyph: 'coil', tag: 'CRAC', h: 26, cat: 'cooling', cost: 95_000, radius: 4, coolCap: 190,
-    draw: 6.5, water: 0.011, upkeep: 120, color: '#4fdca8', req: 'rnd_crac',
+    draw: 6.5, water: 0.028, upkeep: 120, color: '#4fdca8', req: 'rnd_crac',
     desc: 'Computer room air conditioning, blowing into a raised floor.',
   },
   {
     id: 'chiller', name: 'Chilled water plant', glyph: 'coil', tag: 'CHILLER', h: 30, cat: 'cooling', cost: 2_100_000, radius: 5,
-    coolCap: 1_800, draw: 42, water: 0.019, upkeep: 2_600, color: '#5fe8c0', req: 'rnd_chiller',
+    coolCap: 1_800, draw: 42, water: 0.045, upkeep: 2_600, color: '#5fe8c0', req: 'rnd_chiller',
     desc: 'Chillers, pumps and a loop that runs the whole hall.',
   },
   {
     id: 'freecool', name: 'Free-cooling gallery', glyph: 'louvre', tag: 'ECON', h: 24, cat: 'cooling', cost: 46_000_000, radius: 6,
-    coolCap: 17_000, draw: 190, water: 0.009, upkeep: 34_000, color: '#7ff0d0', req: 'rnd_freecool',
+    coolCap: 17_000, draw: 190, water: 0.020, upkeep: 34_000, color: '#7ff0d0', req: 'rnd_freecool',
     ambient: true,
     desc: 'Louvres and economisers. Nearly free when the night is cold.',
   },
   {
     id: 'adiabatic', name: 'Adiabatic tower', glyph: 'cooltower', tag: 'ADIABAT', h: 40, cat: 'cooling', cost: 700_000_000, radius: 7,
-    coolCap: 150_000, draw: 1_100, water: 0.026, upkeep: 480_000, color: '#8ff8dc', req: 'rnd_adiabatic',
+    coolCap: 150_000, draw: 1_100, water: 0.058, upkeep: 480_000, color: '#8ff8dc', req: 'rnd_adiabatic',
     desc: 'Evaporative cooling at scale. Drinks a river, cools a campus.',
   },
   {
     id: 'cryo', name: 'Cryogenic loop', glyph: 'snow', tag: 'CRYO', h: 34, cat: 'cooling', cost: 90_000_000_000, radius: 9,
-    coolCap: 2_600_000, draw: 14_000, water: 0.006, upkeep: 22_000_000, color: '#b0ffe8', req: 'rnd_cryo',
+    coolCap: 2_600_000, draw: 14_000, water: 0.014, upkeep: 22_000_000, color: '#b0ffe8', req: 'rnd_cryo',
     desc: 'Two-phase coolant near its triple point. Sub-ambient everywhere.',
   },
 
