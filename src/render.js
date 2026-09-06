@@ -1,327 +1,91 @@
-// Canvas view of the floor.
+// Isometric view of the floor.
 //
-// Every machine is drawn as a tile: a rounded plate, a glyph that says what it
-// is at a glance, and a caption strip inset along the bottom edge so text never
-// sits on the border. Racks get a slot grid instead of a glyph, because how
-// full and how healthy a rack is matters more than the fact it is a rack.
+// Tiles are diamonds; machines are extruded prisms standing on them, sorted
+// back to front. Identity comes from silhouette, height and colour, with a
+// decal painted flat on the top face — not from a caption on every box.
+// Hovering names the thing; the floor stays quiet.
 
 import { clamp } from './util.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import { facilityOf, tileAt } from './state.js';
 
-export const TILE = 54;
+export const TW = 68;            // tile width on screen
+export const TH = 34;            // tile height on screen (2:1 isometric)
+export const TILE = TW;          // kept for callers that just want a scale
 
-const PAD = 5;              // plate inset inside the tile
-const CAP_H = 11;           // caption strip height
-const CAP_ZOOM = 0.72;      // below this, captions are unreadable, so skip them
-const DETAIL_ZOOM = 0.72;   // and below it, tiles drop to their cheap form
-const GLYPH_ZOOM = 0.34;
+const DETAIL = 0.5;              // below this zoom, decals are skipped
+const BAYS = 0.78;               // and below this, racks lose their server bays
+const LID = 0.34;                // and below this, machines are plain blocks
+const HSCALE = 1.35;             // volumes read better a little taller than life
 
-// --------------------------------------------------------------- glyph set
+// ------------------------------------------------------------ colour tools
+
+function hexToRgb(h) {
+  const v = h.replace('#', '');
+  return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
+}
+
+const shadeCache = new Map();
+
+/** Lighten (k > 1) or darken (k < 1) a hex colour, memoised. */
+function shade(hex, k, mixTo) {
+  const key = hex + k + (mixTo || '');
+  const hit = shadeCache.get(key);
+  if (hit) return hit;
+  let [r, g, b] = hexToRgb(hex);
+  if (mixTo) {
+    const [mr, mg, mb] = hexToRgb(mixTo);
+    const m = 0.55;
+    r = r * (1 - m) + mr * m; g = g * (1 - m) + mg * m; b = b * (1 - m) + mb * m;
+  }
+  const out = 'rgb(' + [r, g, b].map((c) => Math.max(0, Math.min(255, Math.round(c * k)))).join(',') + ')';
+  shadeCache.set(key, out);
+  return out;
+}
+
+// ------------------------------------------------------------- top decals
 
 /**
- * Each glyph draws inside a -11..11 box, already translated and coloured.
- * `t` is the animation clock; `k` is a per-tile phase so a row of fans does
- * not spin in lockstep.
+ * Decals are drawn in a -10..10 box on the top face, already skewed into the
+ * isometric plane. Keep them chunky: thin strokes disappear once flattened.
  */
-const GLYPHS = {
-  plug(c, t, k) {
-    c.lineWidth = 1.8;
-    c.beginPath(); c.moveTo(-5, -9); c.lineTo(-5, -3); c.moveTo(5, -9); c.lineTo(5, -3); c.stroke();
-    c.beginPath();
-    c.moveTo(-8, -3); c.lineTo(8, -3); c.lineTo(8, 1); c.arc(0, 1, 8, 0, Math.PI); c.closePath();
-    c.stroke();
-    c.beginPath(); c.moveTo(0, 9); c.lineTo(0, 5); c.stroke();
-  },
-  busbar(c) {
-    c.lineWidth = 2.4;
-    for (const x of [-6, 0, 6]) { c.beginPath(); c.moveTo(x, -9); c.lineTo(x, 9); c.stroke(); }
-    c.lineWidth = 1.2;
-    c.beginPath(); c.moveTo(-9, -4); c.lineTo(9, -4); c.moveTo(-9, 4); c.lineTo(9, 4); c.stroke();
-  },
-  transformer(c) {
-    c.lineWidth = 1.6;
-    c.beginPath(); c.arc(-3.5, 0, 5.5, 0, Math.PI * 2); c.stroke();
-    c.beginPath(); c.arc(3.5, 0, 5.5, 0, Math.PI * 2); c.stroke();
-    c.lineWidth = 2;
-    c.beginPath(); c.moveTo(-1, -9); c.lineTo(-4, -1); c.lineTo(1, -1); c.lineTo(-1, 8); c.stroke();
-  },
-  battery(c, t) {
-    c.lineWidth = 1.6;
-    c.strokeRect(-8, -6, 14, 12);
-    c.beginPath(); c.moveTo(6, -2.5); c.lineTo(9, -2.5); c.lineTo(9, 2.5); c.lineTo(6, 2.5); c.stroke();
-    const n = 2 + Math.floor((Math.sin(t * 1.5) * 0.5 + 0.5) * 2);
-    for (let i = 0; i < n; i++) c.fillRect(-6.5 + i * 4, -4, 3, 8);
-  },
-  engine(c, t, k) {
-    c.lineWidth = 1.6;
-    c.strokeRect(-9, -3, 18, 9);
-    const bob = Math.sin(t * 9 + k) * 1.6;
-    c.beginPath(); c.moveTo(-4, -3); c.lineTo(-4, -8 + bob); c.moveTo(4, -3); c.lineTo(4, -6 - bob); c.stroke();
-    c.beginPath(); c.arc(-4, -9 + bob, 1.8, 0, Math.PI * 2); c.stroke();
-    c.beginPath(); c.arc(4, -7 - bob, 1.8, 0, Math.PI * 2); c.stroke();
-  },
-  sun(c, t) {
-    c.lineWidth = 1.6;
-    c.beginPath(); c.arc(0, 0, 4.5, 0, Math.PI * 2); c.stroke();
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2 + t * 0.25;
-      c.beginPath();
-      c.moveTo(Math.cos(a) * 6.6, Math.sin(a) * 6.6);
-      c.lineTo(Math.cos(a) * 9.6, Math.sin(a) * 9.6);
-      c.stroke();
-    }
-  },
-  turbine(c, t, k) {
-    c.lineWidth = 1.7;
-    c.beginPath(); c.moveTo(0, 2); c.lineTo(0, 10); c.stroke();
-    c.save();
-    c.rotate(t * 2.2 + k);
-    for (let i = 0; i < 3; i++) {
-      c.rotate((Math.PI * 2) / 3);
-      c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(3, -5, 1, -9.5); c.stroke();
-    }
-    c.restore();
-  },
-  flame(c, t, k) {
-    c.lineWidth = 1.7;
-    const w = 1 + Math.sin(t * 6 + k) * 0.12;
-    c.beginPath();
-    c.moveTo(0, 9);
-    c.bezierCurveTo(-7 * w, 4, -4 * w, -2, 0, -9);
-    c.bezierCurveTo(4 * w, -2, 7 * w, 4, 0, 9);
-    c.stroke();
-  },
-  atom(c, t) {
-    c.lineWidth = 1.4;
-    for (let i = 0; i < 3; i++) {
-      c.save();
-      c.rotate((i / 3) * Math.PI);
-      c.beginPath(); c.ellipse(0, 0, 9.5, 3.6, 0, 0, Math.PI * 2); c.stroke();
-      c.restore();
-    }
-    c.beginPath(); c.arc(0, 0, 2, 0, Math.PI * 2); c.fill();
-  },
-  star(c, t) {
-    c.lineWidth = 1.4;
-    const p = 0.85 + Math.sin(t * 3) * 0.15;
-    c.beginPath();
-    for (let i = 0; i < 10; i++) {
-      const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
-      const r = (i % 2 ? 4 : 10) * p;
-      i ? c.lineTo(Math.cos(a) * r, Math.sin(a) * r) : c.moveTo(Math.cos(a) * r, Math.sin(a) * r);
-    }
-    c.closePath(); c.stroke();
-  },
-  fan(c, t, k) {
-    c.lineWidth = 1.9;
-    c.save();
-    c.rotate(t * 4 + k);
-    for (let i = 0; i < 3; i++) {
-      c.rotate((Math.PI * 2) / 3);
-      c.beginPath(); c.arc(0, 0, 8, -0.35, 0.9); c.stroke();
-    }
-    c.restore();
-    c.beginPath(); c.arc(0, 0, 2.2, 0, Math.PI * 2); c.fill();
-  },
-  coil(c, t, k) {
-    c.lineWidth = 1.7;
-    c.beginPath();
-    for (let i = 0; i <= 40; i++) {
-      const x = -9 + (i / 40) * 18;
-      const y = Math.sin(i / 40 * Math.PI * 4 + t * 2 + k) * 5;
-      i ? c.lineTo(x, y) : c.moveTo(x, y);
-    }
-    c.stroke();
-  },
-  louvre(c, t, k) {
-    c.lineWidth = 1.8;
-    for (let i = 0; i < 4; i++) {
-      const y = -7 + i * 4.6;
-      const tilt = Math.sin(t * 1.4 + k + i * 0.4) * 1.6;
-      c.beginPath(); c.moveTo(-9, y - tilt); c.lineTo(9, y + tilt); c.stroke();
-    }
-  },
-  cooltower(c, t, k) {
-    c.lineWidth = 1.7;
-    c.beginPath();
-    c.moveTo(-7, 9); c.quadraticCurveTo(-2.5, 0, -5, -7);
-    c.lineTo(5, -7); c.quadraticCurveTo(2.5, 0, 7, 9);
-    c.closePath(); c.stroke();
-    c.globalAlpha = 0.55 + Math.sin(t * 2 + k) * 0.25;
-    c.beginPath();
-    c.arc(-2, -10, 2.4, 0, Math.PI * 2);
-    c.arc(2.5, -11.5, 1.8, 0, Math.PI * 2);
-    c.stroke();
-    c.globalAlpha = 1;
-  },
-  snow(c, t) {
-    c.lineWidth = 1.5;
-    for (let i = 0; i < 3; i++) {
-      c.save();
-      c.rotate((i / 3) * Math.PI + t * 0.2);
-      c.beginPath(); c.moveTo(0, -9.5); c.lineTo(0, 9.5); c.stroke();
-      c.beginPath(); c.moveTo(-2.6, -6); c.lineTo(0, -8.6); c.lineTo(2.6, -6); c.stroke();
-      c.beginPath(); c.moveTo(-2.6, 6); c.lineTo(0, 8.6); c.lineTo(2.6, 6); c.stroke();
-      c.restore();
-    }
-  },
-  tank(c, t, k) {
-    c.lineWidth = 1.7;
-    c.strokeRect(-9, -7, 18, 14);
-    const lvl = 1.5 + Math.sin(t * 1.6 + k) * 0.8;
-    c.beginPath();
-    for (let i = 0; i <= 18; i++) {
-      const x = -8 + i;
-      const y = lvl + Math.sin(i / 2 + t * 2.4 + k) * 0.9;
-      i ? c.lineTo(x, y) : c.moveTo(x, y);
-    }
-    c.stroke();
-    c.globalAlpha = 0.35;
-    c.fillRect(-8, lvl + 1, 16, 5.5 - lvl);
-    c.globalAlpha = 1;
-  },
-  cryo(c, t) {
-    c.lineWidth = 1.6;
-    c.strokeRect(-8.5, -8.5, 17, 17);
-    GLYPHS.snow(c, t * 0.5, 0);
-  },
-  barrel(c, t, k) {
-    c.lineWidth = 1.7;
-    c.beginPath(); c.ellipse(0, -6.5, 7, 2.6, 0, 0, Math.PI * 2); c.stroke();
-    c.beginPath(); c.moveTo(-7, -6.5); c.lineTo(-7, 6); c.moveTo(7, -6.5); c.lineTo(7, 6); c.stroke();
-    c.beginPath(); c.ellipse(0, 6, 7, 2.6, 0, 0, Math.PI); c.stroke();
-  },
-  tap(c, t, k) {
-    c.lineWidth = 1.7;
-    c.beginPath(); c.moveTo(-8, -6); c.lineTo(2, -6); c.lineTo(2, 0); c.stroke();
-    c.beginPath(); c.moveTo(-8, -9); c.lineTo(-8, -3); c.stroke();
-    const drop = ((t * 22 + (k || 0) * 10) % 11);
-    c.beginPath(); c.arc(2, 1 + drop * 0.7, 1.5, 0, Math.PI * 2); c.fill();
-  },
-  well(c, t, k) {
-    c.lineWidth = 1.7;
-    c.strokeRect(-8, 0, 16, 9);
-    c.beginPath(); c.moveTo(-9, 0); c.lineTo(0, -6); c.lineTo(9, 0); c.stroke();
-    c.beginPath(); c.moveTo(0, -6); c.lineTo(0, 4 + Math.sin(t * 1.8 + k) * 1.5); c.stroke();
-  },
-  recycle(c, t) {
-    c.lineWidth = 1.8;
-    c.save(); c.rotate(t * 0.8);
-    for (let i = 0; i < 3; i++) {
-      c.rotate((Math.PI * 2) / 3);
-      c.beginPath(); c.arc(0, 0, 8, -0.5, 1.1); c.stroke();
-      c.beginPath();
-      c.moveTo(Math.cos(1.1) * 8, Math.sin(1.1) * 8);
-      c.lineTo(Math.cos(1.1) * 8 - 3.4, Math.sin(1.1) * 8 - 0.4);
-      c.lineTo(Math.cos(1.1) * 8 - 0.6, Math.sin(1.1) * 8 + 3.2);
-      c.closePath(); c.fill();
-    }
-    c.restore();
-  },
-  wave(c, t, k) {
-    c.lineWidth = 1.7;
-    for (let r = 0; r < 3; r++) {
-      c.beginPath();
-      for (let i = 0; i <= 20; i++) {
-        const x = -9 + i * 0.9;
-        const y = -5 + r * 5 + Math.sin(i / 2.4 + t * 2.6 + k + r) * 1.8;
-        i ? c.lineTo(x, y) : c.moveTo(x, y);
-      }
-      c.stroke();
-    }
-  },
-  switch(c, t, k) {
-    c.lineWidth = 1.6;
-    c.strokeRect(-9.5, -4, 19, 8);
-    const on = Math.floor(t * 6 + k) % 4;
-    for (let i = 0; i < 4; i++) {
-      c.globalAlpha = i === on ? 1 : 0.32;
-      c.fillRect(-7.5 + i * 4, -1.4, 2.6, 2.8);
-    }
-    c.globalAlpha = 1;
-    c.beginPath(); c.moveTo(-6, -4); c.lineTo(-6, -8); c.moveTo(6, -4); c.lineTo(6, -8); c.stroke();
-  },
-  fibre(c, t, k) {
-    c.lineWidth = 1.6;
-    for (let i = -1; i <= 1; i++) {
-      c.beginPath();
-      c.moveTo(-10, i * 5.5);
-      c.bezierCurveTo(-2, i * 5.5, 2, i * 1.5, 10, i * 1.5);
-      c.stroke();
-    }
-    const p = ((t * 26 + (k || 0) * 8) % 20) - 10;
-    c.globalAlpha = 0.9;
-    c.beginPath(); c.arc(p, 0, 1.8, 0, Math.PI * 2); c.fill();
-    c.globalAlpha = 1;
-  },
-  globe(c, t) {
-    c.lineWidth = 1.5;
-    c.beginPath(); c.arc(0, 0, 9, 0, Math.PI * 2); c.stroke();
-    c.beginPath(); c.ellipse(0, 0, 4, 9, 0, 0, Math.PI * 2); c.stroke();
-    c.beginPath(); c.moveTo(-9, -3); c.lineTo(9, -3); c.moveTo(-9, 3); c.lineTo(9, 3); c.stroke();
-  },
-  desk(c) {
-    c.lineWidth = 1.7;
-    c.beginPath(); c.moveTo(-10, -2); c.lineTo(10, -2); c.stroke();
-    c.beginPath(); c.moveTo(-7, -2); c.lineTo(-7, 8); c.moveTo(7, -2); c.lineTo(7, 8); c.stroke();
-    c.beginPath(); c.arc(-1, -7, 3, 0, Math.PI * 2); c.stroke();
-  },
-  wrench(c) {
-    c.lineWidth = 1.9;
-    c.beginPath();
-    c.arc(-4.5, -4.5, 5, 0.6, 5.2);
-    c.stroke();
-    c.beginPath(); c.moveTo(-1.5, -1.5); c.lineTo(7.5, 7.5); c.stroke();
-    c.beginPath(); c.arc(8, 8, 2.2, 0, Math.PI * 2); c.fill();
-  },
-  screen(c, t, k) {
-    c.lineWidth = 1.6;
-    c.strokeRect(-9.5, -7.5, 19, 12);
-    c.beginPath(); c.moveTo(0, 4.5); c.lineTo(0, 8); c.moveTo(-5, 8); c.lineTo(5, 8); c.stroke();
-    c.lineWidth = 1.2;
-    c.beginPath();
-    for (let i = 0; i <= 14; i++) {
-      const x = -7.5 + i;
-      const y = Math.sin(i * 1.1 + t * 4 + k) * 2.4;
-      i ? c.lineTo(x, y) : c.moveTo(x, y);
-    }
-    c.stroke();
-  },
-  shield(c) {
-    c.lineWidth = 1.7;
-    c.beginPath();
-    c.moveTo(0, -9.5); c.lineTo(8, -6); c.lineTo(8, 1); c.quadraticCurveTo(8, 7, 0, 9.5);
-    c.quadraticCurveTo(-8, 7, -8, 1); c.lineTo(-8, -6); c.closePath();
-    c.stroke();
-    c.beginPath(); c.moveTo(-3.4, -0.5); c.lineTo(-0.8, 2.6); c.lineTo(4, -3.4); c.stroke();
-  },
-  flask(c, t, k) {
-    c.lineWidth = 1.7;
-    c.beginPath();
-    c.moveTo(-3, -9); c.lineTo(-3, -2); c.lineTo(-8, 7); c.quadraticCurveTo(-9, 9.5, -6, 9.5);
-    c.lineTo(6, 9.5); c.quadraticCurveTo(9, 9.5, 8, 7); c.lineTo(3, -2); c.lineTo(3, -9);
-    c.closePath(); c.stroke();
-    c.beginPath(); c.moveTo(-5, -9); c.lineTo(5, -9); c.stroke();
-    c.globalAlpha = 0.45;
-    c.beginPath(); c.arc(-2, 5 - (t * 8 + k * 3) % 9, 1.3, 0, Math.PI * 2); c.fill();
-    c.beginPath(); c.arc(2.5, 6 - (t * 6 + k * 5) % 10, 1, 0, Math.PI * 2); c.fill();
-    c.globalAlpha = 1;
-  },
-  tag(c) {
-    c.lineWidth = 1.7;
-    c.beginPath();
-    c.moveTo(-9, -2); c.lineTo(-1, -9.5); c.lineTo(9.5, -9.5); c.lineTo(9.5, 1);
-    c.lineTo(2, 9); c.closePath();
-    c.stroke();
-    c.beginPath(); c.arc(5.5, -5.5, 1.9, 0, Math.PI * 2); c.stroke();
-  },
-  rack(c) {
-    c.lineWidth = 1.6;
-    c.strokeRect(-8, -9, 16, 18);
-    for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(-8, -5 + i * 4); c.lineTo(8, -5 + i * 4); c.stroke(); }
-  },
+const DECALS = {
+  plug(c) { c.lineWidth = 2.4; ring(c, 6); c.beginPath(); c.moveTo(-3, -3); c.lineTo(-3, 3); c.moveTo(3, -3); c.lineTo(3, 3); c.stroke(); },
+  busbar(c) { c.lineWidth = 2.6; for (const y of [-4, 0, 4]) { c.beginPath(); c.moveTo(-8, y); c.lineTo(8, y); c.stroke(); } },
+  transformer(c) { c.lineWidth = 2.2; ring(c, 4.5, -4); ring(c, 4.5, 4); },
+  battery(c, t) { c.lineWidth = 2.2; c.strokeRect(-7, -4, 14, 8); const n = 1 + Math.floor((Math.sin(t * 1.6) * 0.5 + 0.5) * 3); for (let i = 0; i < n; i++) c.fillRect(-5.5 + i * 3.4, -2.4, 2.4, 4.8); },
+  engine(c, t, k) { c.lineWidth = 2.2; c.strokeRect(-8, -4.5, 16, 9); const b = Math.sin(t * 8 + k) * 1.4; c.beginPath(); c.arc(-3, b, 2, 0, 7); c.moveTo(5, -b); c.arc(3, -b, 2, 0, 7); c.stroke(); },
+  sun(c, t) { c.lineWidth = 2; ring(c, 3.5); for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283 + t * 0.2; c.beginPath(); c.moveTo(Math.cos(a) * 5.5, Math.sin(a) * 5.5); c.lineTo(Math.cos(a) * 9, Math.sin(a) * 9); c.stroke(); } },
+  turbine(c, t, k) { c.lineWidth = 2.2; c.save(); c.rotate(t * 2 + k); for (let i = 0; i < 3; i++) { c.rotate(2.094); c.beginPath(); c.moveTo(0, 0); c.lineTo(0, -9); c.stroke(); } c.restore(); dot(c, 2); },
+  flame(c, t, k) { c.lineWidth = 2.2; const w = 1 + Math.sin(t * 5 + k) * 0.14; c.beginPath(); c.moveTo(0, 8); c.bezierCurveTo(-7 * w, 3, -4 * w, -2, 0, -8); c.bezierCurveTo(4 * w, -2, 7 * w, 3, 0, 8); c.stroke(); },
+  atom(c, t) { c.lineWidth = 1.8; for (let i = 0; i < 3; i++) { c.save(); c.rotate(i * 1.047 + t * 0.3); c.beginPath(); c.ellipse(0, 0, 9, 3.4, 0, 0, 6.283); c.stroke(); c.restore(); } dot(c, 2.2); },
+  star(c, t) { c.lineWidth = 2; const p = 0.85 + Math.sin(t * 2.5) * 0.15; c.beginPath(); for (let i = 0; i < 10; i++) { const a = i / 10 * 6.283 - 1.571; const r = (i % 2 ? 3.6 : 9) * p; i ? c.lineTo(Math.cos(a) * r, Math.sin(a) * r) : c.moveTo(Math.cos(a) * r, Math.sin(a) * r); } c.closePath(); c.stroke(); },
+  fan(c, t, k) { c.lineWidth = 2.6; c.save(); c.rotate(t * 3.5 + k); for (let i = 0; i < 3; i++) { c.rotate(2.094); c.beginPath(); c.arc(0, 0, 7, -0.4, 0.85); c.stroke(); } c.restore(); dot(c, 2); },
+  coil(c, t, k) { c.lineWidth = 2.2; c.beginPath(); for (let i = 0; i <= 32; i++) { const x = -9 + i / 32 * 18; const y = Math.sin(i / 32 * 12.6 + t * 2 + k) * 4.5; i ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke(); },
+  louvre(c, t, k) { c.lineWidth = 2.4; for (let i = 0; i < 4; i++) { const y = -6 + i * 4; const tl = Math.sin(t * 1.2 + k + i * 0.4) * 1.4; c.beginPath(); c.moveTo(-8, y - tl); c.lineTo(8, y + tl); c.stroke(); } },
+  cooltower(c, t, k) { c.lineWidth = 2.2; ring(c, 7); c.globalAlpha = 0.5 + Math.sin(t * 2 + k) * 0.3; ring(c, 3.4); c.globalAlpha = 1; },
+  snow(c, t) { c.lineWidth = 2; for (let i = 0; i < 3; i++) { c.save(); c.rotate(i * 1.047 + t * 0.15); c.beginPath(); c.moveTo(0, -9); c.lineTo(0, 9); c.moveTo(-2.4, -6); c.lineTo(0, -8.4); c.lineTo(2.4, -6); c.stroke(); c.restore(); } },
+  tank(c, t, k) { c.lineWidth = 2.2; ring(c, 8); c.globalAlpha = 0.4; c.beginPath(); c.arc(0, 0, 5 + Math.sin(t * 1.5 + k) * 0.8, 0, 6.283); c.fill(); c.globalAlpha = 1; },
+  cryo(c, t) { c.lineWidth = 2.2; c.strokeRect(-8, -8, 16, 16); DECALS.snow(c, t * 0.6, 0); },
+  barrel(c) { c.lineWidth = 2.2; ring(c, 7.5); ring(c, 3.5); },
+  tap(c, t, k) { c.lineWidth = 2.4; c.beginPath(); c.moveTo(-8, -4); c.lineTo(2, -4); c.lineTo(2, 2); c.stroke(); dot(c, 1.8, 2, 4 + ((t * 12 + (k || 0)) % 5)); },
+  well(c, t, k) { c.lineWidth = 2.2; ring(c, 8); c.beginPath(); c.moveTo(-8, 0); c.lineTo(8, 0); c.stroke(); dot(c, 2, 0, Math.sin(t * 1.6 + k) * 3); },
+  recycle(c, t) { c.lineWidth = 2.6; c.save(); c.rotate(t * 0.7); for (let i = 0; i < 3; i++) { c.rotate(2.094); c.beginPath(); c.arc(0, 0, 7, -0.5, 1); c.stroke(); } c.restore(); },
+  wave(c, t, k) { c.lineWidth = 2.2; for (let r = 0; r < 3; r++) { c.beginPath(); for (let i = 0; i <= 16; i++) { const x = -8 + i; const y = -4.5 + r * 4.5 + Math.sin(i / 2.2 + t * 2.4 + k + r) * 1.5; i ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke(); } },
+  switch(c, t, k) { c.lineWidth = 2.2; c.strokeRect(-9, -3.5, 18, 7); const on = Math.floor(t * 5 + k) % 4; for (let i = 0; i < 4; i++) { c.globalAlpha = i === on ? 1 : 0.3; c.fillRect(-7 + i * 3.7, -1.4, 2.4, 2.8); } c.globalAlpha = 1; },
+  fibre(c, t, k) { c.lineWidth = 2.2; for (const y of [-4, 0, 4]) { c.beginPath(); c.moveTo(-9, y); c.lineTo(9, y); c.stroke(); } dot(c, 2, ((t * 20 + (k || 0) * 6) % 18) - 9, 0); },
+  globe(c) { c.lineWidth = 2; ring(c, 8); c.beginPath(); c.ellipse(0, 0, 3.5, 8, 0, 0, 6.283); c.stroke(); c.beginPath(); c.moveTo(-8, 0); c.lineTo(8, 0); c.stroke(); },
+  desk(c) { c.lineWidth = 2.4; c.beginPath(); c.moveTo(-9, 2); c.lineTo(9, 2); c.stroke(); ring(c, 2.6, 0, -4); },
+  wrench(c) { c.lineWidth = 2.6; c.beginPath(); c.arc(-4, -4, 4.4, 0.6, 5.2); c.stroke(); c.beginPath(); c.moveTo(-1, -1); c.lineTo(7, 7); c.stroke(); },
+  screen(c, t, k) { c.lineWidth = 2.2; c.strokeRect(-9, -6, 18, 12); c.lineWidth = 1.8; c.beginPath(); for (let i = 0; i <= 12; i++) { const x = -7 + i * 1.2; const y = Math.sin(i * 1.1 + t * 3.5 + k) * 2.6; i ? c.lineTo(x, y) : c.moveTo(x, y); } c.stroke(); },
+  shield(c) { c.lineWidth = 2.4; c.beginPath(); c.moveTo(0, -9); c.lineTo(7, -5); c.lineTo(7, 2); c.quadraticCurveTo(7, 7, 0, 9); c.quadraticCurveTo(-7, 7, -7, 2); c.lineTo(-7, -5); c.closePath(); c.stroke(); },
+  flask(c, t, k) { c.lineWidth = 2.4; c.beginPath(); c.moveTo(-3, -8); c.lineTo(-3, -2); c.lineTo(-7, 7); c.lineTo(7, 7); c.lineTo(3, -2); c.lineTo(3, -8); c.closePath(); c.stroke(); c.globalAlpha = 0.5; dot(c, 1.6, -1.5, 4 - (t * 6 + k * 2) % 8); c.globalAlpha = 1; },
+  tag(c) { c.lineWidth = 2.4; c.beginPath(); c.moveTo(-8, -2); c.lineTo(-1, -9); c.lineTo(9, -9); c.lineTo(9, 1); c.lineTo(2, 8); c.closePath(); c.stroke(); },
+  rack(c) { c.lineWidth = 2.2; c.strokeRect(-7, -8, 14, 16); },
 };
+
+function ring(c, r, x = 0, y = 0) { c.beginPath(); c.arc(x, y, r, 0, 6.283); c.stroke(); }
+function dot(c, r, x = 0, y = 0) { c.beginPath(); c.arc(x, y, r, 0, 6.283); c.fill(); }
 
 // ------------------------------------------------------------------- view
 
@@ -337,12 +101,13 @@ export class FloorView {
     this.h = 0;
     this.hover = null;
     this.sel = null;
-    this.tool = null;         // building id being placed, or 'sell'
-    this.overlay = 'none';    // none | power | cool | heat | net
+    this.tool = null;
+    this.overlay = 'none';
     this.t = 0;
     this.dragging = false;
     this.panned = false;
     this.centred = false;
+    this.hits = [];
     this._bind();
   }
 
@@ -355,36 +120,51 @@ export class FloorView {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   }
 
+  /** World position of a tile's ground centre, before pan and zoom. */
+  iso(gx, gy) {
+    return { x: (gx - gy) * (TW / 2), y: (gx + gy) * (TH / 2) };
+  }
+
   centre(state) {
     const f = facilityOf(state);
-    this.zoom = clamp(Math.min(this.w / (f.w * TILE + 70), this.h / (f.h * TILE + 70)), 0.3, 1.5);
-    this.ox = (this.w - f.w * TILE * this.zoom) / 2;
-    this.oy = (this.h - f.h * TILE * this.zoom) / 2;
+    const spanX = (f.w + f.h) * (TW / 2);
+    const spanY = (f.w + f.h) * (TH / 2) + 90;
+    this.zoom = clamp(Math.min((this.w - 40) / spanX, (this.h - 40) / spanY), 0.22, 1.6);
+    const midX = ((f.w - 1) - (f.h - 1)) * (TW / 2) / 2;
+    const midY = ((f.w - 1) + (f.h - 1)) * (TH / 2) / 2;
+    this.ox = this.w / 2 - midX * this.zoom;
+    this.oy = this.h / 2 - midY * this.zoom + 14 * this.zoom;
     this.centred = true;
-  }
-
-  toTile(px, py) {
-    return {
-      x: Math.floor((px - this.ox) / (TILE * this.zoom)),
-      y: Math.floor((py - this.oy) / (TILE * this.zoom)),
-    };
-  }
-
-  toTileF(px, py) {
-    return { x: (px - this.ox) / (TILE * this.zoom), y: (py - this.oy) / (TILE * this.zoom) };
   }
 
   /** Screen coordinates of a tile centre — used by the automated checks. */
   tileCentre(gx, gy) {
     const r = this.c.getBoundingClientRect();
-    const s = TILE * this.zoom;
-    return { x: r.left + this.ox + gx * s + s / 2, y: r.top + this.oy + gy * s + s / 2 };
+    const p = this.iso(gx, gy);
+    return { x: r.left + this.ox + p.x * this.zoom, y: r.top + this.oy + p.y * this.zoom };
+  }
+
+  /**
+   * Pointer picking walks the draw list backwards so the machine in front wins,
+   * then falls back to the ground plane for empty tiles.
+   */
+  pick(px, py) {
+    // Hit polygons are recorded in world space during the draw, so convert the
+    // pointer once and walk the list backwards: whatever is in front wins.
+    const wx = (px - this.ox) / this.zoom;
+    const wy = (py - this.oy) / this.zoom;
+    for (let i = this.hits.length - 1; i >= 0; i--) {
+      const hit = this.hits[i];
+      if (pointInPoly(wx, wy, hit.poly)) return { x: hit.gx, y: hit.gy };
+    }
+    const a = wx / (TW / 2);
+    const b = wy / (TH / 2);
+    return { x: Math.round((a + b) / 2), y: Math.round((b - a) / 2) };
   }
 
   _bind() {
     const c = this.c;
     let last = null;
-
     const pos = (e) => {
       const r = c.getBoundingClientRect();
       return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -400,7 +180,7 @@ export class FloorView {
 
     c.addEventListener('pointermove', (e) => {
       const p = pos(e);
-      this.hover = this.toTile(p.x, p.y);
+      this.hover = this.pick(p.x, p.y);
       if (this.dragging && last) {
         const dx = p.x - last.x, dy = p.y - last.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) this.panned = true;
@@ -417,7 +197,7 @@ export class FloorView {
     const end = (e) => {
       if (this.dragging && !this.panned) {
         const p = pos(e);
-        const t = this.toTile(p.x, p.y);
+        const t = this.pick(p.x, p.y);
         this.cb.onClick?.(t.x, t.y, e.shiftKey);
       }
       this.dragging = false;
@@ -431,15 +211,26 @@ export class FloorView {
     c.addEventListener('wheel', (e) => {
       e.preventDefault();
       const p = pos(e);
-      const before = this.toTileF(p.x, p.y);
-      this.zoom = clamp(this.zoom * (e.deltaY < 0 ? 1.12 : 1 / 1.12), 0.24, 2.2);
-      const after = this.toTileF(p.x, p.y);
-      this.ox += (after.x - before.x) * TILE * this.zoom;
-      this.oy += (after.y - before.y) * TILE * this.zoom;
+      const k = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const nz = clamp(this.zoom * k, 0.18, 2.4);
+      const f = nz / this.zoom;
+      this.ox = p.x - (p.x - this.ox) * f;
+      this.oy = p.y - (p.y - this.oy) * f;
+      this.zoom = nz;
     }, { passive: false });
   }
 
   // ---------------------------------------------------------------- drawing
+
+  diamond(ctx, p, inset = 0) {
+    const hw = TW / 2 - inset, hh = TH / 2 - inset * (TH / TW);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y - hh);
+    ctx.lineTo(p.x + hw, p.y);
+    ctx.lineTo(p.x, p.y + hh);
+    ctx.lineTo(p.x - hw, p.y);
+    ctx.closePath();
+  }
 
   draw(state, d, dt) {
     this.t += dt;
@@ -451,78 +242,151 @@ export class FloorView {
     ctx.translate(this.ox, this.oy);
     ctx.scale(this.zoom, this.zoom);
 
-    const W = f.w * TILE, H = f.h * TILE;
+    this.drawGround(ctx, state, d, f);
+    if (this.overlay !== 'none') this.drawOverlay(ctx, state, d, f);
 
-    // Room shell.
-    ctx.fillStyle = '#0d141d';
-    roundRect(ctx, -10, -10, W + 20, H + 20, 10);
-    ctx.fill();
-    ctx.strokeStyle = '#2b3d52';
-    ctx.lineWidth = 2.5;
-    ctx.stroke();
-
-    // Bare floor: a dot grid reads calmer than a full lattice. Squares rather
-    // than arcs — six hundred paths a frame is not worth the rounded corner.
-    if (this.zoom > 0.34) {
-      ctx.fillStyle = '#1b2634';
-      const dot = this.zoom > DETAIL_ZOOM ? 3 : 4;
-      for (let y = 0; y <= f.h; y++) {
-        for (let x = 0; x <= f.w; x++) {
-          ctx.fillRect(x * TILE - dot / 2, y * TILE - dot / 2, dot, dot);
-        }
-      }
-    }
-
-    if (this.overlay !== 'none') this.drawOverlay(state, d, f);
-
-    // Where the machine under the cursor, or the one being placed, reaches.
     const focus = this.tool && this.tool !== 'sell' ? this.hover : this.sel;
-    if (focus) this.drawRange(state, focus, d);
+    if (focus) this.drawRange(ctx, state, focus, d);
 
-    for (const r of d.racks) this.drawRack(ctx, r);
-    for (const { x, y, tile } of tilesOf(state)) {
-      const b = BUILDINGS_BY_ID[tile.b];
-      if (!b || b.cat === 'compute') continue;
-      this.drawMachine(ctx, x, y, b, d);
-    }
-    for (const r of d.racks) this.drawWarnings(ctx, r);
-
-    // Hover and selection.
+    // Ground markers sit under the volumes so a tall rack never hides them.
+    if (this.sel) this.markTile(ctx, this.sel, '#eaf2fa', true);
     if (this.hover && inRoom(f, this.hover)) {
       const taken = !!tileAt(state, this.hover.x, this.hover.y);
       const bad = this.tool === 'sell' ? !taken : this.tool ? taken : false;
-      ctx.strokeStyle = bad ? '#e8615f' : this.tool === 'sell' ? '#e8615f' : '#4fdca8';
-      ctx.lineWidth = 2;
-      roundRect(ctx, this.hover.x * TILE + 2, this.hover.y * TILE + 2, TILE - 4, TILE - 4, 7);
-      ctx.stroke();
+      this.markTile(ctx, this.hover, bad ? '#e8615f' : this.tool === 'sell' ? '#e8615f' : '#4fdca8');
     }
-    if (this.sel) {
-      ctx.strokeStyle = '#eaf2fa';
-      ctx.setLineDash([5, 3]);
-      ctx.lineWidth = 1.8;
-      roundRect(ctx, this.sel.x * TILE + 2, this.sel.y * TILE + 2, TILE - 4, TILE - 4, 7);
-      ctx.stroke();
-      ctx.setLineDash([]);
+
+    // Everything on the floor, back to front.
+    const order = [];
+    for (const k in state.tiles) {
+      const [gx, gy] = k.split(',').map(Number);
+      order.push({ gx, gy, tile: state.tiles[k] });
     }
+    order.sort((a, b) => (a.gx + a.gy) - (b.gx + b.gy) || a.gx - b.gx);
+
+    const rackAt = new Map();
+    for (const r of d.racks) rackAt.set(r.x + ',' + r.y, r);
+
+    this.hits.length = 0;
+    for (const item of order) {
+      const b = BUILDINGS_BY_ID[item.tile.b];
+      if (!b) continue;
+      const rack = rackAt.get(item.gx + ',' + item.gy);
+      this.drawSolid(ctx, item.gx, item.gy, b, rack, d);
+    }
+
+    // A ghost of what you are about to place.
+    if (this.tool && this.tool !== 'sell' && this.hover && inRoom(f, this.hover)
+        && !tileAt(state, this.hover.x, this.hover.y)) {
+      const b = BUILDINGS_BY_ID[this.tool];
+      if (b) {
+        ctx.globalAlpha = 0.45;
+        this.drawSolid(ctx, this.hover.x, this.hover.y, b, null, d, true);
+        ctx.globalAlpha = 1;
+      }
+    }
+
     ctx.restore();
   }
 
-  drawOverlay(state, d, f) {
-    const ctx = this.ctx;
+  /** Bounds of the whole room in world space, including the plinth. */
+  groundBounds(f) {
+    return {
+      minX: -(f.h - 0.5) * (TW / 2) - 4,
+      maxX: (f.w - 0.5) * (TW / 2) + 4,
+      minY: -TH / 2 - 4,
+      maxY: (f.w + f.h - 1) * (TH / 2) + 20,
+    };
+  }
+
+  /**
+   * The floor never changes between frames, so it is rendered once per room
+   * and zoom level and blitted. Six hundred diamonds a frame was most of the
+   * budget at full site size.
+   */
+  drawGround(ctx, state, d, f) {
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const key = f.id + ':' + this.zoom.toFixed(3) + ':' + dpr;
+    if (this._groundKey !== key) {
+      const b = this.groundBounds(f);
+      const cw = Math.ceil((b.maxX - b.minX) * this.zoom * dpr);
+      const ch = Math.ceil((b.maxY - b.minY) * this.zoom * dpr);
+      if (cw > 0 && ch > 0 && cw * ch < 40e6) {
+        const off = this._ground || (this._ground = document.createElement('canvas'));
+        off.width = cw; off.height = ch;
+        const g = off.getContext('2d');
+        g.setTransform(dpr * this.zoom, 0, 0, dpr * this.zoom, -b.minX * dpr * this.zoom, -b.minY * dpr * this.zoom);
+        this.paintGround(g, f);
+        this._groundKey = key;
+        this._groundBox = b;
+      }
+    }
+    if (this._groundKey === key) {
+      const b = this._groundBox;
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      const dp = Math.min(2, window.devicePixelRatio || 1);
+      ctx.scale(dp, dp);
+      ctx.drawImage(this._ground,
+        this.ox + b.minX * this.zoom, this.oy + b.minY * this.zoom,
+        (b.maxX - b.minX) * this.zoom, (b.maxY - b.minY) * this.zoom);
+      ctx.restore();
+    }
+  }
+
+  paintGround(ctx, f) {
+    // A plinth under the room reads as a building rather than a spreadsheet.
+    const c0 = this.iso(-0.5, -0.5), c1 = this.iso(f.w - 0.5, -0.5);
+    const c2 = this.iso(f.w - 0.5, f.h - 0.5), c3 = this.iso(-0.5, f.h - 0.5);
+    const drop = 13;
+    ctx.fillStyle = '#0a1017';
+    ctx.beginPath();
+    ctx.moveTo(c3.x, c3.y); ctx.lineTo(c2.x, c2.y); ctx.lineTo(c2.x, c2.y + drop);
+    ctx.lineTo(c3.x, c3.y + drop); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#0c141d';
+    ctx.beginPath();
+    ctx.moveTo(c2.x, c2.y); ctx.lineTo(c1.x, c1.y); ctx.lineTo(c1.x, c1.y + drop);
+    ctx.lineTo(c2.x, c2.y + drop); ctx.closePath(); ctx.fill();
+
+    ctx.strokeStyle = '#212e3d';
+    ctx.lineWidth = 1;
+    for (let gy = 0; gy < f.h; gy++) {
+      for (let gx = 0; gx < f.w; gx++) {
+        const p = this.iso(gx, gy);
+        this.diamond(ctx, p);
+        ctx.fillStyle = (gx + gy) % 2 ? '#16212e' : '#121c27';
+        ctx.fill();
+        ctx.stroke();
+      }
+    }
+  }
+
+  markTile(ctx, t, colour, dashed) {
+    const p = this.iso(t.x, t.y);
+    ctx.strokeStyle = colour;
+    ctx.lineWidth = 2;
+    if (dashed) ctx.setLineDash([5, 4]);
+    this.diamond(ctx, p, 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  drawOverlay(ctx, state, d, f) {
+    const paint = (gx, gy, style) => {
+      this.diamond(ctx, this.iso(gx, gy));
+      ctx.fillStyle = style;
+      ctx.fill();
+    };
     if (this.overlay === 'heat') {
       for (const r of d.racks) {
         const t = clamp((r.temp - 20) / 50, 0, 1);
-        ctx.fillStyle = `hsla(${(1 - t) * 200}, 85%, 50%, ${0.14 + t * 0.5})`;
-        ctx.fillRect(r.x * TILE, r.y * TILE, TILE, TILE);
+        paint(r.x, r.y, `hsla(${(1 - t) * 200}, 85%, 50%, ${0.2 + t * 0.5})`);
       }
       return;
     }
     if (this.overlay === 'net') {
       const ok = d.netFactor > 0.99;
-      for (const r of d.racks) {
-        ctx.fillStyle = ok ? 'rgba(143,111,216,.20)' : 'rgba(232,97,95,.26)';
-        ctx.fillRect(r.x * TILE, r.y * TILE, TILE, TILE);
-      }
+      for (const r of d.racks) paint(r.x, r.y, ok ? 'rgba(143,111,216,.3)' : 'rgba(232,97,95,.34)');
       return;
     }
     const src = this.overlay === 'power' ? d.pdus : d.coolers;
@@ -538,228 +402,261 @@ export class FloorView {
     }
     for (const [k, n] of cover) {
       const [x, y] = k.split(',').map(Number);
-      ctx.fillStyle = this.overlay === 'power'
-        ? `rgba(216,161,58,${Math.min(0.32, 0.11 + n * 0.06)})`
-        : `rgba(79,220,168,${Math.min(0.32, 0.11 + n * 0.06)})`;
-      ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
+      paint(x, y, this.overlay === 'power'
+        ? `rgba(216,161,58,${Math.min(0.4, 0.14 + n * 0.07)})`
+        : `rgba(79,220,168,${Math.min(0.4, 0.14 + n * 0.07)})`);
     }
     for (const r of d.racks) {
-      if (!cover.get(r.x + ',' + r.y) && r.used > 0) {
-        ctx.fillStyle = 'rgba(232,97,95,.28)';
-        ctx.fillRect(r.x * TILE, r.y * TILE, TILE, TILE);
-      }
+      if (!cover.get(r.x + ',' + r.y) && r.used > 0) paint(r.x, r.y, 'rgba(232,97,95,.36)');
     }
   }
 
-  /** Dashed reach of a machine, with the racks it would serve picked out. */
-  drawRange(state, tilePos, d) {
-    const t = tileAt(state, tilePos.x, tilePos.y);
-    const b = t ? BUILDINGS_BY_ID[t.b] : BUILDINGS_BY_ID[this.tool];
+  drawRange(ctx, state, t, d) {
+    const tile = tileAt(state, t.x, t.y);
+    const b = tile ? BUILDINGS_BY_ID[tile.b] : BUILDINGS_BY_ID[this.tool];
     if (!b || !b.radius) return;
-    const ctx = this.ctx;
     const colour = b.cat === 'cooling' ? '#4fdca8' : '#d8a13a';
     const r = b.radius;
-    ctx.strokeStyle = colour + '99';
-    ctx.setLineDash([6, 4]);
-    ctx.lineWidth = 1.6;
-    roundRect(ctx, (tilePos.x - r) * TILE + 2, (tilePos.y - r) * TILE + 2,
-      (r * 2 + 1) * TILE - 4, (r * 2 + 1) * TILE - 4, 8);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.fillStyle = colour + '1f';
-    for (const rack of d.racks) {
-      if (Math.max(Math.abs(rack.x - tilePos.x), Math.abs(rack.y - tilePos.y)) <= r) {
-        ctx.fillRect(rack.x * TILE, rack.y * TILE, TILE, TILE);
+    ctx.fillStyle = colour + '22';
+    ctx.strokeStyle = colour + '77';
+    ctx.lineWidth = 1.2;
+    for (let gy = t.y - r; gy <= t.y + r; gy++) {
+      for (let gx = t.x - r; gx <= t.x + r; gx++) {
+        if (gx < 0 || gy < 0) continue;
+        this.diamond(ctx, this.iso(gx, gy), 1);
+        ctx.fill();
       }
     }
-  }
-
-  /** Plate, border and caption strip shared by every machine and rack. */
-  plate(ctx, x, y, colour, temper) {
-    const px = x * TILE + PAD, py = y * TILE + PAD;
-    const w = TILE - PAD * 2, h = TILE - PAD * 2;
-    // A flat plate with one lighter band reads like a gradient and costs a
-    // fraction of building 600 gradient objects every frame.
-    ctx.fillStyle = '#0f1721';
-    ctx.strokeStyle = temper || (colour + 'cc');
-    ctx.lineWidth = 1.5;
-    if (this.zoom < DETAIL_ZOOM) {
-      // Square plates below the detail threshold: the rounding is sub-pixel anyway and
-      // the path costs more than the fill.
-      ctx.fillRect(px, py, w, h);
-      ctx.strokeRect(px, py, w, h);
-      return { px, py, w, h };
-    }
-    roundRect(ctx, px, py, w, h, 6);
-    ctx.fill();
-    ctx.save();
-    ctx.clip();
-    ctx.fillStyle = '#18222f';
-    ctx.fillRect(px, py, w, h * 0.45);
-    ctx.restore();
-    ctx.stroke();
-    return { px, py, w, h };
-  }
-
-  caption(ctx, x, y, text, colour) {
-    if (this.zoom < CAP_ZOOM) return;
-    const px = x * TILE + PAD, py = y * TILE + PAD;
-    const w = TILE - PAD * 2, h = TILE - PAD * 2;
-    ctx.save();
-    roundRect(ctx, px, py + h - CAP_H, w, CAP_H, 5);
-    ctx.clip();
-    ctx.fillStyle = '#0a1119';
-    ctx.fillRect(px, py + h - CAP_H, w, CAP_H);
-    ctx.fillStyle = colour || '#7e93a9';
-    ctx.font = '600 7.5px ui-monospace, SFMono-Regular, Menlo, monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, px + w / 2, py + h - CAP_H / 2 + 0.5);
-    ctx.restore();
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'alphabetic';
-  }
-
-  drawRack(ctx, r) {
-    const hot = clamp((r.temp - 30) / 32, 0, 1);
-    const border = hot > 0.04
-      ? `rgb(${Math.round(90 + hot * 142)}, ${Math.round(150 - hot * 90)}, ${Math.round(140 - hot * 85)})`
-      : r.b.color + 'cc';
-    const { px, py, w, h } = this.plate(ctx, r.x, r.y, r.b.color, border);
-
-    // Slot grid: always 4 × 5 cells standing in for the whole rack, so a
-    // 112-slot cryo vault reads the same way an 8-slot frame does.
-    const capH = this.zoom >= CAP_ZOOM ? CAP_H : 0;
-    const cols = 4, rows = 5;
-    const gx = px + 4, gy = py + 4;
-    const gw = w - 8, gh = h - 8 - capH;
-    const cw = gw / cols, ch = gh / rows;
-    const cells = cols * rows;
-    const live = Math.max(0, r.used - r.down);
-    const liveCells = r.cap > 0 ? (live / r.cap) * cells : 0;
-    const downCells = r.cap > 0 ? (r.down / r.cap) * cells : 0;
-    const blink = 0.6 + 0.4 * Math.sin(this.t * 5 + r.x * 2.1 + r.y * 1.3);
-    const load = r.load * r.throttle;
-
-    // Zoomed out over a few hundred racks, twenty rectangles each is the whole
-    // frame budget. One bar carries the same information at that size.
-    if (this.zoom < DETAIL_ZOOM) {
-      ctx.fillStyle = 'rgba(96,118,142,.20)';
-      ctx.fillRect(gx, gy, gw, gh);
-      const usedFrac = r.cap > 0 ? live / r.cap : 0;
-      ctx.fillStyle = hot > 0.55
-        ? `rgba(232,97,95,${0.55 + blink * 0.3})`
-        : `rgba(79,220,168,${0.3 + load * blink * 0.6})`;
-      ctx.fillRect(gx, gy + gh * (1 - usedFrac), gw, gh * usedFrac);
-      if (r.down > 0) {
-        ctx.fillStyle = 'rgba(232,97,95,.9)';
-        ctx.fillRect(gx, gy, gw, gh * (r.down / Math.max(1, r.cap)));
-      }
-      return;
-    }
-
-    for (let i = 0; i < cells; i++) {
-      const cx = gx + (i % cols) * cw;
-      const cy = gy + Math.floor(i / cols) * ch;
-      const ww = Math.max(1.5, cw - 2), hh = Math.max(1.4, ch - 2);
-      if (i < liveCells) {
-        ctx.fillStyle = hot > 0.55
-          ? `rgba(232,97,95,${0.55 + blink * 0.35})`
-          : `rgba(79,220,168,${0.3 + load * blink * 0.6})`;
-      } else if (i < liveCells + downCells) {
-        ctx.fillStyle = 'rgba(232,97,95,.9)';
-      } else {
-        ctx.fillStyle = 'rgba(96,118,142,.22)';
-      }
-      ctx.fillRect(cx, cy, ww, hh);
-    }
-
-    if (r.used === 0) {
-      this.caption(ctx, r.x, r.y, 'EMPTY', '#5c728a');
-    } else {
-      this.caption(ctx, r.x, r.y,
-        r.used + '/' + r.cap + '  ' + Math.round(r.temp) + '°',
-        hot > 0.4 ? '#e8615f' : '#8fa6bd');
-    }
-  }
-
-  drawMachine(ctx, tx, ty, b, d) {
-    this.plate(ctx, tx, ty, b.color);
-    const capH = this.zoom >= CAP_ZOOM ? CAP_H : 0;
-    const cx = tx * TILE + TILE / 2;
-    const cy = ty * TILE + (TILE - capH) / 2 + 1;
-
-    if (this.zoom > GLYPH_ZOOM) {
-      const glyph = GLYPHS[b.glyph] || GLYPHS.switch;
-      const scale = Math.min(1, (TILE - PAD * 2 - capH - 4) / 24);
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.scale(scale, scale);
-      ctx.strokeStyle = b.color;
-      ctx.fillStyle = b.color;
-      ctx.lineJoin = 'round';
-      ctx.lineCap = 'round';
-      glyph(ctx, this.t, (tx * 0.7 + ty * 1.3) % 6.28);
-      ctx.restore();
-    }
-    this.caption(ctx, tx, ty, shortName(b), '#8296ab');
   }
 
   /**
-   * A rack starved of power or cooling gets a badge whether or not an overlay
-   * is on, because that is the mistake everybody makes and nobody spots.
+   * One machine: a prism with a lit top, a shaded left face and a darker right
+   * face, plus whatever detail the zoom level can carry.
    */
-  drawWarnings(ctx, r) {
-    if (r.used === 0 || this.zoom < 0.4) return;
+  drawSolid(ctx, gx, gy, b, rack, d, ghost) {
+    const p = this.iso(gx, gy);
+    const hw = TW / 2 - 4;
+    const hh = TH / 2 - 2;
+    let height = b.h * HSCALE;
+    let colour = b.color;
+    let body = null;
+
+    if (rack) {
+      // A rack is as tall as it is full, so a half-empty row is obvious.
+      const fill = rack.cap > 0 ? clamp(rack.used / rack.cap, 0, 1) : 0;
+      height = b.h * HSCALE * (0.6 + 0.4 * fill);
+      const hot = clamp((rack.temp - 30) / 32, 0, 1);
+      // Cabinets are dark steel; the colour lives in the edges and the lights.
+      body = hot > 0.05 ? mix('#141c26', '#40181c', hot) : '#141c26';
+    }
+
+    // A soft contact shadow stops everything floating.
+    if (!ghost && this.zoom > 0.5) {
+      ctx.fillStyle = 'rgba(0,0,0,.35)';
+      ctx.beginPath();
+      ctx.ellipse(p.x, p.y + 3, TW / 2 - 7, TH / 2 - 5, 0, 0, 6.283);
+      ctx.fill();
+    }
+
+    const top = { x: p.x, y: p.y - height };
+    const A = { x: top.x, y: top.y - hh };          // far corner
+    const B = { x: top.x + hw, y: top.y };          // right corner
+    const C = { x: top.x, y: top.y + hh };          // near corner
+    const D = { x: top.x - hw, y: top.y };          // left corner
+    const C0 = { x: p.x, y: p.y + hh };
+    const B0 = { x: p.x + hw, y: p.y };
+    const D0 = { x: p.x - hw, y: p.y };
+
+    // Left face.
+    ctx.fillStyle = body ? shade(body, 0.72) : shade(colour, 0.40, '#0a1017');
+    ctx.beginPath();
+    ctx.moveTo(D.x, D.y); ctx.lineTo(C.x, C.y); ctx.lineTo(C0.x, C0.y); ctx.lineTo(D0.x, D0.y);
+    ctx.closePath(); ctx.fill();
+
+    // Right face.
+    ctx.fillStyle = body ? shade(body, 0.48) : shade(colour, 0.26, '#0a1017');
+    ctx.beginPath();
+    ctx.moveTo(C.x, C.y); ctx.lineTo(B.x, B.y); ctx.lineTo(B0.x, B0.y); ctx.lineTo(C0.x, C0.y);
+    ctx.closePath(); ctx.fill();
+
+    // Top face.
+    ctx.fillStyle = body ? shade(body, 1.25) : shade(colour, 0.80, '#16202c');
+    ctx.beginPath();
+    ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.lineTo(C.x, C.y); ctx.lineTo(D.x, D.y);
+    ctx.closePath(); ctx.fill();
+    if (this.zoom > 0.36) {
+      ctx.strokeStyle = body ? shade(b.color, 1.1) : shade(colour, 1.35);
+      ctx.lineWidth = body ? 1.4 : 1.1;
+      ctx.stroke();
+    }
+
+    // Vertical corner edges.
+    if (this.zoom > 0.5) {
+      ctx.strokeStyle = body ? shade(b.color, 0.8) : shade(colour, 0.9);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(C.x, C.y); ctx.lineTo(C0.x, C0.y);
+      ctx.moveTo(B.x, B.y); ctx.lineTo(B0.x, B0.y);
+      ctx.moveTo(D.x, D.y); ctx.lineTo(D0.x, D0.y);
+      ctx.stroke();
+    }
+
+    if (!ghost) {
+      this.hits.push({
+        gx, gy,
+        poly: [A, B, B0, C0, D0, D],
+      });
+    }
+
+    if (this.zoom < LID) return;
+
+    if (rack) this.rackFace(ctx, rack, C, B, C0, B0, D, D0);
+    else if (this.zoom >= DETAIL) this.decal(ctx, top, b, gx, gy);
+
+    if (rack) this.rackWarnings(ctx, rack, top);
+  }
+
+  /**
+   * Server bays painted on the two faces you can see: a recessed slot with a
+   * lit strip along it, so a rack reads as a rack rather than a coloured box.
+   */
+  rackFace(ctx, r, C, B, C0, B0, D, D0) {
+    if (this.zoom < BAYS) return;
+    const bays = 5;
+    const live = Math.max(0, r.used - r.down);
+    const liveFrac = r.cap > 0 ? live / r.cap : 0;
+    const downFrac = r.cap > 0 ? r.down / r.cap : 0;
+    const hot = clamp((r.temp - 30) / 32, 0, 1);
+    const load = r.load * r.throttle;
+
+    for (const [P, Q, P0, Q0] of [[C, B, C0, B0], [D, C, D0, C0]]) {
+      for (let i = 0; i < bays; i++) {
+        const a = 0.09 + (i / bays) * 0.84;
+        const bEdge = a + 0.6 / bays;
+        const frac = 1 - i / bays;
+        const on = frac <= liveFrac;
+        const dead = !on && frac <= liveFrac + downFrac;
+
+        if (!on && !dead) {
+          quad(ctx, lerpP(P, P0, a), lerpP(Q, Q0, a), lerpP(Q, Q0, bEdge), lerpP(P, P0, bEdge),
+            0.1, 0.9, 'rgba(0,0,0,.38)');
+          continue;
+        }
+        // Lit strip along the bottom of the bay.
+        const blink = 0.55 + 0.45 * Math.sin(this.t * 6 + i * 1.7 + r.x * 2.1 + r.y * 1.3);
+        const style = dead ? 'rgba(255,105,100,.95)'
+          : hot > 0.55 ? `rgba(255,150,135,${0.7 + blink * 0.3})`
+          : `rgba(120,255,205,${0.45 + load * blink * 0.55})`;
+        const lo = bEdge - 0.22 / bays;
+        quad(ctx, lerpP(P, P0, lo), lerpP(Q, Q0, lo), lerpP(Q, Q0, bEdge), lerpP(P, P0, bEdge),
+          0.14, 0.86, style);
+      }
+    }
+  }
+
+  rackWarnings(ctx, r, top) {
+    if (r.used === 0 || this.zoom < 0.45) return;
     const marks = [];
     if (r.pduFactor < 0.95) marks.push('#e8b44a');
     if (r.cover < 0.95 || r.temp > 40) marks.push('#e8615f');
     if (!marks.length) return;
-    const pulse = 0.6 + 0.4 * Math.sin(this.t * 4 + r.x + r.y);
-    let px = r.x * TILE + TILE - 9;
-    const py = r.y * TILE + 9;
+    const pulse = 0.55 + 0.45 * Math.sin(this.t * 4 + r.x + r.y);
+    let y = top.y - 14;
     for (const colour of marks) {
       ctx.globalAlpha = pulse;
       ctx.fillStyle = colour;
       ctx.beginPath();
-      ctx.moveTo(px, py - 6);
-      ctx.lineTo(px + 5.5, py + 4);
-      ctx.lineTo(px - 5.5, py + 4);
-      ctx.closePath();
-      ctx.fill();
+      ctx.moveTo(top.x, y - 7); ctx.lineTo(top.x + 6, y + 3); ctx.lineTo(top.x - 6, y + 3);
+      ctx.closePath(); ctx.fill();
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#101821';
-      ctx.fillRect(px - 0.7, py - 2.8, 1.4, 3.8);
-      ctx.fillRect(px - 0.7, py + 1.8, 1.4, 1.4);
-      px -= 13;
+      ctx.fillRect(top.x - 0.8, y - 3.4, 1.6, 4);
+      ctx.fillRect(top.x - 0.8, y + 1.2, 1.6, 1.4);
+      y -= 13;
     }
+  }
+
+  /** The decal is drawn straight onto the top face, skewed into its plane. */
+  decal(ctx, top, b, gx, gy) {
+    const fn = DECALS[b.glyph];
+    if (!fn) return;
+    // A -10..10 decal box maps to a diamond; this keeps it inside the face.
+    const s = 1.15;
+    ctx.save();
+    ctx.transform(s, s * (TH / TW), -s, s * (TH / TW), top.x, top.y);
+    ctx.strokeStyle = shade(b.color, 1.75);
+    ctx.fillStyle = shade(b.color, 1.75);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    fn(ctx, this.t, (gx * 0.7 + gy * 1.3) % 6.28);
+    ctx.restore();
   }
 }
 
-/** Every building carries an explicit short tag; captions never guess. */
-function shortName(b) {
-  return b.tag || b.name.split(' ')[0].toUpperCase();
+// ------------------------------------------------------------------ helpers
+
+/** Fill a quad, trimmed along its width so bays do not touch the corners. */
+function quad(ctx, p0, p1, p2, p3, t0, t1, style) {
+  const a = lerpP(p0, p1, t0), b = lerpP(p0, p1, t1);
+  const c = lerpP(p3, p2, t1), d = lerpP(p3, p2, t0);
+  ctx.fillStyle = style;
+  ctx.beginPath();
+  ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.lineTo(d.x, d.y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+function lerpP(a, b, t) {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function mix(a, b, t) {
+  const [r1, g1, b1] = hexToRgb(a);
+  const [r2, g2, b2] = hexToRgb(b);
+  const c = (x, y) => Math.round(x + (y - x) * t).toString(16).padStart(2, '0');
+  return '#' + c(r1, r2) + c(g1, g2) + c(b1, b2);
+}
+
+function pointInPoly(px, py, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y, xj = poly[j].x, yj = poly[j].y;
+    if ((yi > py) !== (yj > py) && px < ((xj - xi) * (py - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
 function inRoom(f, p) {
   return p.x >= 0 && p.y >= 0 && p.x < f.w && p.y < f.h;
 }
 
-function tilesOf(state) {
-  const out = [];
-  for (const k in state.tiles) {
-    const [x, y] = k.split(',').map(Number);
-    out.push({ x, y, tile: state.tiles[k] });
-  }
-  return out;
-}
+// --------------------------------------------------------------- list icons
 
-function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
+const iconCache = new Map();
+
+/**
+ * The same glyph a machine wears on the floor, rendered flat for the build
+ * list. Cached as a data URL so the panel can use it as a background image.
+ */
+export function iconFor(b, size = 30) {
+  const key = b.id + ':' + size;
+  const hit = iconCache.get(key);
+  if (hit) return hit;
+  const dpr = 2;
+  const c = document.createElement('canvas');
+  c.width = size * dpr; c.height = size * dpr;
+  const g = c.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const fn = DECALS[b.glyph] || DECALS.switch;
+  g.translate(size / 2, size / 2);
+  const s = (size / 2 - 3) / 10;
+  g.scale(s, s);
+  g.strokeStyle = b.color;
+  g.fillStyle = b.color;
+  g.lineJoin = 'round';
+  g.lineCap = 'round';
+  fn(g, 0.4, 0);
+  const url = c.toDataURL();
+  iconCache.set(key, url);
+  return url;
 }

@@ -546,7 +546,10 @@ function wearAndRepair(state, d, days, hooks) {
 export function makeOffer(state, d, seedIndex) {
   const pool = CONTRACT_TEMPLATES.filter((t) => t.minRep <= state.reputation);
   if (!pool.length) return null;
-  const t = weightedPick(pool, (x) => 1 + x.minRep / 40);
+  // Keep the board varied: only repeat a client when there is nothing else.
+  const onBoard = new Set(state.contracts.offers.map((o) => o.tid));
+  const fresh = pool.filter((x) => !onBoard.has(x.id));
+  const t = weightedPick(fresh.length ? fresh : pool, (x) => 1 + x.minRep / 40);
   const committed = sum(state.contracts.active, (c) => c.demand);
   const free = Math.max(4, d.computeSellable - committed);
   const scale = 0.65 + Math.random() * 0.8;

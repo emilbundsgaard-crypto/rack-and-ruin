@@ -111,11 +111,13 @@ async function clickTile(page, gx, gy) {
   await page.click('[data-build="rack"]');
   const a = await tileAt(page, 1, 1);
   const b = await tileAt(page, 5, 1);
+  // Rows run diagonally on an isometric floor, so the sweep follows the line
+  // between the two tile centres rather than a straight screen row.
   const sweep = async () => {
     await page.mouse.move(a.x, a.y);
     await page.mouse.down();
-    for (let i = 0; i <= 12; i++) {
-      await page.mouse.move(a.x + (b.x - a.x) * i / 12, a.y);
+    for (let i = 0; i <= 16; i++) {
+      await page.mouse.move(a.x + (b.x - a.x) * i / 16, a.y + (b.y - a.y) * i / 16);
       await page.waitForTimeout(25);
     }
     await page.mouse.up();

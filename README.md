@@ -68,7 +68,7 @@ campus. Only the numbers and the machinery change.
 | Cash upgrades | 32 permanent purchases |
 | Contract types | 18, gated behind reputation |
 | Random events | 20, seven of which stop and ask you a question |
-| Machine icons | 32 hand-drawn glyphs, animated where it earns its place |
+| Machine icons | 32 hand-drawn glyphs, on the floor and in the build list |
 | Objectives | 35, in a guided chain |
 | Achievements | 36 |
 | Legacy perks | 15, bought with the points from selling the company |
@@ -94,6 +94,10 @@ contract off the board. From there it is a balancing act:
   bottleneck in plain words — *short of electricity*, *cooling is behind*,
   *compute is unsold* — and clicking it takes you to the tab that fixes it.
   Every other tile explains itself on hover.
+- **The floor is isometric.** Machines stand on it as real volumes: racks are
+  steel cabinets whose lit server bays show how full and how healthy they are,
+  and a rack grows taller as you fill it. Everything else is identified by its
+  silhouette, its height and the glyph on its top face — hover to name it.
 - **Racks flag their own problems.** An amber triangle means no PDU reaches
   this rack; a red one means no cooling does, or it is over 40 °C. You do not
   need an overlay on to see them.

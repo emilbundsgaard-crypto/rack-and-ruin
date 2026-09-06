@@ -14,6 +14,7 @@ import {
 import * as A from './actions.js';
 import { legacyGain, canPrestige, rackCapacity, signContract } from './sim.js';
 import { tileAt, DAY_SECONDS } from './state.js';
+import { iconFor } from './render.js';
 import { STEPS, current as tutStep, skip as tutSkip } from './tutorial.js';
 
 let app = null;
@@ -101,30 +102,53 @@ export function goTab(id) { tab = id; syncTabs(); markDirty(); renderUI(); }
 
 // ------------------------------------------------------------------ top bar
 
-let topCells = null;
+let topBuilt = null;
 
 /**
- * The bar is built once and then written into. Rebuilding it every frame threw
- * away hover state, and any tooltip waiting on a 220 ms delay was pointing at a
- * node that no longer existed by the time it fired.
+ * Built once and written into. Grouped rather than gridded: money and compute
+ * read as headlines, the four utilities as meters, everything else as small
+ * pairs. Eleven identical boxes was a spreadsheet, not a control room.
  */
 export function renderTop(state, d) {
   const bar = document.getElementById('topbar');
-  if (!topCells) {
-    topCells = new Map();
-    const nodes = [];
-    for (const spec of TOP_STATS) {
-      const n = el('div', 'stat');
-      const v = el('div', 'v');
-      const sub = el('div', 's');
-      n.append(el('div', 'k', spec.k), v, sub);
-      topCells.set(spec.id, { n, v, sub });
-      nodes.push(n);
-    }
-    const spacer = el('div', 'spacer');
+  if (!topBuilt) {
+    const mk = {};
+    const vital = (id, label) => {
+      const n = el('div', 'vital');
+      const big = el('div', 'big');
+      const sub = el('div', 'sub');
+      n.append(el('div', 'lbl', label), big, sub);
+      mk[id] = { n, big, sub };
+      return n;
+    };
+    const meter = (id, label) => {
+      const n = el('div', 'meter');
+      const fillEl = el('i');
+      const barEl = el('div', 'mbar');
+      barEl.append(fillEl);
+      const val = el('div', 'mv');
+      n.append(el('div', 'mk', label), barEl, val);
+      mk[id] = { n, fill: fillEl, val };
+      return n;
+    };
+    const mini = (id, label) => {
+      const n = el('div', 'mini');
+      const val = el('div', 'mv');
+      n.append(el('div', 'mk', label), val);
+      mk[id] = { n, val };
+      return n;
+    };
+
+    const meters = el('div', 'meters');
+    meters.append(meter('m_power', 'PWR'), meter('m_cool', 'COOL'),
+      meter('m_water', 'H2O'), meter('m_net', 'NET'));
+    const minis = el('div', 'minis');
+    minis.append(mini('x_temp', 'Temp'), mini('x_up', 'Uptime'), mini('x_rp', 'R&D'),
+      mini('x_rep', 'Rep'), mini('x_con', 'Deals'), mini('x_day', 'Day'));
+
     const speed = el('button', 'topbtn', '');
     speed.onclick = () => {
-      state.settings.speed = state.settings.speed === 0 ? 1 : 0;
+      app.state.settings.speed = app.state.settings.speed === 0 ? 1 : 0;
       renderTop(app.state, app.d);
     };
     const guide = el('button', 'topbtn', 'Guide');
@@ -133,124 +157,88 @@ export function renderTop(state, d) {
     const menu = el('button', 'topbtn', 'Menu');
     menu.dataset.tip = 'Menu|Save, export, import, restart the guide, or wipe and start over.';
     menu.onclick = () => app.openMenu();
-    topCells.set('_speed', { n: speed });
-    fill(bar, [...nodes, spacer, speed, guide, menu]);
+    mk._speed = { n: speed };
+
+    fill(bar,
+      vital('v_cash', 'Cash'),
+      vital('v_compute', 'Compute'),
+      el('div', 'divider'),
+      meters,
+      el('div', 'divider'),
+      minis,
+      el('div', 'spacer'),
+      speed, guide, menu);
+    topBuilt = mk;
+
+    mk.v_cash.n.dataset.tip = 'Cash|What you have, and what the site earns or loses every '
+      + 'second once every bill is paid.';
+    mk.m_power.n.dataset.tip = 'Power|Draw against supply. Short of supply and every rack throttles at once.';
+    mk.m_cool.n.dataset.tip = 'Cooling|Heat you are making against heat you can remove. '
+      + 'Capacity only counts if it reaches the rack.';
+    mk.m_water.n.dataset.tip = 'Water|Cooling drinks water. Run short and cooling capacity falls with it.';
+    mk.m_net.n.dataset.tip = 'Network|Switching your fleet needs against switching you have. '
+      + 'Compute without bandwidth is idle.';
+    mk.x_temp.n.dataset.tip = 'Peak temperature|The hottest rack you own. Over 30 °C it throttles; '
+      + 'over 40 °C it wears out fast.';
+    mk.x_up.n.dataset.tip = 'Uptime|What your SLAs are measured against. Broken hardware and '
+      + 'brownouts both drag it down.';
+    mk.x_rp.n.dataset.tip = 'Research|Points earned by the share of compute you allocate to R&D.';
+    mk.x_rep.n.dataset.tip = 'Reputation|Earned by finishing contracts cleanly. It unlocks bigger '
+      + 'buildings and better customers.';
+    mk.x_con.n.dataset.tip = 'Contracts|Signed against slots available.';
+    mk.x_day.n.dataset.tip = 'Day|One game day is one real minute. Electricity is cheaper at night.';
   }
 
-  for (const spec of TOP_STATS) {
-    const cell = topCells.get(spec.id);
-    const out = spec.read(state, d);
-    if (cell.v.textContent !== out.v) cell.v.textContent = out.v;
-    if (cell.sub.textContent !== out.s) cell.sub.textContent = out.s;
-    const cls = 'stat' + (out.cls ? ' ' + out.cls : '') + (out.jump ? ' jump' : '');
-    if (cell.n.className !== cls) cell.n.className = cls;
-    const tip = spec.k + '|' + spec.tip + (out.extra ? '\n' + out.extra : '');
-    if (cell.n.dataset.tip !== tip) cell.n.dataset.tip = tip;
-    cell.n.onclick = out.jump ? () => goTab(out.jump) : null;
-  }
+  const t = topBuilt;
+  const set = (cell, big, sub, cls) => {
+    if (cell.big.textContent !== big) cell.big.textContent = big;
+    if (cell.sub.textContent !== sub) cell.sub.textContent = sub;
+    const c = 'vital' + (cls ? ' ' + cls : '');
+    if (cell.n.className !== c) cell.n.className = c;
+  };
+  const gauge = (cell, used, cap, label) => {
+    const frac = cap > 0 ? used / cap : (used > 0 ? 1 : 0);
+    const pct = Math.min(100, frac * 100);
+    if (cell.fill.style.width !== pct.toFixed(0) + '%') cell.fill.style.width = pct.toFixed(0) + '%';
+    if (cell.val.textContent !== label) cell.val.textContent = label;
+    const c = 'meter' + (frac > 1.001 ? ' bad' : frac > 0.88 ? ' warn' : '');
+    if (cell.n.className !== c) cell.n.className = c;
+  };
+  const small = (cell, v, cls) => {
+    if (cell.val.textContent !== v) cell.val.textContent = v;
+    const c = 'mini' + (cls ? ' ' + cls : '');
+    if (cell.n.className !== c) cell.n.className = c;
+  };
 
-  const speed = topCells.get('_speed').n;
+  set(t.v_cash, money(state.money), (d.netIncome >= 0 ? '+' : '') + rate(d.netIncome),
+    d.netIncome >= 0 ? 'good' : 'bad');
+
+  const fixTab = FIX_TAB[d.bottleneck];
+  set(t.v_compute, fmt(d.computeTotal), d.bottleneck,
+    (d.bottleneck === 'running clean' ? '' : 'warn') + (fixTab ? ' jump' : ''));
+  t.v_compute.n.onclick = fixTab ? () => goTab(fixTab) : null;
+  t.v_compute.n.dataset.tip = 'Compute|Capacity your fleet produces right now, and the one thing '
+    + 'holding it back.' + (fixTab ? '\nClick to go straight to the tab that fixes it.' : '');
+
+  gauge(t.m_power, d.actualDraw, d.supplyKW, fmt(d.actualDraw) + '/' + fmt(d.supplyKW));
+  gauge(t.m_cool, d.heatLoad, d.coolCap, fmt(d.heatLoad) + '/' + fmt(d.coolCap));
+  gauge(t.m_water, d.waterDemand, d.waterSupply, fmt(d.waterDemand) + '/' + fmt(d.waterSupply));
+  gauge(t.m_net, d.netNeed, d.netCap, fmt(d.netNeed) + '/' + fmt(d.netCap));
+
+  small(t.x_temp, d.maxTemp.toFixed(0) + ' °C', d.maxTemp > 45 ? 'bad' : d.maxTemp > 34 ? 'warn' : '');
+  small(t.x_up, (d.uptime * 100).toFixed(1) + '%', d.uptime > 0.98 ? '' : 'warn');
+  small(t.x_rp, fmt(state.rp), 'acc');
+  small(t.x_rep, fmt(state.reputation));
+  small(t.x_con, state.contracts.active.length + '/' + d.contractSlots,
+    state.contracts.active.length < d.contractSlots ? 'acc' : '');
+  small(t.x_day, Math.floor(state.day) + ' · ' + clockOf(state));
+
+  const speed = t._speed.n;
   const label = state.settings.speed === 0 ? '\u25B6 Paused' : '\u275A\u275A Pause';
   if (speed.textContent !== label) speed.textContent = label;
   speed.className = 'topbtn' + (state.settings.speed === 0 ? ' on' : '');
   speed.dataset.tip = 'Pause|Space also does it. The simulation stops; nothing decays.';
 }
-
-const TOP_STATS = [
-  {
-    id: 'cash', k: 'Cash',
-    tip: 'What you have, and what the site earns or loses every second after every bill.',
-    read: (s, d) => ({
-      v: money(s.money),
-      s: (d.netIncome >= 0 ? '+' : '') + rate(d.netIncome),
-      cls: d.netIncome >= 0 ? 'good' : 'bad',
-    }),
-  },
-  {
-    id: 'compute', k: 'Compute',
-    tip: 'Capacity your fleet produces right now, and the one thing holding it back.',
-    read: (s, d) => ({
-      v: fmt(d.computeTotal),
-      s: d.bottleneck,
-      cls: d.bottleneck === 'running clean' ? 'good' : 'warn',
-      jump: FIX_TAB[d.bottleneck],
-      extra: FIX_TAB[d.bottleneck] ? 'Click to go straight to the tab that fixes it.' : '',
-    }),
-  },
-  {
-    id: 'contracted', k: 'Contracted',
-    tip: 'Compute you have promised customers, and how much of it you are actually delivering.',
-    read: (s, d) => ({
-      v: fmt(d.contractDemand),
-      s: Math.round(d.deliverRatio * 100) + '% delivered',
-      cls: d.deliverRatio > 0.995 ? '' : 'warn',
-    }),
-  },
-  {
-    id: 'power', k: 'Power',
-    tip: 'Draw against supply. Short of supply and every rack throttles at once.',
-    read: (s, d) => ({
-      v: fmt(d.actualDraw) + ' kW',
-      s: fmt(d.supplyKW) + ' kW supply',
-      cls: d.rawPowerFactor > 0.999 ? '' : 'bad',
-      jump: d.rawPowerFactor > 0.999 ? null : 'utils',
-    }),
-  },
-  {
-    id: 'cooling', k: 'Cooling',
-    tip: 'Heat you can remove against heat you are making. Capacity only counts if it reaches the rack.',
-    read: (s, d) => ({
-      v: fmt(d.coolCap) + ' kW',
-      s: fmt(d.heatLoad) + ' kW load',
-      cls: d.coolCap >= d.heatLoad ? '' : 'warn',
-    }),
-  },
-  {
-    id: 'water', k: 'Water',
-    tip: 'Cooling drinks water. Run short and cooling capacity falls with it.',
-    read: (s, d) => ({
-      v: fmt(d.waterSupply) + ' L/s',
-      s: fmt(d.waterDemand) + ' L/s used',
-      cls: d.waterFactor > 0.995 ? '' : 'warn',
-    }),
-  },
-  {
-    id: 'temp', k: 'Peak temp',
-    tip: 'The hottest rack you own. Over 30 °C it throttles; over 40 °C it wears out fast.',
-    read: (s, d) => ({
-      v: d.maxTemp.toFixed(1) + ' °C',
-      s: 'avg ' + d.avgTemp.toFixed(1) + ' °C',
-      cls: d.maxTemp > 45 ? 'bad' : d.maxTemp > 34 ? 'warn' : '',
-    }),
-  },
-  {
-    id: 'uptime', k: 'Uptime',
-    tip: 'What your SLAs are measured against. Broken hardware and brownouts both drag it down.',
-    read: (s, d) => ({
-      v: (d.uptime * 100).toFixed(2) + '%',
-      s: d.brokenTotal ? d.brokenTotal + ' units down' : 'all healthy',
-      cls: d.uptime > 0.98 ? '' : 'warn',
-    }),
-  },
-  {
-    id: 'rp', k: 'R&D',
-    tip: 'Research points, earned by the share of compute you allocate to R&D.',
-    read: (s, d) => ({ v: fmt(s.rp) + ' RP', s: '+' + fmt(d.rpPerSec) + '/s', cls: 'acc' }),
-  },
-  {
-    id: 'rep', k: 'Reputation',
-    tip: 'Earned by finishing contracts cleanly. It unlocks bigger buildings and better customers.',
-    read: (s, d) => ({
-      v: fmt(s.reputation),
-      s: s.contracts.active.length + ' contracts',
-    }),
-  },
-  {
-    id: 'day', k: 'Day',
-    tip: 'One game day is one real minute. Electricity is cheaper at night.',
-    read: (s) => ({ v: String(Math.floor(s.day)), s: clockOf(s) }),
-  },
-];
 
 function clockOf(state) {
   const f = state.day % 1;
@@ -297,6 +285,45 @@ export function refreshLive(state, d, dt) {
 
 // --------------------------------------------------------------------- build
 
+/**
+ * The default shape for anything list-like: an icon chip, a title line with a
+ * price, and whatever detail fits underneath. Hairline separated, not boxed.
+ */
+function listRow(o) {
+  const n = el(o.onClick ? 'button' : 'div', 'row' + (o.onClick ? ' click' : '') + (o.cls ? ' ' + o.cls : ''));
+  const ico = el('div', 'ico');
+  if (o.icon) ico.style.backgroundImage = 'url(' + o.icon + ')';
+  if (o.iconText) {
+    ico.textContent = o.iconText;
+    ico.style.cssText += ';display:flex;align-items:center;justify-content:center;'
+      + 'font:600 10px var(--mono);color:' + (o.iconColor || 'var(--dim)');
+  }
+  if (o.iconColor) ico.style.borderColor = o.iconColor + '55';
+  const body = el('div', 'body');
+  const head = el('div', 'head');
+  head.append(el('b', null, o.name));
+  for (const p of o.pills || []) if (p) head.append(el('span', 'pill ' + (p.cls || ''), p.text));
+  if (o.price) head.append(el('span', 'price' + (o.priceOk ? ' ok' : ''), o.price));
+  body.append(head);
+  if (o.desc) body.append(el('div', 'desc', o.desc));
+  if (o.meta && o.meta.length) {
+    const m = el('div', 'meta');
+    for (const [k, v] of o.meta) { const sp = el('span'); sp.append(k + ' ', el('b', null, String(v))); m.append(sp); }
+    body.append(m);
+  }
+  if (o.note) body.append(el('div', 'note', o.note));
+  if (o.buttons && o.buttons.length) {
+    const r = el('div', 'btnrow');
+    r.append(...o.buttons);
+    body.append(r);
+  }
+  n.append(ico, body);
+  if (o.onClick) n.onclick = o.onClick;
+  if (o.tip) n.dataset.tip = o.tip;
+  if (o.data) for (const k in o.data) n.dataset[k] = o.data[k];
+  return n;
+}
+
 function sec(title, ...kids) {
   const s = el('div', 'sec');
   if (title) s.append(el('h3', null, title));
@@ -317,43 +344,40 @@ function panelBuild(state, d) {
     const unlocked = !b.req || state.research.done.includes(b.req);
     const cost = A.buildCost(b, d);
     const afford = state.money >= cost;
-    const c = el('div', 'card click' + (unlocked ? (afford ? '' : ' cant') : ' locked'));
-    c.dataset.build = b.id;
-    const title = el('div', 'title');
-    title.append(el('b', null, b.name));
-    if (app.view.tool === b.id) title.append(el('span', 'pill acc', 'selected'));
-    title.append(el('span', 'price' + (afford ? ' ok' : ''), money(cost)));
-    c.append(title, el('div', 'desc', b.desc));
-    const meta = el('div', 'meta');
-    const bits = [];
-    if (b.slots) bits.push(['slots', rackCapacity(b, d.mods)]);
-    if (b.radius) bits.push(['radius', b.radius + ' tiles']);
-    if (b.powerCap) bits.push(['distributes', fmt(b.powerCap) + ' kW']);
-    if (b.coolCap) bits.push(['removes', fmt(b.coolCap * d.mods.coolMult) + ' kW']);
-    if (b.supplyKW) bits.push(['generates', fmt(b.supplyKW) + ' kW']);
-    if (b.supplyWater) bits.push(['supplies', fmt(b.supplyWater) + ' L/s']);
-    if (b.water) bits.push(['water', (b.water * 1000).toFixed(1) + ' L/s per MW']);
-    if (b.net) bits.push(['switching', fmt(b.net) + ' Gbps']);
-    if (b.draw) bits.push(['draws', fmt(b.draw) + ' kW']);
-    if (b.upkeep) bits.push(['upkeep', money(b.upkeep) + '/day']);
-    if (b.fuel) bits.push(['fuel', '$' + b.fuel + '/kWh']);
-    if (b.staff) bits.push(['desks', '+' + b.staff]);
-    if (b.ride) bits.push(['ride-through', b.ride + ' s']);
-    if (b.coolSelf) bits.push(['self-cools', Math.round(b.coolSelf * 100) + '%']);
-    for (const [k, v] of bits) {
-      const s = el('span'); s.append(k + ' ', el('b', null, String(v))); meta.append(s);
-    }
-    c.append(meta);
-    if (!unlocked) {
-      c.append(el('div', 'desc', 'Locked — needs ' + (RESEARCH_BY_ID[b.req]?.name || b.req) + '.'));
-    } else {
-      c.onclick = () => {
+    const meta = [];
+    if (b.slots) meta.push(['slots', rackCapacity(b, d.mods)]);
+    if (b.radius) meta.push(['radius', b.radius + ' tiles']);
+    if (b.powerCap) meta.push(['distributes', fmt(b.powerCap) + ' kW']);
+    if (b.coolCap) meta.push(['removes', fmt(b.coolCap * d.mods.coolMult) + ' kW']);
+    if (b.supplyKW) meta.push(['generates', fmt(b.supplyKW) + ' kW']);
+    if (b.supplyWater) meta.push(['supplies', fmt(b.supplyWater) + ' L/s']);
+    if (b.water) meta.push(['water', (b.water * 1000).toFixed(1) + ' L/s per MW']);
+    if (b.net) meta.push(['switching', fmt(b.net) + ' Gbps']);
+    if (b.draw) meta.push(['draws', fmt(b.draw) + ' kW']);
+    if (b.upkeep) meta.push(['upkeep', money(b.upkeep) + '/day']);
+    if (b.fuel) meta.push(['fuel', '$' + b.fuel + '/kWh']);
+    if (b.staff) meta.push(['desks', '+' + b.staff]);
+    if (b.ride) meta.push(['ride-through', b.ride + ' s']);
+    if (b.coolSelf) meta.push(['self-cools', Math.round(b.coolSelf * 100) + '%']);
+
+    list.push(listRow({
+      icon: iconFor(b),
+      iconColor: b.color,
+      name: b.name,
+      pills: [app.view.tool === b.id ? { text: 'selected', cls: 'acc' } : null],
+      price: money(cost),
+      priceOk: afford && unlocked,
+      desc: b.desc,
+      meta: unlocked ? meta : null,
+      note: unlocked ? null : 'Locked — needs ' + (RESEARCH_BY_ID[b.req]?.name || b.req) + '.',
+      cls: unlocked ? (afford ? '' : 'cant') : 'locked',
+      data: { build: b.id },
+      onClick: unlocked ? () => {
         app.view.tool = app.view.tool === b.id ? null : b.id;
         app.sellBtn.classList.remove('on');
         markDirty(); renderUI();
-      };
-    }
-    list.push(c);
+      } : null,
+    }));
   }
 
   const help = el('div', 'hint',
@@ -390,69 +414,69 @@ function panelRacks(state, d) {
     const cost = A.hwCost(hw, d);
     const owned = d.units[hw.id] || 0;
     if (!unlocked && owned === 0) {
-      const c = el('div', 'card locked');
-      c.append(el('div', 'title', ''), el('div', 'desc',
-        hw.name + ' — locked, needs ' + (RESEARCH_BY_ID[hw.req]?.name || hw.req) + '.'));
-      c.firstChild.append(el('b', null, hw.name), el('span', 'price', money(cost)));
-      cards.push(c);
+      cards.push(listRow({
+        iconText: hw.short, iconColor: '#3f7dd6',
+        name: hw.name, price: money(cost), cls: 'locked',
+        note: 'Locked — needs ' + (RESEARCH_BY_ID[hw.req]?.name || hw.req) + '.',
+      }));
       continue;
     }
-    const c = el('div', 'card' + (state.money >= cost ? '' : ' cant'));
-    const title = el('div', 'title');
-    title.append(el('b', null, hw.name));
-    if (owned) title.append(el('span', 'pill', fmtInt(owned) + ' installed'));
-    title.append(el('span', 'price' + (state.money >= cost ? ' ok' : ''), money(cost)));
-    c.append(title, el('div', 'desc', hw.desc));
-    const meta = el('div', 'meta');
-    const bits = [
-      ['compute', fmt(hw.compute * d.mods.computeMult)],
-      ['power', fmt(hw.power * d.mods.powerMult) + ' kW'],
-      ['heat', fmt(hw.heat * d.mods.heatMult) + ' kW'],
-      ['network', fmt(hw.net) + ' Gbps'],
-      ['per kW', fmt(hw.compute * d.mods.computeMult / (hw.power * d.mods.powerMult))],
-    ];
-    for (const [k, v] of bits) { const s = el('span'); s.append(k + ' ', el('b', null, v)); meta.append(s); }
-    c.append(meta);
-
+    const perUnit = hw.power * d.mods.powerMult;
+    const headroom = Math.max(0, (d.firmSupply * 0.95) - d.actualDraw);
+    const canFit = Math.min(
+      d.freeSlots,
+      Math.floor(state.money / cost),
+      perUnit > 0 ? Math.floor(headroom / perUnit) : Infinity,
+    );
+    const buttons = [];
     if (unlocked) {
-      const rowBtns = el('div', 'btnrow');
-      const perUnit = hw.power * d.mods.powerMult;
-      const headroom = Math.max(0, (d.firmSupply * 0.95) - d.actualDraw);
-      const canFit = Math.min(
-        d.freeSlots,
-        Math.floor(state.money / cost),
-        perUnit > 0 ? Math.floor(headroom / perUnit) : Infinity,
-      );
       const fillBtn = el('button', 'btn primary small',
         canFit > 0 ? 'Fill all racks — ' + fmtInt(canFit) : 'Fill all racks');
+      fillBtn.dataset.fill = hw.id;
       fillBtn.dataset.tip = canFit > 0
-        ? `Buys ${fmtInt(canFit)} of these: what your free slots, your cash and your power headroom allow.`
-        : (d.freeSlots === 0 ? 'No free rack slots.'
+        ? 'Fill all racks|Buys ' + fmtInt(canFit) + ': what your free slots, your cash and your '
+          + 'power headroom allow. It never overfills you into a brownout.'
+        : 'Fill all racks|' + (d.freeSlots === 0 ? 'No free rack slots.'
           : headroom < perUnit ? 'No power headroom — buy supply on the Utilities tab first.'
           : 'Not enough cash for even one.');
-      fillBtn.dataset.fill = hw.id;
-      fillBtn.onclick = () => app.act(() => A.fillAll(state, d, hw.id, app.hooks));
-      const oneBtn = el('button', 'btn small', 'Install 1 in selected');
-      oneBtn.disabled = !app.selectedRack();
-      oneBtn.onclick = () => {
-        const t = app.selectedRack();
-        if (t) app.act(() => A.install(state, d, t, hw.id, 1, app.hooks));
-      };
-      const tenBtn = el('button', 'btn small', '+10 in selected');
-      tenBtn.disabled = !app.selectedRack();
-      tenBtn.onclick = () => {
+      fillBtn.onclick = (e) => { e.stopPropagation(); app.act(() => A.fillAll(state, d, hw.id, app.hooks)); };
+      buttons.push(fillBtn);
+
+      const sel = app.selectedRack();
+      const tenBtn = el('button', 'btn small', '+10 here');
+      tenBtn.disabled = !sel;
+      tenBtn.onclick = (e) => {
+        e.stopPropagation();
         const t = app.selectedRack();
         if (t) app.act(() => A.install(state, d, t, hw.id, 10, app.hooks));
       };
-      rowBtns.append(fillBtn, oneBtn, tenBtn);
+      buttons.push(tenBtn);
+
       if (hw.tier > 0) {
-        const retire = el('button', 'btn small danger', 'Retire everything older');
-        retire.onclick = () => app.act(() => A.retireOlderThan(state, d, hw.id, app.hooks));
-        rowBtns.append(retire);
+        const retire = el('button', 'btn small danger', 'Retire older');
+        retire.dataset.tip = 'Retire older|Sells every unit less capable than this one for half '
+          + 'its value, freeing the slots.';
+        retire.onclick = (e) => { e.stopPropagation(); app.act(() => A.retireOlderThan(state, d, hw.id, app.hooks)); };
+        buttons.push(retire);
       }
-      c.append(rowBtns);
     }
-    cards.push(c);
+    cards.push(listRow({
+      iconText: hw.short,
+      iconColor: owned ? '#4fe0ac' : '#3f7dd6',
+      name: hw.name,
+      pills: [owned ? { text: fmtInt(owned) + ' installed', cls: 'acc' } : null],
+      price: money(cost),
+      priceOk: state.money >= cost,
+      desc: hw.desc,
+      meta: [
+        ['compute', fmt(hw.compute * d.mods.computeMult)],
+        ['power', fmt(perUnit) + ' kW'],
+        ['heat', fmt(hw.heat * d.mods.heatMult) + ' kW'],
+        ['per kW', fmt(hw.compute * d.mods.computeMult / perUnit)],
+      ],
+      cls: state.money >= cost ? '' : 'cant',
+      buttons,
+    }));
   }
   out.push(sec('Hardware', cards));
   return out;
@@ -597,21 +621,19 @@ function panelResearch(state, d) {
     const done = state.research.done.includes(node.id);
     const ok = available(node, state);
     const afford = state.rp >= node.cost;
-    const c = el('div', 'card' + (done ? ' owned' : ok ? (afford ? ' click' : ' cant') : ' locked'));
-    const title = el('div', 'title');
-    title.append(el('b', null, node.name));
-    if (done) title.append(el('span', 'pill acc', 'done'));
-    title.append(el('span', 'price' + (afford && !done ? ' ok' : ''), done ? '—' : fmt(node.cost) + ' RP'));
-    c.append(title, el('div', 'desc', node.desc));
-    if (!ok && !done) {
-      const missing = node.req.filter((r) => !state.research.done.includes(r))
-        .map((r) => RESEARCH_BY_ID[r]?.name || r).join(', ');
-      c.append(el('div', 'meta', 'needs ' + missing));
-    }
-    if (!done && ok) {
-      c.onclick = () => app.act(() => A.buyResearch(state, node.id, app.hooks));
-    }
-    return c;
+    const missing = node.req.filter((r) => !state.research.done.includes(r))
+      .map((r) => RESEARCH_BY_ID[r]?.name || r).join(', ');
+    return listRow({
+      iconText: done ? '✓' : fmt(node.cost),
+      iconColor: done ? '#4fe0ac' : afford && ok ? '#4fe0ac' : '#8598ac',
+      name: node.name,
+      price: done ? '' : fmt(node.cost) + ' RP',
+      priceOk: afford && !done,
+      desc: node.desc,
+      note: !ok && !done ? 'Needs ' + missing : null,
+      cls: done ? 'owned' : ok ? (afford ? '' : 'cant') : 'locked',
+      onClick: !done && ok ? () => app.act(() => A.buyResearch(state, node.id, app.hooks)) : null,
+    });
   });
   for (const [name, list] of groups) {
     if (!list.length) continue;
@@ -631,13 +653,17 @@ function panelUpgrades(state, d) {
   const cards = order.map((u) => {
     const owned = state.upgrades.includes(u.id);
     const afford = state.money >= u.cost;
-    const c = el('div', 'card' + (owned ? ' owned' : afford ? ' click' : ' cant'));
-    const title = el('div', 'title');
-    title.append(el('b', null, u.name), el('span', 'pill', u.cat));
-    title.append(el('span', 'price' + (afford && !owned ? ' ok' : ''), owned ? 'owned' : money(u.cost)));
-    c.append(title, el('div', 'desc', u.desc));
-    if (!owned) c.onclick = () => app.act(() => A.buyUpgrade(state, d, u.id, app.hooks));
-    return c;
+    return listRow({
+      iconText: u.cat.slice(0, 3).toUpperCase(),
+      iconColor: owned ? '#4fe0ac' : afford ? '#55a0f0' : '#8598ac',
+      name: u.name,
+      pills: [{ text: u.cat }],
+      price: owned ? 'owned' : money(u.cost),
+      priceOk: afford && !owned,
+      desc: u.desc,
+      cls: owned ? 'owned' : afford ? '' : 'cant',
+      onClick: owned ? null : () => app.act(() => A.buyUpgrade(state, d, u.id, app.hooks)),
+    });
   });
   return [
     sec(null, el('div', 'hint', 'Permanent, one-off purchases. They never expire and survive nothing but a company sale.')),
@@ -660,26 +686,29 @@ function panelStaff(state, d) {
     const unlocked = !role.req || state.research.done.includes(role.req);
     const have = state.staff[role.id];
     const cost = A.staffCost(role.id, have);
-    const c = el('div', 'card' + (unlocked ? '' : ' locked'));
-    const title = el('div', 'title');
-    title.append(el('b', null, role.name), el('span', 'pill', have + ' employed'));
-    title.append(el('span', 'price' + (state.money >= cost ? ' ok' : ''), money(cost) + ' to hire'));
-    c.append(title, el('div', 'desc', role.desc));
-    c.append(el('div', 'meta', 'salary ' + money(role.salary) + '/day'));
+    const buttons = [];
     if (unlocked) {
-      const r = el('div', 'btnrow');
       const hire = el('button', 'btn primary small', 'Hire');
       hire.disabled = d.staffTotal >= d.staffCap || state.money < cost;
       hire.onclick = () => app.act(() => A.hire(state, d, role.id, app.hooks));
       const fireB = el('button', 'btn small danger', 'Let go');
       fireB.disabled = have === 0;
       fireB.onclick = () => app.act(() => A.fire(state, role.id, app.hooks));
-      r.append(hire, fireB);
-      c.append(r);
-    } else {
-      c.append(el('div', 'meta', 'needs ' + (RESEARCH_BY_ID[role.req]?.name || role.req)));
+      buttons.push(hire, fireB);
     }
-    return c;
+    return listRow({
+      iconText: role.name.slice(0, 3).toUpperCase(),
+      iconColor: role.color,
+      name: role.name,
+      pills: [{ text: have + ' employed', cls: have ? 'acc' : '' }],
+      price: money(cost) + ' to hire',
+      priceOk: state.money >= cost,
+      desc: role.desc,
+      meta: [['salary', money(role.salary) + '/day']],
+      note: unlocked ? null : 'Needs ' + (RESEARCH_BY_ID[role.req]?.name || role.req),
+      cls: unlocked ? '' : 'locked',
+      buttons,
+    });
   });
   out.push(sec('Roles', cards));
   return out;
