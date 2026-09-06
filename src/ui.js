@@ -271,7 +271,7 @@ export function renderTop(state, d) {
   small(t.x_rep, fmt(state.reputation));
   small(t.x_con, String(state.contracts.active.length),
     d.freeCompute > d.computeSellable * 0.15 ? 'acc' : '');
-  small(t.x_owed, d.debt > 0 ? fmt(d.debt) : '—', d.insolvent ? 'bad' : d.debt > 0 ? 'warn' : '');
+  small(t.x_owed, d.debt > 0 ? fmt(d.debt) : '—', d.overdrawn ? 'bad' : d.debt > 0 ? 'warn' : '');
   small(t.x_town, ((state.town?.damage || 0) * 100).toFixed(0) + '%',
     (state.town?.damage || 0) > 0.5 ? 'bad' : (state.town?.damage || 0) > 0.2 ? 'warn' : '');
 
@@ -1034,7 +1034,27 @@ function panelUtilities(state, d) {
  */
 function bankCard(state, d) {
   const c = el('div', 'card');
+
+  // Being overdrawn is the loudest thing on this card, so it goes first and
+  // says exactly what it costs and what it stops.
+  if (d.overdrawn) {
+    const warn = el('div', 'card overdrawn');
+    warn.append(el('div', 'eyebrow', 'Overdrawn'));
+    warn.append(el('div', 'odbig', money(state.money)));
+    warn.append(el('div', 'desc',
+      'Nothing can be bought while the balance is below zero. The hole grows '
+      + Math.round(SIM.OVERDRAFT_RATE * 100) + '% a day and your name goes with it. Sell machines '
+      + 'you cannot run, or let go of staff you cannot pay.'));
+    const next = SIM.rescueThreshold(state.bank?.rescueLevel || 0);
+    warn.append(el('div', 'desc', -state.money >= next
+      ? 'The bank is waiting for an answer.'
+      : 'At ' + money(next) + ' overdrawn the bank will offer a way out, on bad terms.'));
+    c.append(warn);
+  }
+
   const kv = el('div', 'kv');
+  kv.append(el('div', 'k', 'Balance'),
+    el('div', 'v' + (state.money < 0 ? ' bad' : ''), money(state.money)));
   kv.append(el('div', 'k', 'Owed'),
     el('div', 'v' + (d.debt > 0 ? ' bad' : ''), d.debt > 0 ? money(d.debt) : 'Nothing'));
   kv.append(el('div', 'k', 'Credit line'), el('div', 'v', money(d.creditLimit)));
@@ -1054,12 +1074,14 @@ function bankCard(state, d) {
   bar.firstChild.style.width = clamp(d.debt / Math.max(d.creditLimit, 1e-9), 0, 1) * 100 + '%';
   c.append(bar);
 
-  c.append(el('div', 'desc', d.insolvent
-    ? 'Your credit is stopped. Nothing new can be bought until the site earns again — '
-      + 'sell machines you cannot run, or let go of staff you cannot pay.'
-    : 'Interest runs at ' + Math.round(SIM.LOAN_RATE * 100) + '% a day on whatever you owe, and '
+  c.append(el('div', 'desc', 'Interest runs at ' + Math.round(SIM.LOAN_RATE * 100) + '% a day on whatever you owe, and '
       + Math.round(SIM.REPAY_SHARE * 100) + '% of your income goes straight back to the bank until '
       + 'it is clear. Borrowing is a way out of a hole, not a way to grow.'));
+  if (state.bank?.rescues) {
+    c.append(el('div', 'desc', 'The bank has bailed you out '
+      + state.bank.rescues + (state.bank.rescues === 1 ? ' time' : ' times') + '. '
+      + 'Each rescue is dearer than the last.'));
+  }
 
   const row = el('div', 'btnrow');
   for (const frac of [0.25, 0.5, 1]) {

@@ -84,23 +84,33 @@ hours, less if you are ruthless with your floor plan.
 
 ## Money
 
-Cash is real and so is debt. Costs the site cannot cover are borrowed, not
-forgiven — there is a bank, and it is deliberately a poor deal:
+Cash is real, and it can go below zero.
 
-- The credit line starts at **$9,000** against a broom cupboard and widens with
-  the tier and with what the site actually earns.
-- Interest is **5% a day** on the balance, charged as a visible line in the
-  ledger, so it shows up in net income rather than quietly eating the balance.
-- **40%** of what you earn goes back to the bank before it reaches you, so a
-  loan clears itself if the site earns — and never becomes a trap if it does not.
-- A shortfall you cannot cover draws on the overdraft, with a fee on top.
-- Past the limit the bank stops. Nothing new can be bought and your name starts
-  to suffer. Selling and demolishing stay open, because they are the way out.
-- The balance never grows past the credit line, so leaving an idle site with a
-  loan running is recoverable rather than fatal.
+**Overdrawn, you buy nothing.** Not a machine, not a kilowatt, not a hire. The
+balance shows in red, it costs **10% a day** while it lasts, and your name goes
+with it. Selling and demolishing stay open — they are the way back.
+
+**The bank will lend you money on purpose.** A credit line that starts at
+**$9,000** against a broom cupboard and widens with the tier and with what the
+site actually earns, at **5% a day** charged as a visible line in the ledger.
+**40%** of what you earn goes back to the bank before it reaches you, so the
+loan clears itself if the site earns and never becomes a trap if it does not.
+The balance never compounds past the credit line, so leaving an idle site with
+a loan running is recoverable rather than fatal.
 
 A loan is a way out of a hole, not a way to skip a tier: a full run to the end
 of the research tree never needs one.
+
+**Sink far enough and the bank rings.** At **$100K**, **$500K** and **$1M**
+overdrawn the clock stops and you get three answers:
+
+- **Take the terms.** They clear the hole and leave you three days of running
+  costs to trade your way out — and you owe **2.5× all of it**, at 5% a day,
+  with your contracts paying 20% less for a month and your name cut. Every
+  offer after the first is dearer than the last.
+- **Put it down and start again.** The site is sold for scrap and you begin in
+  the cupboard. Anything earned towards a legacy is kept.
+- **Neither.** Keep sinking. They will call again when it is worse.
 
 The ledger on the Running tab breaks the whole thing down per second —
 electricity, fuel, water, wages, machine upkeep, SLA penalties and loan

@@ -55,7 +55,12 @@ export function newGame(legacy) {
     // What you owe. Debt is real money: it charges interest every day, it is
     // repaid out of income before it reaches your pocket, and if it runs past
     // the credit limit the bank stops lending and the site seizes up.
-    bank: { debt: 0, borrowed: 0, interestPaid: 0, overdrafts: 0, overLimitDays: 0 },
+    bank: {
+      debt: 0, borrowed: 0, interestPaid: 0,
+      overdrafts: 0, overdraftDays: 0,
+      // Which rescue offer comes next, and how many you have already taken.
+      rescueLevel: 0, rescues: 0,
+    },
 
     market: { power: 0.16, compute: 3.36, phase: Math.random() * 1000 },
     history: { at: 0, income: [], compute: [], temp: [] },

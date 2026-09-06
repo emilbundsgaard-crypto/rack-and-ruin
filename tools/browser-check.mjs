@@ -401,7 +401,7 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
-// ------------------------------------------------------ debt is real, and paid
+// --------------------------------------- overdrawn: no buying, and a way out
 {
   const page = await newPage();
   await page.click('text=Start in the cupboard');
@@ -409,62 +409,76 @@ async function clickTile(page, gx, gy) {
     const app = window.__rr;
     const A = await import('/src/actions.js');
     const sim = await import('/src/sim.js');
+    const R = await import('/src/data/research.js');
     const s = app.state;
     s.tutorial.skipped = true;
     s.objectives.done = new Array(40).fill('x');   // no reward cascade in here
     app.d = sim.derive(s);
-
     const out = { startLimit: Math.round(app.d.creditLimit) };
-    // A loan is capped by the credit line, not by what you ask for.
-    sim.borrow(s, app.d, 1e12, { log() {} });
-    out.borrowed = Math.round(s.bank.debt);
-    out.cappedAtLimit = Math.abs(s.bank.debt - app.d.creditLimit) < 1;
 
-    // Interest accrues, and shows up as a cost the ledger can see. Pay some
-    // back first: at the ceiling interest is deliberately not charged, so a
-    // balance sitting on the line is the wrong place to measure it from.
-    s.money = 5000;
-    sim.repay(s, 5000, { log() {} });
+    // A loan you choose to take is capped by the credit line, not by the ask.
+    sim.borrow(s, app.d, 1e12, { log() {} });
+    out.cappedAtLimit = Math.abs(s.bank.debt - app.d.creditLimit) < 1;
     app.d = sim.derive(s);
     out.interestIsACost = app.d.interestCost > 0;
-    const before = s.bank.debt;
-    for (let i = 0; i < 40; i++) { sim.tick(s, 0.2, app.d); app.d = sim.derive(s); }
-    out.interestAccrues = s.bank.debt > before;
 
-    // And it never compounds past the credit line, however long you are away.
-    s.bank.debt = app.d.creditLimit;
-    for (let i = 0; i < 200; i++) { sim.tick(s, 20, app.d); app.d = sim.derive(s); }
-    out.cappedAtCeiling = s.bank.debt <= app.d.creditLimit + 1;
-
-    // A site that cannot pay builds debt rather than having it forgiven.
-    s.money = 50_000; s.bank.debt = 0; s.staff.tech = 4; s.gridPower = 400;
+    // Build a site that only ever loses money.
+    s.facility = 5; s.money = 4e6; s.gridPower = 20000; s.bank.debt = 0;
+    for (const r2 of R.RESEARCH.slice(0, 40)) s.research.done.push(r2.id);
     app.d = sim.derive(s);
-    out.built = A.place(s, app.d, 0, 0, 'pdu', null) === null
-      && A.place(s, app.d, 1, 0, 'rack', null) === null;
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 10; x++) {
+      A.place(s, app.d, x, y, y === 3 ? 'crac' : 'rack3', null);
+      app.d = sim.derive(s);
+    }
+    A.fillAll(s, app.d, 'gpu', null);
+    s.staff.tech = 8; s.staff.eng = 4;
+    s.money = 1000;
     app.d = sim.derive(s);
-    s.money = 100;                 // now take the cash away and let it bleed
-    for (let i = 0; i < 600; i++) { sim.tick(s, 0.2, app.d); app.d = sim.derive(s); }
-    out.cashNeverNegative = s.money >= 0;
-    out.debtBuilt = s.bank.debt > 0;
 
-    // Run it into the ground: past the limit, buying stops.
-    for (let i = 0; i < 4000 && !app.d.insolvent; i++) { sim.tick(s, 0.2, app.d); app.d = sim.derive(s); }
-    out.insolvent = !!app.d.insolvent;
-    out.buyBlocked = /credit is stopped/i.test(A.place(s, app.d, 3, 0, 'rack', null) || '');
-    out.sellStillWorks = A.sell(s, app.d, 1, 0, { log() {} }) === null;
+    // Sink it, declining every offer, and record where each one arrived.
+    const offers = [];
+    const hooks = { log() {}, onRescue: (o) => offers.push(Math.round(o.short)) };
+    let blocked = null, sellWorked = null;
+    for (let i = 0; i < 30000 && offers.length < 3; i++) {
+      if (s.rescue) sim.declineRescue(s);
+      sim.tick(s, 0.2, app.d, hooks);
+      app.d = sim.derive(s);
+      if (blocked === null && s.money < 0) {
+        // Below zero nothing at all can be bought, but selling stays open.
+        blocked = A.place(s, app.d, 0, 4, 'rack3', null);
+        out.gridBlocked = !!A.buyGrid(s, 10, { log() {} });
+        out.hireBlocked = !!A.hire(s, app.d, 'tech', { log() {} });
+        out.installBlocked = !!A.install(s, app.d, s.tiles['0,0'], 'gpu', 1, { log() {} });
+        sellWorked = A.sell(s, app.d, 9, 0, { log() {} }) === null;
+      }
+    }
+    out.buyBlocked = /overdrawn/i.test(blocked || '');
+    out.sellStillWorks = sellWorked === true;
+    // The three offers land where the player was told they would.
+    out.offers = offers;
+    out.offersOnTarget = offers.length === 3
+      && offers[0] >= 100_000 && offers[0] < 105_000
+      && offers[1] >= 500_000 && offers[1] < 520_000
+      && offers[2] >= 1_000_000 && offers[2] < 1_040_000;
 
-    // Paying it off from cash clears it.
-    s.money = s.bank.debt * 2;
-    sim.repay(s, s.bank.debt, { log() {} });
-    out.repaid = s.bank.debt === 0;
+    // Taking the terms clears the hole, leaves a float to trade out of, and
+    // costs a multiple of it.
+    s.rescue = { level: 0, short: -s.money, day: s.day, net: app.d.netIncome };
+    const owedBefore = s.bank.debt;
+    const hole = -s.money;
+    sim.takeRescue(s, app.d, { log() {} });
+    app.d = sim.derive(s);
+    out.aboveWaterAfter = s.money > 0;
+    out.costsAMultiple = (s.bank.debt - owedBefore) > hole * 2;
+    out.termsRunning = s.events.active.some((e) => e.label === 'Rescue terms');
+    out.canBuyAgain = A.place(s, app.d, 1, 4, 'rack', null) === null;
     return out;
   });
-  const ok = r.startLimit === 9000 && r.cappedAtLimit && r.interestIsACost && r.interestAccrues
-    && r.built
-    && r.cashNeverNegative && r.debtBuilt && r.insolvent && r.buyBlocked && r.sellStillWorks
-    && r.repaid && r.cappedAtCeiling;
-  if (ok) pass('debt is real, and the bank stops lending', 'limit ' + r.startLimit);
-  else fail('debt is real, and the bank stops lending', JSON.stringify(r));
+  const ok = r.startLimit === 9000 && r.cappedAtLimit && r.interestIsACost
+    && r.buyBlocked && r.gridBlocked && r.hireBlocked && r.installBlocked && r.sellStillWorks
+    && r.offersOnTarget && r.aboveWaterAfter && r.costsAMultiple && r.termsRunning && r.canBuyAgain;
+  if (ok) pass('overdrawn stops all buying, and the bank offers a way out', r.offers.join(' / '));
+  else fail('overdrawn stops all buying, and the bank offers a way out', JSON.stringify(r));
   await page.close();
 }
 
@@ -506,7 +520,10 @@ async function clickTile(page, gx, gy) {
         sim.tick(s, [0.2, 1, 6, 20][i % 4], d);
         d = sim.derive(s);
         ticks++;
-        if (!(s.money >= 0) || !isFinite(s.money)) { bad.push(`run${run} cash ${s.money}`); break; }
+        // Cash may go below zero — that is the fail state — but never off the
+        // rails, and the overdraft must stay answerable rather than runaway.
+        if (!isFinite(s.money)) { bad.push(`run${run} cash ${s.money}`); break; }
+        if (s.money < 0 && !d.overdrawn) { bad.push(`run${run} negative but not flagged`); break; }
         if (!isFinite(s.bank.debt) || s.bank.debt < 0) { bad.push(`run${run} debt ${s.bank.debt}`); break; }
         // Interest must never compound past the credit line, or an idle site
         // comes back to a number no amount of selling could clear.

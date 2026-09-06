@@ -312,6 +312,10 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-family: var(--mono);
   font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .kv .k { color: var(--dimmer); }
+/* Overdrawn: the one state the player must not be able to miss. */
+.overdrawn { box-shadow: inset 0 0 0 1px var(--bad), 0 0 24px #e8615f22; background: #1d1210; }
+.overdrawn .odbig { font-family: var(--mono); font-size: 26px; font-weight: 700;
+  color: var(--bad); letter-spacing: -1px; font-variant-numeric: tabular-nums; margin: 2px 0 6px; }
 .kv .v { text-align: right; }
 
 table.grid { width: 100%; border-collapse: collapse; font-size: 12px; }

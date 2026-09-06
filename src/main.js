@@ -2,7 +2,8 @@
 
 import { el, fill, fmt, fmtTime, money } from './util.js';
 import { newGame, load, save, wipe, exportSave, importSave, tileAt, roomOf, DAY_SECONDS } from './state.js';
-import { derive, tick, resolveDecision, fireEvent, legacyGain } from './sim.js';
+import { derive, tick, resolveDecision, fireEvent, legacyGain, rescueTerms } from './sim.js';
+import * as SIM from './sim.js';
 import { EVENTS_BY_ID } from './data/events.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import * as A from './actions.js';
@@ -196,6 +197,84 @@ app.confirmPrestige = () => {
 
 // ------------------------------------------------------------------- events
 
+/**
+ * The bank's offer once the overdraft is deep enough: clear it on terms
+ * designed to hurt, or put the site down and start again. Deliberately a
+ * modal you have to answer — it is the one moment the run can end.
+ */
+function onRescue(pending) {
+  const t = rescueTerms(app.state, app.d);
+  const body = [
+    `You are ${money(t.short)} overdrawn. Nothing can be bought, the hole grows `
+    + `${Math.round(SIM.OVERDRAFT_RATE * 100)}% a day, and your name is going with it.`,
+    'The bank will clear it today and leave you enough to trade your way out. '
+    + 'They are not being kind about it.',
+  ];
+  const terms = el('div', 'kv');
+  terms.append(el('div', 'k', 'They clear'), el('div', 'v', money(t.short)));
+  terms.append(el('div', 'k', 'And leave you'),
+    el('div', 'v', money(t.float) + '  (three days of costs)'));
+  terms.append(el('div', 'k', 'You owe them'),
+    el('div', 'v bad', money(t.owed) + '  (' + t.multiple.toFixed(2) + '×)'));
+  terms.append(el('div', 'k', 'Interest'),
+    el('div', 'v', Math.round(SIM.LOAN_RATE * 100) + '% a day until it is paid'));
+  terms.append(el('div', 'k', 'Contracts pay'),
+    el('div', 'v bad', Math.round(t.payCut * 100) + '% less for ' + t.days + ' days'));
+  terms.append(el('div', 'k', 'Your name'), el('div', 'v bad', '−' + Math.round(t.repCost)));
+  body.push(terms);
+  if (t.level > 0) {
+    body.push(el('div', 'hint', 'This is offer ' + (t.level + 1)
+      + '. Each one is worse than the last.'));
+  }
+
+  showModal('The bank is on the phone', 'There are two ways out of this.', body, [
+    {
+      label: 'Take the terms',
+      kind: 'primary',
+      onClick: () => {
+        const err = SIM.takeRescue(app.state, app.d, app.hooks);
+        if (err) { toast(err, 'warn'); return; }
+        app.d = derive(app.state);
+        markDirty(); renderUI();
+      },
+    },
+    {
+      label: 'Put it down and start again',
+      kind: 'danger',
+      onClick: () => confirmRestart(),
+    },
+    {
+      label: 'Neither, keep sinking',
+      onClick: () => {
+        SIM.declineRescue(app.state);
+        app.d = derive(app.state);
+        markDirty(); renderUI();
+        toast('The bank will call again when it gets worse.', 'warn');
+      },
+    },
+  ], { sticky: true });
+}
+
+/** Second confirmation before a rescue modal ends the run. */
+function confirmRestart() {
+  showModal('Start again?', 'This ends the run.', [
+    'The site is sold for scrap and you begin in the cupboard again. '
+    + 'Anything you have earned towards a legacy is kept.',
+  ], [
+    {
+      label: 'Yes, start again',
+      kind: 'danger',
+      onClick: () => {
+        const legacy = app.state.legacy;
+        wipe();
+        startGame(newGame(legacy), true);
+        toast('Sold for scrap. Back to the cupboard.', 'warn');
+      },
+    },
+    { label: 'Go back', onClick: () => onRescue(app.state.rescue) },
+  ], { sticky: true });
+}
+
 function onDecision(ev) {
   const body = [ev.text];
   const buttons = ev.options.map((o) => ({
@@ -279,7 +358,10 @@ function step(now) {
 
   const state = app.state;
   const speed = state.settings.speed;
-  if (speed > 0 && !state.events.pending) {
+  // A pending decision or the bank's rescue offer both hold the clock: the
+  // player is being asked a question and the site should not sink while they
+  // read it.
+  if (speed > 0 && !state.events.pending && !state.rescue) {
     acc += real * speed;
     const cap = MAX_CATCHUP * Math.max(1, speed);
     if (acc > cap) acc = cap;
@@ -463,6 +545,7 @@ function boot() {
     log: logLine,
     onDecision,
     onMilestone: showBanner,
+    onRescue,
     onObjective: () => markDirty(),
     onAchievement: () => markDirty(),
   };

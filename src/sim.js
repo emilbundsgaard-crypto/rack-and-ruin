@@ -348,11 +348,12 @@ export function derive(state) {
 
   // A concrete to-do list. Only things the player can act on, worst first.
   const problems = [];
-  if (debt >= creditLine - 0.5 && revenue < costs) {
+  if (state.money < 0) {
     problems.push({
       tone: 'bad', tab: 'site',
-      text: 'The bank has stopped your credit. Sell machines you cannot run, or let staff go, '
-        + 'until the site earns more than it spends.',
+      text: `You are overdrawn by ${money(-state.money)}. Nothing can be bought until you are back `
+        + `above zero, and it costs ${Math.round(OVERDRAFT_RATE * 100)}% a day. Sell machines you `
+        + 'cannot run, or let staff go.',
     });
   } else if (debt > 0 && revenue < costs) {
     problems.push({
@@ -476,7 +477,10 @@ export function derive(state) {
     salaries, salaryCost: salaries * mods.upkeepMult / DAY_SECONDS,
     machineUpkeep: upkeep * mods.upkeepMult / DAY_SECONDS,
     debt, creditLimit: creditLine, creditFree: Math.max(0, creditLine - debt),
-    insolvent: debt >= creditLine - 0.5 && revenue < costs,
+    // Below zero you buy nothing. It is the plainest rule in the game and the
+    // one the whole fail state hangs off.
+    overdrawn: state.money < 0,
+    overdraftCost: state.money < 0 ? -state.money * OVERDRAFT_RATE / DAY_SECONDS : 0,
     rpPerSec, freeCompute: computeSellable - contractDemand,
     boardSize: Math.max(3, Math.round(5 + mods.boardSize + boardBonus + Math.min(4, state.staff.sales / 2))),
     repairRate: (0.12 + state.staff.tech * 1.35) * repairBoost * mods.repairMult,
@@ -511,21 +515,19 @@ export function tick(state, dt, d, hooks) {
   state.market.power = clamp(0.16 * swing * nightDiscount, 0.03, 1.4);
   state.market.compute = clamp(3.36 * (1 + 0.28 * Math.sin(state.day * 0.63 + phase * 3) * stab), 1.2, 9);
 
-  // Money. Income lands first, then the bank takes its cut, then anything the
-  // site could not pay for becomes debt rather than quietly evaporating.
+  // Money. Income lands, the bank takes its cut, and whatever is left is your
+  // balance — which can go below zero. An overdrawn site buys nothing and is
+  // charged for the privilege until it is back in the black.
   const bank = state.bank;
-  // Every spend path reads this rather than needing its own snapshot.
-  state.creditStopped = !!d.insolvent;
   state.money += d.netIncome * dt;
   if (d.revenue > 0) state.lifetimeEarnings += d.revenue * dt;
 
   if (bank) {
-    // Interest, charged on the balance, every day it is outstanding — but the
-    // balance never grows past the credit line. Without that ceiling, coming
-    // back to an idle site after a couple of hours (a hundred game days, and
-    // more with offline research) would compound a small loan into a number
-    // no amount of selling could clear. At the ceiling the bank simply stops:
-    // you are insolvent, which is recoverable, rather than buried, which is not.
+    // Interest on a loan you chose to take, capped so it can never compound
+    // past the credit line. Without that ceiling, coming back to an idle site
+    // after a couple of hours — a hundred game days, and more with offline
+    // research — would turn a small loan into a number no amount of selling
+    // could clear.
     const ceiling = creditLimit(state, d);
     if (bank.debt > 0) {
       const interest = bank.debt * LOAN_RATE * days;
@@ -545,42 +547,34 @@ export function tick(state, dt, d, hooks) {
       }
     }
 
-    // Costs you cannot cover are borrowed, not forgiven. The bank charges for
-    // the privilege, and stops entirely once you are past the limit.
+    // Overdrawn. The balance is allowed to sink — that is the fail state, and
+    // it has to be visible as a number going the wrong way rather than a
+    // counter pinned at zero. It costs more than a loan does, and your name
+    // suffers for as long as it lasts.
     if (state.money < 0) {
-      const short = -state.money;
-      const room = creditFree(state, d);
-      // The fee is part of what the draw costs you, so it has to fit inside
-      // the remaining room too — otherwise the balance creeps past the line.
-      const drawn = Math.max(0, Math.min(short, room / (1 + OVERDRAFT_FEE)));
-      if (drawn > 0) {
-        const fee = drawn * OVERDRAFT_FEE;
-        bank.debt += drawn + fee;
-        bank.borrowed += drawn;
-        state.money += drawn;
-        // Count episodes, not ticks — an overdraft that runs for a week is one
-        // event the player lived through, not four hundred.
-        if (state.day - (state.lastOverdraft || -99) > 3) {
-          state.lastOverdraft = state.day;
-          bank.overdrafts++;
-          hooks?.log(`The site could not cover its costs. ${money(drawn)} drawn on the overdraft, plus a ${money(fee)} fee.`, 'bad');
+      state.money -= -state.money * OVERDRAFT_RATE * days;
+      bank.overdraftDays = (bank.overdraftDays || 0) + days;
+      state.reputation = Math.max(0, state.reputation - 2 * days);
+      if (state.day - (state.lastOverdraft || -99) > 5) {
+        state.lastOverdraft = state.day;
+        bank.overdrafts++;
+        hooks?.log(`Overdrawn by ${money(-state.money)}. Nothing can be bought until you are back `
+          + `above zero — sell what you cannot run.`, 'bad');
+      }
+
+      // Deep enough in and the bank offers a way out, on terms designed to
+      // hurt. The offer stands until it is answered, so it is only made once
+      // per threshold.
+      if (!state.rescue) {
+        const level = bank.rescueLevel || 0;
+        if (-state.money >= rescueThreshold(level)) {
+          state.rescue = { level, short: -state.money, day: state.day, net: d.netIncome };
+          hooks?.onRescue?.(state.rescue);
         }
       }
-      // Past the limit there is nowhere left to draw from. The shortfall is
-      // written off so cash never goes negative, but the site is insolvent
-      // and pays for it in reputation until the bleeding stops.
-      if (state.money < 0) {
-        state.money = 0;
-        bank.overLimitDays += days;
-        state.reputation = Math.max(0, state.reputation - 3 * days);
-        if (state.day - (state.lastInsolvent || -99) > 6) {
-          state.lastInsolvent = state.day;
-          hooks?.log('The bank has stopped your credit. Sell machines or cut costs — your name is taking the damage.', 'bad');
-        }
-      }
+    } else if (state.money > 0) {
+      state.lastOverdraft = -99;
     }
-  } else if (state.money < 0) {
-    state.money = 0;
   }
 
   // Research.
@@ -943,9 +937,85 @@ export function resolveDecision(state, d, effect, hooks) {
 // Interest is charged per game day on whatever is outstanding. It is meant to
 // be felt: a loan taken to buy a rack should be paid off by that rack inside a
 // few days, and sitting on the debt should hurt.
-export const LOAN_RATE = 0.05;        // per day, on the whole balance
-export const OVERDRAFT_FEE = 0.05;    // one-off, on money the bank forces out
+export const LOAN_RATE = 0.05;        // per day, on a loan you chose to take
+export const OVERDRAFT_RATE = 0.10;   // per day, on a balance below zero
 export const REPAY_SHARE = 0.4;       // of positive income, while you owe
+
+// How far under you have to be before the bank offers a way out. The first
+// three are the ones a player will actually meet; past those it keeps offering
+// at each doubling so a sinking site is never left without the choice.
+export const RESCUE_STEPS = [100_000, 500_000, 1_000_000];
+
+export function rescueThreshold(level) {
+  if (level < RESCUE_STEPS.length) return RESCUE_STEPS[level];
+  const last = RESCUE_STEPS[RESCUE_STEPS.length - 1];
+  return last * Math.pow(2, level - RESCUE_STEPS.length + 1);
+}
+
+/**
+ * What the bank wants for clearing the overdraft. Deliberately awful, and
+ * worse every time: you owe multiples of the hole, your name takes a beating,
+ * and your contracts pay less for a month while the terms run.
+ */
+export function rescueTerms(state, d) {
+  const level = state.rescue?.level ?? (state.bank?.rescueLevel || 0);
+  const short = state.rescue?.short ?? 0;
+  const multiple = 2.5 + level * 0.75;
+  // Clearing the hole alone would be useless: a site losing money is back
+  // under within a tick, and you still could not buy the thing that fixes it.
+  // So the deal includes a few days of running costs as a float — and you pay
+  // the same punitive multiple on all of it.
+  const loss = Math.max(0, -(d?.netIncome ?? state.rescue?.net ?? 0));
+  const float = loss * DAY_SECONDS * 3;
+  return {
+    level,
+    short,
+    float,
+    owed: (short + float) * multiple,
+    multiple,
+    repCost: Math.min(state.reputation, 20 + level * 15),
+    payCut: Math.min(0.45, 0.2 + level * 0.08),
+    days: 30 + level * 10,
+  };
+}
+
+/** Take the bank's offer: back to zero, and paying for it for a long time. */
+export function takeRescue(state, d, hooks) {
+  if (!state.rescue) return 'There is nothing to settle.';
+  const bank = state.bank;
+  // Settle against the balance as it stands now, not as it stood when the
+  // offer was made, so accepting always leaves you at exactly zero.
+  state.rescue.short = Math.max(state.rescue.short, -state.money);
+  const t = rescueTerms(state, d);
+  state.money = t.float;
+  bank.debt += t.owed;
+  bank.borrowed += t.short + t.float;
+  bank.rescues = (bank.rescues || 0) + 1;
+  bank.rescueLevel = t.level + 1;
+  state.reputation = Math.max(0, state.reputation - t.repCost);
+  // Carried as a running event so it shows in the event strip and expires on
+  // its own, like every other temporary modifier.
+  state.events.active.push({
+    id: 'rescue_terms_' + bank.rescues,
+    label: 'Rescue terms',
+    tone: 'bad',
+    until: state.day + t.days,
+    started: state.day,
+    mods: { priceMult: 1 - t.payCut, repMult: 0.5 },
+  });
+  state.rescue = null;
+  hooks?.log(`The bank cleared ${money(t.short)}, left you ${money(t.float)} to work with, and `
+    + `wants ${money(t.owed)} back. Contracts pay ${Math.round(t.payCut * 100)}% less `
+    + `for ${t.days} days.`, 'bad');
+  return null;
+}
+
+/** Turn the offer down and keep sinking. It will be made again if it gets worse. */
+export function declineRescue(state) {
+  if (!state.rescue) return;
+  state.bank.rescueLevel = (state.rescue.level || 0) + 1;
+  state.rescue = null;
+}
 
 /**
  * How much the bank will lend in total. Small at the start — a few thousand
