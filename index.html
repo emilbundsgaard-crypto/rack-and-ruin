@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Rack &amp; Ruin — a datacentre simulator</title>
+<meta name="description" content="Build a datacentre from a broom cupboard to a continental site. Power, water, heat, contracts and a very long research tree.">
+<link rel="stylesheet" href="styles/main.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%230d1117'/><rect x='7' y='6' width='18' height='5' rx='1.5' fill='%234fdca8'/><rect x='7' y='13.5' width='18' height='5' rx='1.5' fill='%233f7dd6'/><rect x='7' y='21' width='18' height='5' rx='1.5' fill='%23e8b44a'/></svg>">
+</head>
+<body>
+
+<div id="app" hidden>
+  <header id="topbar"></header>
+
+  <main id="main">
+    <section id="floor">
+      <div id="floorhead">
+        <div id="facilityname"></div>
+        <div id="floortools"></div>
+      </div>
+      <div id="canvaswrap">
+        <canvas id="view"></canvas>
+        <div id="ghost"></div>
+      </div>
+      <div id="inspector"></div>
+    </section>
+
+    <aside id="panel">
+      <nav id="tabs"></nav>
+      <div id="tabbody"></div>
+    </aside>
+  </main>
+
+  <footer id="logbar">
+    <div id="objective"></div>
+    <div id="logfeed"></div>
+  </footer>
+</div>
+
+<div id="boot">
+  <div class="bootcard">
+    <h1>Rack <span>&amp;</span> Ruin</h1>
+    <p class="tag">A datacentre simulator. It starts in a broom cupboard.</p>
+    <div id="bootbody">Loading…</div>
+  </div>
+</div>
+
+<div id="modal" hidden></div>
+<div id="toasts"></div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>

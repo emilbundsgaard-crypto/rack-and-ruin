@@ -1,0 +1,425 @@
+// Boot, the game loop, and everything that glues the simulation to the UI.
+
+import { el, fill, fmt, fmtTime, money } from './util.js';
+import { newGame, load, save, wipe, exportSave, importSave, tileAt, DAY_SECONDS } from './state.js';
+import { derive, tick, resolveDecision, fireEvent, legacyGain } from './sim.js';
+import { EVENTS_BY_ID } from './data/events.js';
+import { BUILDINGS_BY_ID } from './data/buildings.js';
+import * as A from './actions.js';
+import { FloorView } from './render.js';
+import { initUI, renderUI, refreshLive, markDirty, pushLog, goTab, TABS } from './ui.js';
+
+const TICK = 0.1;          // seconds of simulated time per fixed step
+const MAX_CATCHUP = 0.5;   // never simulate more than this per frame
+
+const app = {
+  state: null,
+  d: null,
+  view: null,
+  log: [],
+  hooks: null,
+  running: false,
+};
+
+// ------------------------------------------------------------------- toasts
+
+function toast(text, tone) {
+  const box = document.getElementById('toasts');
+  const t = el('div', 'toast ' + (tone === 'bad' ? 'bad' : tone === 'warn' ? 'warn' : ''), text);
+  box.append(t);
+  setTimeout(() => {
+    t.style.transition = 'opacity .35s';
+    t.style.opacity = '0';
+    setTimeout(() => t.remove(), 400);
+  }, 4200);
+  while (box.children.length > 5) box.firstChild.remove();
+}
+
+function logLine(text, tone) {
+  app.log.push({ text, tone });
+  if (app.log.length > 200) app.log.shift();
+  pushLog(app.log);
+  if (tone === 'good' || tone === 'bad') toast(text, tone);
+}
+
+// -------------------------------------------------------------------- modal
+
+function closeModal() {
+  const m = document.getElementById('modal');
+  m.hidden = true;
+  m.replaceChildren();
+}
+
+function showModal(title, sub, body, buttons, opts) {
+  const m = document.getElementById('modal');
+  const sheet = el('div', 'sheet');
+  sheet.append(el('h2', null, title));
+  if (sub) sheet.append(el('div', 'sub', sub));
+  for (const node of [].concat(body)) sheet.append(typeof node === 'string' ? el('p', null, node) : node);
+  const row = el('div', 'btnrow');
+  for (const b of buttons) {
+    const btn = el('button', 'btn ' + (b.kind || ''), b.label);
+    btn.onclick = () => { closeModal(); b.onClick?.(); };
+    row.append(btn);
+  }
+  sheet.append(row);
+  fill(m, sheet);
+  m.hidden = false;
+  if (!opts?.sticky) {
+    m.onclick = (e) => { if (e.target === m) closeModal(); };
+  } else {
+    m.onclick = null;
+  }
+}
+
+// ------------------------------------------------------------------ actions
+
+app.act = (fn) => {
+  const err = fn();
+  if (err) toast(err, 'warn');
+  app.d = derive(app.state);
+  markDirty();
+  renderUI();
+};
+
+app.selectedRack = () => {
+  const s = app.view?.sel;
+  if (!s) return null;
+  const t = tileAt(app.state, s.x, s.y);
+  if (!t) return null;
+  const b = BUILDINGS_BY_ID[t.b];
+  return b && b.cat === 'compute' ? t : null;
+};
+
+app.openMenu = () => {
+  const state = app.state;
+  const body = [];
+  const info = el('div', 'kv');
+  info.append(el('div', 'k', 'Playtime'), el('div', 'v', fmtTime(state.playtime)));
+  info.append(el('div', 'k', 'Lifetime revenue'), el('div', 'v', money(state.lifetimeEarnings)));
+  info.append(el('div', 'k', 'Autosave'), el('div', 'v', 'every 15 s'));
+  body.push(info);
+
+  const box = el('textarea');
+  box.rows = 4;
+  box.placeholder = 'Paste a save here to import it, or press Export to fill this box.';
+  body.push(el('div', 'hint', 'Save data lives in this browser only. Export it if you care about it.'));
+  body.push(box);
+
+  showModal('Menu', 'Rack & Ruin', body, [
+    { label: 'Save now', kind: 'primary', onClick: () => { save(state); toast('Saved.'); } },
+    { label: 'Export', onClick: () => {
+      const text = exportSave(state);
+      navigator.clipboard?.writeText(text).catch(() => {});
+      showModalExport(text);
+    } },
+    { label: 'Import', onClick: () => {
+      try {
+        const s = importSave(box.value);
+        startGame(s, true);
+        toast('Save imported.');
+      } catch (err) { toast('That is not a valid save.', 'bad'); }
+    } },
+    { label: 'Delete save', kind: 'danger', onClick: () => confirmWipe() },
+    { label: 'Close' },
+  ]);
+};
+
+function showModalExport(text) {
+  const box = el('textarea');
+  box.rows = 6;
+  box.value = text;
+  showModal('Export', 'Copied to the clipboard if the browser allowed it.', [box], [{ label: 'Close' }]);
+}
+
+function confirmWipe() {
+  showModal('Delete everything?', 'This wipes the save in this browser. Legacy points go too.', [
+    'There is no undo. If you want to keep it, export first.',
+  ], [
+    { label: 'Delete and start over', kind: 'danger', onClick: () => { wipe(); startGame(newGame(), true); } },
+    { label: 'Cancel' },
+  ]);
+}
+
+app.confirmPrestige = () => {
+  const gain = legacyGain(app.state);
+  showModal('Sell the company?', 'You keep the legacy points, the perks and the achievements.', [
+    `A buyer will pay ${gain} legacy points for what you have built.`,
+    'Everything else goes: the floor, the cash, the research, the contracts and the staff.',
+  ], [
+    { label: 'Sell for ' + gain + ' points', kind: 'primary', onClick: () => {
+      const fresh = A.prestige(app.state, app.hooks);
+      if (typeof fresh === 'string') { toast(fresh, 'warn'); return; }
+      startGame(fresh, true);
+      goTab('legacy');
+    } },
+    { label: 'Keep building' },
+  ]);
+};
+
+// ------------------------------------------------------------------- events
+
+function onDecision(ev) {
+  const body = [ev.text];
+  const buttons = ev.options.map((o) => ({
+    label: o.label,
+    kind: 'primary',
+    onClick: () => {
+      const result = resolveDecision(app.state, app.d, o.effect, app.hooks);
+      app.state.events.pending = null;
+      app.d = derive(app.state);
+      markDirty(); renderUI();
+      toast(result, ev.tone === 'bad' ? 'warn' : undefined);
+    },
+  }));
+  buttons.forEach((b, i) => { b.kind = i === 0 ? 'primary' : ''; });
+  const hints = el('div', 'kv');
+  for (const o of ev.options) hints.append(el('div', 'k', o.label), el('div', 'v', o.hint));
+  body.push(hints);
+  showModal(ev.name, 'Somebody needs an answer.', body, buttons, { sticky: true });
+}
+
+// ------------------------------------------------------------------- offline
+
+function offlineProgress(state) {
+  const now = Date.now();
+  const elapsed = Math.max(0, (now - (state.lastTick || now)) / 1000);
+  state.lastTick = now;
+  if (elapsed < 45) return null;
+
+  let d = derive(state);
+  const hours = d.mods.offlineHours;
+  const rateMult = d.mods.offlineRate;
+  const used = Math.min(elapsed, hours * 3600);
+  const steps = 48;
+  const step = used / steps;
+  const before = state.money;
+  const beforeRp = state.rp;
+  const quiet = { log: () => {}, onDecision: () => {} };
+  for (let i = 0; i < steps; i++) {
+    d = derive(state);
+    // Offline runs at a reduced rate and never breaks hardware.
+    const saved = d.netIncome;
+    d.netIncome = saved * rateMult;
+    d.rpPerSec *= rateMult;
+    const wear = d.mods.wearMult;
+    d.mods.wearMult = 0;
+    tick(state, step, d, quiet);
+    d.mods.wearMult = wear;
+  }
+  return {
+    seconds: used, capped: elapsed > hours * 3600,
+    money: state.money - before, rp: state.rp - beforeRp, hours,
+  };
+}
+
+// ---------------------------------------------------------------- game loop
+
+let acc = 0;
+let last = performance.now();
+let uiClock = 0;
+let saveClock = 0;
+
+function frame(now) {
+  const real = Math.min(0.25, (now - last) / 1000);
+  last = now;
+  if (!app.running) { requestAnimationFrame(frame); return; }
+
+  const state = app.state;
+  const speed = state.settings.speed;
+  if (speed > 0 && !state.events.pending) {
+    acc += real * speed;
+    if (acc > MAX_CATCHUP) acc = MAX_CATCHUP;
+    let guard = 0;
+    while (acc >= TICK && guard++ < 20) {
+      app.d = derive(state);
+      tick(state, TICK, app.d, app.hooks);
+      acc -= TICK;
+    }
+  }
+  if (!app.d) app.d = derive(state);
+
+  app.view.draw(state, app.d, real);
+
+  uiClock += real;
+  if (uiClock > 0.2) { uiClock = 0; refreshLive(state, app.d); }
+
+  saveClock += real;
+  if (saveClock > 15) { saveClock = 0; save(state); }
+
+  requestAnimationFrame(frame);
+}
+
+// ------------------------------------------------------------------ startup
+
+function startGame(state, fresh) {
+  app.state = state;
+  app.d = derive(state);
+  app.running = true;
+  app.log = [];
+  document.getElementById('boot').hidden = true;
+  document.getElementById('app').hidden = false;
+
+  if (!app.view) {
+    const canvas = document.getElementById('view');
+    app.view = new FloorView(canvas, {
+      onClick: (x, y, shift) => handleClick(x, y, shift),
+      onPaint: (x, y) => { if (app.view.tool && app.view.tool !== 'sell') handleClick(x, y, false, true); },
+      onHover: (t) => updateGhost(t),
+    });
+    initUI(app);
+    window.addEventListener('resize', () => { app.view.resize(); });
+    app.view.resize();
+  } else {
+    app.view.sel = null;
+    app.view.tool = null;
+    app.view.resize();
+  }
+  app.view.centred = false;
+  markDirty();
+  renderUI();
+  refreshLive(state, app.d);
+  if (fresh) logLine('A cupboard, a socket and an idea.', 'info');
+}
+
+function handleClick(x, y, shift, painting) {
+  const state = app.state;
+  const view = app.view;
+  if (!state) return;
+  if (view.tool === 'sell') {
+    if (tileAt(state, x, y)) app.act(() => A.sell(state, app.d, x, y, app.hooks));
+    return;
+  }
+  if (view.tool) {
+    const err = A.place(state, app.d, x, y, view.tool, painting ? { log: () => {} } : app.hooks);
+    if (err && !painting) toast(err, 'warn');
+    app.d = derive(state);
+    if (!painting) { view.sel = { x, y }; }
+    markDirty(); renderUI();
+    return;
+  }
+  view.sel = tileAt(state, x, y) || (view.sel && view.sel.x === x && view.sel.y === y ? null : { x, y });
+  if (view.sel) view.sel = { x, y };
+  markDirty();
+  renderUI();
+}
+
+function updateGhost(t) {
+  const g = document.getElementById('ghost');
+  const state = app.state;
+  if (!t || !state) { g.textContent = 'Wheel to zoom, drag to pan.'; return; }
+  const tile = tileAt(state, t.x, t.y);
+  const view = app.view;
+  if (view.tool && view.tool !== 'sell') {
+    const b = BUILDINGS_BY_ID[view.tool];
+    g.textContent = `Place ${b.name} at ${t.x},${t.y} — ${money(A.buildCost(b, app.d))}`
+      + (tile ? ' (tile taken)' : '');
+  } else if (view.tool === 'sell') {
+    g.textContent = tile ? `Demolish ${BUILDINGS_BY_ID[tile.b].name} at ${t.x},${t.y}` : 'Nothing to demolish here';
+  } else if (tile) {
+    const r = app.d.racks.find((x) => x.x === t.x && x.y === t.y);
+    g.textContent = r
+      ? `${BUILDINGS_BY_ID[tile.b].name} — ${r.used}/${r.cap} slots, ${r.temp.toFixed(1)} °C`
+      : BUILDINGS_BY_ID[tile.b].name;
+  } else {
+    g.textContent = `Empty tile ${t.x},${t.y}`;
+  }
+}
+
+function bindKeys() {
+  window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
+    if (e.key === 'Escape') {
+      if (!document.getElementById('modal').hidden) return;
+      app.view.tool = null;
+      app.view.sel = null;
+      app.sellBtn?.classList.remove('on');
+      markDirty(); renderUI();
+    } else if (e.key === ' ') {
+      e.preventDefault();
+      app.state.settings.speed = app.state.settings.speed === 0 ? 1 : 0;
+    } else if (e.key >= '1' && e.key <= '9') {
+      const t = TABS[Number(e.key) - 1];
+      if (t) goTab(t.id);
+    } else if (e.key === 'o' || e.key === 'O') {
+      const modes = ['none', 'power', 'cool', 'heat', 'net'];
+      const i = modes.indexOf(app.view.overlay);
+      app.view.overlay = modes[(i + 1) % modes.length];
+      for (const b of document.querySelectorAll('#floortools .tool')) {
+        b.classList.toggle('on', b.textContent.toLowerCase().startsWith(
+          app.view.overlay === 'none' ? 'no overlay' : app.view.overlay === 'cool' ? 'cooling' : app.view.overlay));
+      }
+    }
+  });
+}
+
+function boot() {
+  app.hooks = {
+    log: logLine,
+    onDecision,
+    onObjective: () => markDirty(),
+    onAchievement: () => markDirty(),
+  };
+
+  const saved = load();
+  const body = document.getElementById('bootbody');
+  const buttons = el('div', 'row');
+
+  if (saved) {
+    const info = offlineProgress(saved);
+    const cont = el('button', 'btn primary', 'Continue — day ' + Math.floor(saved.day)
+      + ', ' + money(saved.money));
+    cont.onclick = () => {
+      startGame(saved, false);
+      if (info && info.money > 0) {
+        showModal('While you were away', fmtTime(info.seconds) + ' of offline running'
+          + (info.capped ? ` (capped at ${info.hours} hours)` : ''), [
+          `Your site earned ${money(info.money)} and banked ${fmt(info.rp)} research points.`,
+          'Nothing broke while you were gone — offline running is deliberately gentle.',
+        ], [{ label: 'Back to work', kind: 'primary' }]);
+      }
+    };
+    const fresh = el('button', 'btn danger', 'Start over');
+    fresh.onclick = () => confirmWipe();
+    buttons.append(cont, fresh);
+  } else {
+    const start = el('button', 'btn primary', 'Start in the cupboard');
+    start.onclick = () => { startGame(newGame(), true); showHelp(); };
+    buttons.append(start);
+  }
+
+  const help = el('button', 'btn', 'How it works');
+  help.onclick = () => showHelp();
+  buttons.append(help);
+
+  fill(body, buttons, el('div', 'note',
+    'Saves live in this browser. Nothing is uploaded anywhere.'));
+
+  bindKeys();
+  requestAnimationFrame((t) => { last = t; requestAnimationFrame(frame); });
+}
+
+function showHelp() {
+  const list = el('div', 'kv');
+  const row = (k, v) => list.append(el('div', 'k', k), el('div', 'v', v));
+  row('Goal', 'Turn a cupboard into a continental site.');
+  row('Compute', 'Racks hold hardware. Hardware makes compute.');
+  row('Money', 'Compute only pays once it is under contract.');
+  row('Power', 'Racks need a PDU in range, and the site needs supply.');
+  row('Heat', 'Cooling only reaches its radius. Hot racks throttle, then die.');
+  row('Water', 'Cooling drinks water. Run dry and capacity collapses.');
+  row('R&D', 'A slice of your compute buys research points.');
+  row('Keys', '1–9 tabs · O cycles overlays · Space pauses · Esc clears the tool');
+  showModal('How it works', 'Five minutes to learn, rather longer to finish.', [
+    'Place a power strip, a rack and a fan. Install hardware in the rack. Sign a contract. '
+    + 'Then keep the three curves — power, heat and water — ahead of the fleet you keep buying.',
+    list,
+    'The overlay buttons above the floor are the fastest way to find a rack nothing is cooling '
+    + 'or powering. Red hatching means nothing reaches it at all.',
+  ], [{ label: 'Got it', kind: 'primary' }]);
+}
+
+boot();
+
+// Exposed for debugging and for the automated smoke test.
+window.__rr = app;
