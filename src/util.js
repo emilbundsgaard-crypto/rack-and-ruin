@@ -19,13 +19,16 @@ export function fmt(n, digits = 2) {
     // Small rates still need to read as something other than "0.01".
     return (neg ? '-' : '') + Number(n.toPrecision(2)).toString();
   }
-  if (n < 1000) {
+  if (n < 999.5) {
     const d = n < 10 ? digits : n < 100 ? Math.max(1, digits - 1) : 0;
     // Trim trailing zeros in the fraction only — 400 must not become 4.
     return (neg ? '-' : '') + n.toFixed(d).replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
   }
-  const tier = Math.min(SUFFIX.length - 1, Math.floor(Math.log10(n) / 3));
-  const scaled = n / Math.pow(10, tier * 3);
+  let tier = Math.min(SUFFIX.length - 1, Math.floor(Math.log10(n) / 3));
+  let scaled = n / Math.pow(10, tier * 3);
+  // Rounding can push a value up into the next tier — 999.7K must read as
+  // 1.00M, never as "1000K". Log rounding can also land a tier low.
+  if (scaled >= 999.5 && tier < SUFFIX.length - 1) { tier++; scaled = n / Math.pow(10, tier * 3); }
   const d = scaled < 10 ? 2 : scaled < 100 ? 1 : 0;
   return (neg ? '-' : '') + scaled.toFixed(d) + SUFFIX[tier];
 }

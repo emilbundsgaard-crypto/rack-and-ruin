@@ -29,14 +29,39 @@ const app = {
 
 function toast(text, tone) {
   const box = document.getElementById('toasts');
-  const t = el('div', 'toast ' + (tone === 'bad' ? 'bad' : tone === 'warn' ? 'warn' : ''), text);
+  const tones = { bad: 'bad', warn: 'warn', good: 'good' };
+  const t = el('div', 'toast ' + (tones[tone] || ''), text);
   box.append(t);
   setTimeout(() => {
-    t.style.transition = 'opacity .35s';
+    // Leave the way it arrived, so the stack settles instead of blinking out.
+    t.style.transition = 'opacity .35s ease, transform .35s ease';
     t.style.opacity = '0';
+    t.style.transform = 'translateX(14px)';
     setTimeout(() => t.remove(), 400);
   }, 4200);
   while (box.children.length > 3) box.firstChild.remove();
+}
+
+let bannerTimer = 0;
+
+/** A brief centred card for the handful of once-a-run moments. */
+function showBanner(kicker, title, note) {
+  const box = document.getElementById('banner');
+  if (!box) return;
+  clearTimeout(bannerTimer);
+  fill(box, (() => {
+    const inner = el('div', 'inner');
+    inner.append(
+      el('div', 'kicker', kicker),
+      el('div', 'title', title),
+      el('div', 'note', note || ''),
+      el('div', 'rule'),
+    );
+    return inner;
+  })());
+  box.hidden = false;
+  sfx.upgrade();
+  bannerTimer = setTimeout(() => { box.hidden = true; fill(box); }, 3300);
 }
 
 function logLine(text, tone) {
@@ -267,7 +292,7 @@ function step(now) {
     if (tutActive(state)) {
       const finished = tutAdvance(state, app.d);
       if (finished) {
-        toast('Step done — ' + finished.title + '.');
+        toast('Step done — ' + finished.title + '.', 'good');
         markDirty();
         renderTutorial(state);
         if (!tutActive(state)) {
@@ -437,6 +462,7 @@ function boot() {
   app.hooks = {
     log: logLine,
     onDecision,
+    onMilestone: showBanner,
     onObjective: () => markDirty(),
     onAchievement: () => markDirty(),
   };

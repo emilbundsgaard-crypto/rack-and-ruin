@@ -266,6 +266,54 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------------------------- big numbers, and a milestone card
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  const bad = await page.evaluate(async () => {
+    const { fmt } = await import('/src/util.js');
+    const out = [];
+    // Rounding must promote to the next suffix rather than print "1000K".
+    for (let e = 0; e < 30; e++) {
+      for (const m of [0.9994, 0.9995, 0.9999, 1, 1.5, 9.999]) {
+        const v = m * Math.pow(10, e + 3);
+        const t = fmt(v);
+        if (/^\d{4}/.test(t) || /^1000/.test(t)) out.push(v.toExponential(3) + ' -> ' + t);
+      }
+    }
+    if (fmt(400) !== '400') out.push('400 -> ' + fmt(400));
+    if (fmt(0) !== '0') out.push('0 -> ' + fmt(0));
+    return out;
+  });
+  if (!bad.length) pass('numbers never overflow their suffix');
+  else fail('numbers never overflow their suffix', bad.slice(0, 3).join(', '));
+
+  // Moving up a site shows a card, and the card clears itself.
+  await page.evaluate(async () => {
+    const app = window.__rr;
+    const A = await import('/src/actions.js');
+    const sim = await import('/src/sim.js');
+    app.state.tutorial.skipped = true;
+    app.state.money = 1e9; app.state.reputation = 40;
+    app.d = sim.derive(app.state);
+    A.upgradeFacility(app.state, app.hooks);
+  });
+  await page.waitForTimeout(400);
+  const shown = await page.evaluate(() => {
+    const b = document.getElementById('banner');
+    return { hidden: b.hidden, has: /Back office/.test(b.textContent),
+      clicks: getComputedStyle(b).pointerEvents };
+  });
+  await page.waitForTimeout(3400);
+  const gone = await page.evaluate(() => document.getElementById('banner').hidden);
+  if (!shown.hidden && shown.has && shown.clicks === 'none' && gone) {
+    pass('a new site announces itself, then gets out of the way');
+  } else {
+    fail('a new site announces itself, then gets out of the way', JSON.stringify({ ...shown, gone }));
+  }
+  await page.close();
+}
+
 // ------------------------------------------------------------- narrow screen
 for (const [w, h] of [[1024, 720], [520, 900]]) {
   const page = await newPage(w, h);

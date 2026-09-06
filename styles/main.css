@@ -239,8 +239,10 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
   border-top: 1px solid var(--line);
 }
 .row:first-of-type { border-top: 0; }
-.row.click { cursor: pointer; }
-.row.click:hover { background: var(--panel2); }
+.row.click { cursor: pointer; transition: background .12s ease, box-shadow .12s ease; }
+.row.click:hover { background: var(--panel2); box-shadow: inset 2px 0 0 var(--acc); }
+.row.click:active { background: #241d14; }
+.row.click:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 .row.owned { background: #191a11; box-shadow: inset 2px 0 0 var(--good); }
 .row.locked { opacity: .38; }
 .row.cant .price { color: var(--warn); }
@@ -432,17 +434,57 @@ input[type=text], textarea {
 .grow b { font-weight: 650; }
 .gnote { color: var(--dim); }
 
+/* A moment for the handful of things that only happen once a run. */
+#banner {
+  position: absolute; inset: 0; z-index: 24; display: grid; place-items: center;
+  pointer-events: none; text-align: center;
+}
+#banner .inner {
+  padding: 26px 44px; border-radius: 8px;
+  background: radial-gradient(420px 200px at 50% 50%, #1d1710f2, #12100cd8);
+  box-shadow: 0 0 0 1px #3a2f22, 0 24px 60px #000b;
+  animation: banner 3.2s cubic-bezier(.2,.8,.25,1) both;
+}
+#banner .kicker { font-family: var(--mono); font-size: 11px; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--acc); }
+#banner .title { font-size: 34px; font-weight: 700; letter-spacing: -.5px; margin: 6px 0 4px; }
+#banner .note { color: var(--dim); font-size: 13px; max-width: 42ch; margin: 0 auto; }
+#banner .rule { height: 1px; margin: 14px auto 0; width: 60px; background: var(--acc); opacity: .55; }
+@keyframes banner {
+  0%   { opacity: 0; transform: scale(.94) translateY(10px); }
+  12%  { opacity: 1; transform: none; }
+  78%  { opacity: 1; transform: none; }
+  100% { opacity: 0; transform: scale(1.02); }
+}
+@media (prefers-reduced-motion: reduce) { #banner .inner { animation: none; } }
+
 #toasts { position: absolute; right: 14px; bottom: 14px; z-index: 20; display: grid; gap: 5px;
   justify-items: end; pointer-events: none; max-width: min(330px, 64%); }
 .toast {
   display: flex; align-items: center; gap: 9px;
-  background: #17130ee8; border-left: 2px solid var(--acc); border-radius: 3px;
-  padding: 6px 13px; font-size: 11.5px; color: #cec2b2; box-shadow: 0 8px 22px #0009;
-  animation: pop .22s ease-out;
+  background: linear-gradient(90deg, #1b160fe0, #14110ce8);
+  border: 1px solid #2e2620; border-left: 2px solid var(--acc); border-radius: 4px;
+  padding: 7px 13px 7px 12px; font-size: 11.5px; color: #cec2b2;
+  box-shadow: 0 10px 26px #000a, inset 0 1px 0 #ffffff08;
+  backdrop-filter: blur(3px);
+  animation: toastin .34s cubic-bezier(.2,.8,.25,1) both;
+}
+/* A dot in the accent of the tone, so the kind of news reads before the text. */
+.toast::before {
+  content: ''; flex: none; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--acc); box-shadow: 0 0 8px currentColor;
 }
 .toast.bad { color: #f2bcb5; border-left-color: var(--bad); }
+.toast.bad::before { background: var(--bad); }
 .toast.warn { color: #f2dfb2; border-left-color: var(--warn); }
-@keyframes pop { from { opacity: 0; transform: translateY(6px); } }
+.toast.warn::before { background: var(--warn); }
+.toast.good { color: #cfe6bb; border-left-color: var(--good); }
+.toast.good::before { background: var(--good); }
+@keyframes toastin {
+  from { opacity: 0; transform: translateX(18px) scale(.97); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
 
 /* --------------------------------------------------------- accessibility */
 

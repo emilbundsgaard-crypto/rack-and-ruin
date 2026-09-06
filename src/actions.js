@@ -318,6 +318,7 @@ export function upgradeFacility(state, hooks) {
   state.facility++;
   // Bought floor carries over as the site grows.
   hooks?.log(`Moved into the ${next.name}. The floor just got bigger.`, 'good');
+  hooks?.onMilestone?.('New site', next.name, next.desc || 'More floor, and room for what comes next.');
   return null;
 }
 
@@ -348,5 +349,6 @@ export function prestige(state, hooks) {
   const fresh = newGame(legacy);
   fresh.achievements = [...state.achievements];
   hooks?.log(`Sold the company for ${gain} legacy points. Time to do it properly.`, 'good');
+  hooks?.onMilestone?.('Sold', `${gain} legacy points`, 'Back to the cupboard, and this time you know what you are doing.');
   return fresh;
 }
