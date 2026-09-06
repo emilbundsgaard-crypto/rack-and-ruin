@@ -114,8 +114,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 #view { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 #ghost {
   position: absolute; left: 10px; bottom: 10px; pointer-events: none;
-  background: #0e1620ee; border: 1px solid var(--line-solid); border-radius: 6px;
-  padding: 5px 9px; font-size: 11.5px; color: var(--dim); max-width: 300px;
+  background: #0d1620e0; border: 1px solid #22303f; border-radius: 999px;
+  padding: 4px 12px; font-size: 11.5px; color: var(--dim); max-width: 340px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
 /* ------------------------------------------------------------- guided start */
@@ -161,6 +162,22 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
   padding: 8px 12px; min-height: 92px; max-height: 34vh; overflow: auto;
 }
 #inspector .empty { color: var(--dimmer); font-size: 12px; }
+.todohead { font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--dimmer); margin-bottom: 6px; }
+.todo {
+  display: flex; align-items: center; gap: 9px; width: 100%; max-width: 720px;
+  background: #131d29; border: 1px solid var(--line); border-radius: 7px;
+  padding: 6px 10px; margin-bottom: 4px; font-size: 12.5px; text-align: left; color: var(--fg);
+}
+.todo:hover { background: #1a2634; border-color: #35506b; }
+.todo .dot { width: 7px; height: 7px; border-radius: 50%; flex: none; background: var(--dim); }
+.todo .txt { flex: 1; }
+.todo .go { color: var(--dimmer); font-size: 11px; }
+.todo:hover .go { color: var(--acc); }
+.todo.bad .dot { background: var(--bad); }
+.todo.warn .dot { background: var(--warn); }
+.todo.good .dot { background: var(--good); }
+.todo.info .dot { background: var(--acc2); }
 #inspector .kv { max-width: 420px; }
 #inspector table.grid { max-width: 620px; }
 
@@ -207,6 +224,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .pill.acc { color: var(--acc); border-color: #2c5c47; }
 .pill.bad { color: var(--bad); border-color: #5c2c2c; }
 .pill.warn { color: var(--warn); border-color: #5c4a2c; }
+.pill.new { color: #0e1620; background: var(--acc); border-color: var(--acc); font-weight: 650; }
 
 .btn {
   background: #1e2b3a; border: 1px solid var(--line-solid); border-radius: 6px;
@@ -276,13 +294,32 @@ input[type=text], textarea {
 .grow b { font-weight: 600; }
 .gnote { color: var(--dim); }
 
-#toasts { position: absolute; right: 10px; top: 10px; z-index: 20; display: grid; gap: 6px;
-  justify-items: end; pointer-events: none; max-width: min(360px, 70%); }
-.toast { background: #172231; border: 1px solid var(--line-solid); border-left: 3px solid var(--acc);
-  border-radius: 6px; padding: 7px 12px; font-size: 12.5px; box-shadow: 0 8px 24px #0008;
-  animation: pop .25s ease-out; max-width: 340px; }
-.toast.bad { border-left-color: var(--bad); }
-.toast.warn { border-left-color: var(--warn); }
+#tip {
+  position: fixed; z-index: 70; pointer-events: none; max-width: 300px;
+  background: #101a26; border: 1px solid #2c4055; border-radius: 8px;
+  padding: 8px 11px; box-shadow: 0 12px 34px #000a;
+  animation: tipin .12s ease-out;
+}
+#tip .tiph { font-size: 11.5px; font-weight: 650; color: var(--acc); margin-bottom: 3px; }
+#tip .tipb { font-size: 12px; color: #c3d4e4; line-height: 1.42; }
+#tip .tipb + .tipb { margin-top: 4px; }
+@keyframes tipin { from { opacity: 0; transform: translateY(3px); } }
+
+#toasts { position: absolute; right: 10px; bottom: 10px; z-index: 20; display: grid; gap: 5px;
+  justify-items: end; pointer-events: none; max-width: min(320px, 64%); }
+.toast {
+  display: flex; align-items: center; gap: 7px;
+  background: #131d29e8; border: 1px solid #24344a; border-radius: 999px;
+  padding: 4px 12px 4px 9px; font-size: 11.5px; color: #b9cadb;
+  box-shadow: 0 6px 18px #0007; animation: pop .22s ease-out;
+}
+.toast::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%; flex: none; background: var(--acc);
+}
+.toast.bad { color: #f0b6b5; border-color: #5c2c2c; }
+.toast.bad::before { background: var(--bad); }
+.toast.warn { color: #f0d9a8; border-color: #5c4a2c; }
+.toast.warn::before { background: var(--warn); }
 @keyframes pop { from { opacity: 0; transform: translateY(6px); } }
 
 /* ------------------------------------------------------------ responsive */

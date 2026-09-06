@@ -1,7 +1,7 @@
 // The whole simulation: modifiers, the per-tick derived snapshot of the site,
 // and the state mutations that follow from it.
 
-import { clamp, sum, noise, weightedPick } from './util.js';
+import { clamp, sum, noise, weightedPick, fmt as fmtShort } from './util.js';
 import { HARDWARE_BY_ID } from './data/hardware.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import { RESEARCH_BY_ID, RESEARCH } from './data/research.js';
@@ -28,7 +28,7 @@ function baseMods() {
   const m = {};
   for (const k of MULT_KEYS) m[k] = 1;
   for (const k of ADD_KEYS) m[k] = 0;
-  m.contractSlots = 3;
+  m.contractSlots = 4;
   m.offlineHours = 2;
   m.offlineRate = 0.35;
   return m;
@@ -333,8 +333,83 @@ export function derive(state) {
   else if (freeSlots > unitsTotal * 0.25) bottleneck = 'empty rack slots';
   else bottleneck = 'running clean';
 
+  // A concrete to-do list. Only things the player can act on, worst first.
+  const problems = [];
+  const noPower = racks.filter((r) => r.used > 0 && r.pduFactor < 0.95).length;
+  const noCool = racks.filter((r) => r.used > 0 && r.cover < 0.95).length;
+  if (rawPowerFactor < 0.98) {
+    problems.push({
+      tone: 'bad', tab: 'utils',
+      text: `Power supply is short by ${Math.ceil(demandKW - supplyKW)} kW — everything is throttling.`,
+    });
+  }
+  if (noPower) {
+    problems.push({
+      tone: 'bad', tab: 'build', cat: 'power', overlay: 'power',
+      text: `${noPower} rack${noPower > 1 ? 's have' : ' has'} no PDU in range.`,
+    });
+  }
+  if (noCool) {
+    problems.push({
+      tone: 'bad', tab: 'build', cat: 'cooling', overlay: 'cool',
+      text: `${noCool} rack${noCool > 1 ? 's are' : ' is'} short of cooling.`,
+    });
+  }
+  if (maxTemp > 40) {
+    problems.push({
+      tone: 'bad', tab: 'build', cat: 'cooling', overlay: 'heat',
+      text: `Hottest rack is ${maxTemp.toFixed(0)} °C. Above 40 °C hardware wears out fast.`,
+    });
+  }
+  if (waterFactor < 0.95) {
+    problems.push({
+      tone: 'bad', tab: 'build', cat: 'water',
+      text: `Water is short — cooling is running at ${Math.round(waterEff * 100)}% of nameplate.`,
+    });
+  }
+  if (netFactor < 0.98) {
+    problems.push({
+      tone: 'warn', tab: 'build', cat: 'support',
+      text: `Switching covers ${Math.round(netFactor * 100)}% of the fleet. The rest is idle.`,
+    });
+  }
+  const freeSlotsNow = state.contracts.active.length < Math.floor(mods.contractSlots + contractSlots);
+  if (freeSlotsNow && state.contracts.offers.length) {
+    problems.push({
+      tone: 'good', tab: 'contracts',
+      text: `${state.contracts.offers.length} offer${state.contracts.offers.length > 1 ? 's' : ''} on the board and a free contract slot.`,
+    });
+  }
+  if (contractDemand < computeSellable * 0.7 && computeSellable > 1) {
+    problems.push({
+      tone: 'warn', tab: 'contracts',
+      text: `${fmtShort(computeSellable - contractDemand)} of compute is sitting unsold.`,
+    });
+  }
+  if (freeSlots > 0 && unitsTotal > 0) {
+    problems.push({
+      tone: 'info', tab: 'racks',
+      text: `${freeSlots} empty rack slot${freeSlots > 1 ? 's' : ''} waiting for hardware.`,
+    });
+  }
+  const affordableRnD = RESEARCH.filter((r) => !state.research.done.includes(r.id)
+    && r.req.every((q) => state.research.done.includes(q)) && state.rp >= r.cost).length;
+  if (affordableRnD) {
+    problems.push({
+      tone: 'good', tab: 'research',
+      text: `${affordableRnD} research node${affordableRnD > 1 ? 's' : ''} you can afford right now.`,
+    });
+  }
+  const nextFac = FACILITIES[state.facility + 1];
+  if (nextFac && state.money >= nextFac.cost && state.reputation >= (nextFac.rep || 0)) {
+    problems.push({
+      tone: 'good', tab: 'site',
+      text: `You can afford to move into the ${nextFac.name}.`,
+    });
+  }
+
   return {
-    state, mods, fac, racks, coolers, pdus, counts, units, unitsTotal, brokenTotal, bottleneck,
+    state, mods, fac, racks, coolers, pdus, counts, units, unitsTotal, brokenTotal, bottleneck, problems,
     freeSlots, staffCap, staffTotal: sum(Object.keys(state.staff), (k) => state.staff[k] || 0),
     ownSupply, firmSupply: gridSupply + firmOwn * mods.powerSupplyMult,
     gridSupply, supplyKW, powerDraw: demandKW, actualDraw, gridUsed, powerFactor, rawPowerFactor,
@@ -542,21 +617,42 @@ function contractsTick(state, d, days, hooks) {
     state.contracts.active = state.contracts.active.filter((c) => state.day < c.endDay);
   }
 
-  // Offer board refresh.
-  state.contracts.nextRefresh -= days;
-  if (state.contracts.nextRefresh <= 0 || state.contracts.offers.length === 0) {
-    state.contracts.nextRefresh = 5 + Math.random() * 4;
-    const wanted = 4 + Math.min(3, Math.floor(state.staff.sales / 3));
-    const offers = [];
-    for (let i = 0; i < wanted; i++) {
-      const o = makeOffer(state, d, i);
-      if (o) offers.push(o);
-    }
-    state.contracts.offers = offers;
+  // The board is a stream rather than a periodic dump: offers arrive one at a
+  // time, sit there for a few days, and go stale on their own. Something is
+  // always about to appear, and nothing ever vanishes in a batch.
+  const before = state.contracts.offers.length;
+  state.contracts.offers = state.contracts.offers.filter((o) => state.day < o.expires);
+  if (state.contracts.offers.length < before) hooks?.onBoard?.();
+
+  const cap = 5 + Math.min(4, Math.floor(state.staff.sales / 2));
+  const post = () => {
+    const o = makeOffer(state, d, state.contracts.seq);
+    if (!o) return false;
+    o.posted = state.day;
+    o.expires = state.day + 5 + Math.random() * 6;
+    state.contracts.offers.push(o);
+    return true;
+  };
+
+  // Seed the board the moment a run starts, so step five of the guide always
+  // has something signable waiting.
+  if (!state.contracts.offers.length && !state.contracts.active.length) {
+    for (let i = 0; i < 3; i++) post();
+    state.contracts.nextOffer = 1.5;
   }
 
-  // Optional hands-off signing, once you have somebody to do the paperwork.
-  if (state.settings.autoSign && state.staff.sales > 0) {
+  state.contracts.nextOffer -= days;
+  if (state.contracts.nextOffer <= 0 && state.contracts.offers.length < cap) {
+    post();
+    // Deal flow follows demand: an empty board or a free slot pulls the next
+    // offer in sooner.
+    const keen = state.contracts.offers.length < 3
+      || state.contracts.active.length < d.contractSlots;
+    state.contracts.nextOffer = (keen ? 0.7 : 1.9) + Math.random() * 1.2;
+  }
+
+  // Optional hands-off signing, for when placing machines is the fun part.
+  if (state.settings.autoSign) {
     let free = d.computeSellable - sum(state.contracts.active, (c) => c.demand);
     while (state.contracts.active.length < d.contractSlots) {
       const fits = state.contracts.offers

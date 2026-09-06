@@ -8,6 +8,7 @@ import { BUILDINGS_BY_ID } from './data/buildings.js';
 import * as A from './actions.js';
 import { FloorView } from './render.js';
 import { initUI, renderUI, refreshLive, markDirty, pushLog, goTab, TABS, renderTutorial } from './ui.js';
+import { initTips, hide as hideTip } from './tip.js';
 import { advance as tutAdvance, active as tutActive, FINISH } from './tutorial.js';
 
 const TICK = 0.2;          // seconds of simulated time per fixed step
@@ -46,6 +47,7 @@ function logLine(text, tone) {
 // -------------------------------------------------------------------- modal
 
 function closeModal() {
+  hideTip();
   const m = document.getElementById('modal');
   m.hidden = true;
   m.replaceChildren();
@@ -422,6 +424,7 @@ function boot() {
     'Saves live in this browser. Nothing is uploaded anywhere.'));
 
   bindKeys();
+  initTips();
   requestAnimationFrame((t) => { last = t; requestAnimationFrame(frame); });
 }
 
@@ -469,7 +472,8 @@ function showHelp() {
       ['Maintenance', 'Condition decays with heat. Repair effort is split across every rack you own.'],
     ]),
     guideSection('Money', [
-      ['Contracts', 'The only income. Sign what fits inside your spare capacity, not all of it.'],
+      ['Contracts', 'The only income. Offers arrive a couple a day and go stale after about a week.'],
+      ['Capacity', 'Sign what fits inside your spare capacity, not all of it.'],
       ['SLA', 'Fall below the promised uptime and penalties start and reputation drops.'],
       ['Reputation', 'Earned by finishing contracts cleanly. Unlocks bigger sites and better customers.'],
       ['R&D', 'The slider on the R&D tab trades sellable compute for research points.'],
@@ -477,6 +481,7 @@ function showHelp() {
     el('h4', 'gh', 'Reading the floor'),
     legend,
     guideSection('Controls', [
+      ['To-do list', 'With no tile selected, the strip under the floor lists what needs attention. Click a row to jump to the fix.'],
       ['Overlays', 'The buttons above the floor. Power and Cooling shade what each machine reaches.'],
       ['Placing', 'Pick a machine, click a tile. Drag with one held to lay a whole row.'],
       ['Moving about', 'Wheel zooms, dragging empty space pans, Recentre puts you back.'],
@@ -487,7 +492,19 @@ function showHelp() {
 
 app.openGuide = () => showHelp();
 
+app.setOverlay = (id) => {
+  app.view.overlay = id;
+  for (const b of document.querySelectorAll('#floortools .tool')) {
+    const name = b.textContent.trim().toLowerCase();
+    const match = id === 'none' ? 'no overlay' : id === 'cool' ? 'cooling' : id;
+    if (['no overlay', 'power', 'cooling', 'heat', 'network'].includes(name)) {
+      b.classList.toggle('on', name === match);
+    }
+  }
+};
+
 boot();
 
 // Exposed for debugging and for the automated smoke test.
+app.refreshLive = () => refreshLive(app.state, app.d, 0.2);
 window.__rr = app;

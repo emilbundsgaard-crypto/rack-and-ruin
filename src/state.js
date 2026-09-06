@@ -44,7 +44,7 @@ export function newGame(legacy) {
     research: { done: [] },
     upgrades: [],
     staff: { tech: 0, eng: 0, sales: 0, ops: 0 },
-    contracts: { active: [], offers: [], nextRefresh: 0, seq: 1 },
+    contracts: { active: [], offers: [], nextOffer: 0, seq: 1 },
     events: { active: [], next: 90, pending: null, seq: 1 },
     objectives: { done: [] },
     tutorial: { step: 0, skipped: false },

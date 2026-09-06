@@ -27,12 +27,8 @@ async function newPage(width = 1500, height = 940) {
   return page;
 }
 
-const tileAt = (page, gx, gy) => page.evaluate(([gx, gy]) => {
-  const v = window.__rr.view;
-  const r = document.getElementById('view').getBoundingClientRect();
-  const T = 46 * v.zoom;
-  return { x: r.left + v.ox + gx * T + T / 2, y: r.top + v.oy + gy * T + T / 2 };
-}, [gx, gy]);
+const tileAt = (page, gx, gy) => page.evaluate(
+  ([gx, gy]) => window.__rr.view.tileCentre(gx, gy), [gx, gy]);
 
 async function clickTile(page, gx, gy) {
   const p = await tileAt(page, gx, gy);

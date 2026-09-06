@@ -57,7 +57,8 @@ export const STEPS = [
 export const FINISH = {
   title: 'That is the whole game',
   body: 'Power, cooling, water, switching, maintenance — and contracts to pay for all of it. '
-    + 'Everything from here is those same five problems at a larger scale, with better machines.',
+    + 'Everything from here is those same five problems at a larger scale, with better machines. '
+    + 'Offers keep arriving on the board, so there is always something to sign.',
 };
 
 export function current(state) {

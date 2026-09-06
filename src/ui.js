@@ -66,7 +66,7 @@ export function initUI(a) {
   ];
   const overlayBtns = overlays.map(([id, name, tip]) => {
     const b = el('button', 'tool' + (id === 'none' ? ' on' : ''), name);
-    b.title = tip;
+    b.dataset.tip = name + '|' + tip;
     b.onclick = () => {
       app.view.overlay = id;
       overlayBtns.forEach((x) => x.classList.remove('on'));
@@ -75,14 +75,14 @@ export function initUI(a) {
     return b;
   });
   const sellBtn = el('button', 'tool', 'Demolish');
-  sellBtn.title = 'Click machines to remove them. You get half the money back.';
+  sellBtn.dataset.tip = 'Demolish|Click machines to remove them. You get half the money back. Drag to clear a row.';
   sellBtn.onclick = () => {
     app.view.tool = app.view.tool === 'sell' ? null : 'sell';
     sellBtn.classList.toggle('on', app.view.tool === 'sell');
     markDirty(); renderUI();
   };
   const centreBtn = el('button', 'tool', 'Recentre');
-  centreBtn.title = 'Fit the whole floor back on screen.';
+  centreBtn.dataset.tip = 'Recentre|Fit the whole floor back on screen.';
   centreBtn.onclick = () => app.view.centre(app.state);
   fill(tools, [...overlayBtns, sellBtn, centreBtn]);
   app.sellBtn = sellBtn;
@@ -95,78 +95,162 @@ function syncTabs() {
 }
 
 export function markDirty() { dirty = true; }
+export function setBuildCat(c) { buildCat = c; }
 export function currentTab() { return tab; }
 export function goTab(id) { tab = id; syncTabs(); markDirty(); renderUI(); }
 
 // ------------------------------------------------------------------ top bar
 
+let topCells = null;
+
+/**
+ * The bar is built once and then written into. Rebuilding it every frame threw
+ * away hover state, and any tooltip waiting on a 220 ms delay was pointing at a
+ * node that no longer existed by the time it fired.
+ */
 export function renderTop(state, d) {
   const bar = document.getElementById('topbar');
-  const stats = [];
-  const stat = (k, v, s, cls, tip) => {
-    const n = el('div', 'stat' + (cls ? ' ' + cls : ''));
-    if (tip) n.title = tip;
-    n.append(el('div', 'k', k), el('div', 'v', v));
-    if (s) n.append(el('div', 's', s));
-    return n;
-  };
+  if (!topCells) {
+    topCells = new Map();
+    const nodes = [];
+    for (const spec of TOP_STATS) {
+      const n = el('div', 'stat');
+      const v = el('div', 'v');
+      const sub = el('div', 's');
+      n.append(el('div', 'k', spec.k), v, sub);
+      topCells.set(spec.id, { n, v, sub });
+      nodes.push(n);
+    }
+    const spacer = el('div', 'spacer');
+    const speed = el('button', 'topbtn', '');
+    speed.onclick = () => {
+      state.settings.speed = state.settings.speed === 0 ? 1 : 0;
+      renderTop(app.state, app.d);
+    };
+    const guide = el('button', 'topbtn', 'Guide');
+    guide.dataset.tip = 'Guide|How the site works, and what everything on screen means.';
+    guide.onclick = () => app.openGuide();
+    const menu = el('button', 'topbtn', 'Menu');
+    menu.dataset.tip = 'Menu|Save, export, import, restart the guide, or wipe and start over.';
+    menu.onclick = () => app.openMenu();
+    topCells.set('_speed', { n: speed });
+    fill(bar, [...nodes, spacer, speed, guide, menu]);
+  }
 
-  stats.push(stat('Cash', money(state.money),
-    (d.netIncome >= 0 ? '+' : '') + rate(d.netIncome),
-    d.netIncome >= 0 ? 'good' : 'bad',
-    'What you have, and what the site earns or loses every second after every bill.'));
+  for (const spec of TOP_STATS) {
+    const cell = topCells.get(spec.id);
+    const out = spec.read(state, d);
+    if (cell.v.textContent !== out.v) cell.v.textContent = out.v;
+    if (cell.sub.textContent !== out.s) cell.sub.textContent = out.s;
+    const cls = 'stat' + (out.cls ? ' ' + out.cls : '') + (out.jump ? ' jump' : '');
+    if (cell.n.className !== cls) cell.n.className = cls;
+    const tip = spec.k + '|' + spec.tip + (out.extra ? '\n' + out.extra : '');
+    if (cell.n.dataset.tip !== tip) cell.n.dataset.tip = tip;
+    cell.n.onclick = out.jump ? () => goTab(out.jump) : null;
+  }
 
-  const fixTab = FIX_TAB[d.bottleneck];
-  const bn = stat('Compute', fmt(d.computeTotal), d.bottleneck,
-    d.bottleneck === 'running clean' ? 'good' : 'warn',
-    'Total capacity your fleet produces right now, and the one thing holding it back.'
-    + (fixTab ? ' Click to go and fix it.' : ''));
-  if (fixTab) { bn.classList.add('jump'); bn.onclick = () => goTab(fixTab); }
-  stats.push(bn);
-
-  stats.push(stat('Contracted', fmt(d.contractDemand),
-    Math.round(d.deliverRatio * 100) + '% delivered',
-    d.deliverRatio > 0.995 ? '' : 'warn',
-    'Compute you have promised customers, and how much of it you are actually delivering.'));
-  stats.push(stat('Power', fmt(d.actualDraw) + ' kW',
-    fmt(d.supplyKW) + ' kW supply',
-    d.rawPowerFactor > 0.999 ? '' : 'bad',
-    'Draw against supply. Short of supply and everything throttles at once.'));
-  stats.push(stat('Cooling', fmt(d.coolCap) + ' kW',
-    fmt(d.heatLoad) + ' kW load',
-    d.coolCap >= d.heatLoad ? '' : 'warn',
-    'Heat you can remove against heat you are making. Capacity only counts if it reaches the rack.'));
-  stats.push(stat('Water', fmt(d.waterSupply) + ' L/s',
-    fmt(d.waterDemand) + ' L/s used',
-    d.waterFactor > 0.995 ? '' : 'warn',
-    'Cooling drinks water. Run short and cooling capacity falls with it.'));
-  stats.push(stat('Peak temp', d.maxTemp.toFixed(1) + ' °C',
-    'avg ' + d.avgTemp.toFixed(1) + ' °C',
-    d.maxTemp > 45 ? 'bad' : d.maxTemp > 34 ? 'warn' : '',
-    'The hottest rack you own. Over 30 °C it throttles; over 40 °C it wears out fast.'));
-  stats.push(stat('Uptime', (d.uptime * 100).toFixed(2) + '%',
-    d.brokenTotal ? d.brokenTotal + ' units down' : 'all healthy',
-    d.uptime > 0.98 ? '' : 'warn',
-    'What your SLAs are measured against. Broken hardware and brownouts both drag it down.'));
-  stats.push(stat('R&D', fmt(state.rp) + ' RP', '+' + fmt(d.rpPerSec) + '/s', 'acc',
-    'Research points, earned by the share of compute you allocate to R&D.'));
-  stats.push(stat('Reputation', fmt(state.reputation), state.contracts.active.length + ' contracts',
-    'Earned by finishing contracts cleanly. It unlocks bigger buildings and better customers.'));
-  stats.push(stat('Day', Math.floor(state.day) + '', clockOf(state),
-    'One game day is one real minute. Electricity is cheaper at night.'));
-
-  const spacer = el('div', 'spacer');
-  const speed = el('button', 'topbtn' + (state.settings.speed === 0 ? ' on' : ''),
-    state.settings.speed === 0 ? '▶ Paused' : '❚❚ Pause');
-  speed.onclick = () => { state.settings.speed = state.settings.speed === 0 ? 1 : 0; renderTop(state, d); };
-  const guide = el('button', 'topbtn', 'Guide');
-  guide.title = 'How the site works, and what everything on screen means';
-  guide.onclick = () => app.openGuide();
-  const menu = el('button', 'topbtn', 'Menu');
-  menu.onclick = () => app.openMenu();
-
-  fill(bar, [...stats, spacer, speed, guide, menu]);
+  const speed = topCells.get('_speed').n;
+  const label = state.settings.speed === 0 ? '\u25B6 Paused' : '\u275A\u275A Pause';
+  if (speed.textContent !== label) speed.textContent = label;
+  speed.className = 'topbtn' + (state.settings.speed === 0 ? ' on' : '');
+  speed.dataset.tip = 'Pause|Space also does it. The simulation stops; nothing decays.';
 }
+
+const TOP_STATS = [
+  {
+    id: 'cash', k: 'Cash',
+    tip: 'What you have, and what the site earns or loses every second after every bill.',
+    read: (s, d) => ({
+      v: money(s.money),
+      s: (d.netIncome >= 0 ? '+' : '') + rate(d.netIncome),
+      cls: d.netIncome >= 0 ? 'good' : 'bad',
+    }),
+  },
+  {
+    id: 'compute', k: 'Compute',
+    tip: 'Capacity your fleet produces right now, and the one thing holding it back.',
+    read: (s, d) => ({
+      v: fmt(d.computeTotal),
+      s: d.bottleneck,
+      cls: d.bottleneck === 'running clean' ? 'good' : 'warn',
+      jump: FIX_TAB[d.bottleneck],
+      extra: FIX_TAB[d.bottleneck] ? 'Click to go straight to the tab that fixes it.' : '',
+    }),
+  },
+  {
+    id: 'contracted', k: 'Contracted',
+    tip: 'Compute you have promised customers, and how much of it you are actually delivering.',
+    read: (s, d) => ({
+      v: fmt(d.contractDemand),
+      s: Math.round(d.deliverRatio * 100) + '% delivered',
+      cls: d.deliverRatio > 0.995 ? '' : 'warn',
+    }),
+  },
+  {
+    id: 'power', k: 'Power',
+    tip: 'Draw against supply. Short of supply and every rack throttles at once.',
+    read: (s, d) => ({
+      v: fmt(d.actualDraw) + ' kW',
+      s: fmt(d.supplyKW) + ' kW supply',
+      cls: d.rawPowerFactor > 0.999 ? '' : 'bad',
+      jump: d.rawPowerFactor > 0.999 ? null : 'utils',
+    }),
+  },
+  {
+    id: 'cooling', k: 'Cooling',
+    tip: 'Heat you can remove against heat you are making. Capacity only counts if it reaches the rack.',
+    read: (s, d) => ({
+      v: fmt(d.coolCap) + ' kW',
+      s: fmt(d.heatLoad) + ' kW load',
+      cls: d.coolCap >= d.heatLoad ? '' : 'warn',
+    }),
+  },
+  {
+    id: 'water', k: 'Water',
+    tip: 'Cooling drinks water. Run short and cooling capacity falls with it.',
+    read: (s, d) => ({
+      v: fmt(d.waterSupply) + ' L/s',
+      s: fmt(d.waterDemand) + ' L/s used',
+      cls: d.waterFactor > 0.995 ? '' : 'warn',
+    }),
+  },
+  {
+    id: 'temp', k: 'Peak temp',
+    tip: 'The hottest rack you own. Over 30 °C it throttles; over 40 °C it wears out fast.',
+    read: (s, d) => ({
+      v: d.maxTemp.toFixed(1) + ' °C',
+      s: 'avg ' + d.avgTemp.toFixed(1) + ' °C',
+      cls: d.maxTemp > 45 ? 'bad' : d.maxTemp > 34 ? 'warn' : '',
+    }),
+  },
+  {
+    id: 'uptime', k: 'Uptime',
+    tip: 'What your SLAs are measured against. Broken hardware and brownouts both drag it down.',
+    read: (s, d) => ({
+      v: (d.uptime * 100).toFixed(2) + '%',
+      s: d.brokenTotal ? d.brokenTotal + ' units down' : 'all healthy',
+      cls: d.uptime > 0.98 ? '' : 'warn',
+    }),
+  },
+  {
+    id: 'rp', k: 'R&D',
+    tip: 'Research points, earned by the share of compute you allocate to R&D.',
+    read: (s, d) => ({ v: fmt(s.rp) + ' RP', s: '+' + fmt(d.rpPerSec) + '/s', cls: 'acc' }),
+  },
+  {
+    id: 'rep', k: 'Reputation',
+    tip: 'Earned by finishing contracts cleanly. It unlocks bigger buildings and better customers.',
+    read: (s, d) => ({
+      v: fmt(s.reputation),
+      s: s.contracts.active.length + ' contracts',
+    }),
+  },
+  {
+    id: 'day', k: 'Day',
+    tip: 'One game day is one real minute. Electricity is cheaper at night.',
+    read: (s) => ({ v: String(Math.floor(s.day)), s: clockOf(s) }),
+  },
+];
 
 function clockOf(state) {
   const f = state.day % 1;
@@ -341,7 +425,7 @@ function panelRacks(state, d) {
       );
       const fillBtn = el('button', 'btn primary small',
         canFit > 0 ? 'Fill all racks — ' + fmtInt(canFit) : 'Fill all racks');
-      fillBtn.title = canFit > 0
+      fillBtn.dataset.tip = canFit > 0
         ? `Buys ${fmtInt(canFit)} of these: what your free slots, your cash and your power headroom allow.`
         : (d.freeSlots === 0 ? 'No free rack slots.'
           : headroom < perUnit ? 'No power headroom — buy supply on the Utilities tab first.'
@@ -385,14 +469,14 @@ function panelContracts(state, d) {
   row('Committed compute', fmt(d.contractDemand) + ' / ' + fmt(d.computeSellable));
   row('Delivering', (d.deliverRatio * 100).toFixed(1) + '%');
   row('Market rate', '$' + state.market.compute.toFixed(3) + ' per compute·s');
-  row('Board refresh', fmtTime(state.contracts.nextRefresh * DAY_SECONDS));
+  row('Next offer in', fmtTime(Math.max(0, state.contracts.nextOffer) * DAY_SECONDS));
   head.append(kv);
-  if (state.staff.sales > 0) {
-    const auto = el('button', 'btn small' + (state.settings.autoSign ? ' primary' : ''),
-      state.settings.autoSign ? 'Auto-sign: on' : 'Auto-sign: off');
-    auto.onclick = () => { state.settings.autoSign = !state.settings.autoSign; markDirty(); renderUI(); };
-    const r = el('div', 'btnrow'); r.append(auto); head.append(r);
-  }
+  const auto = el('button', 'btn small' + (state.settings.autoSign ? ' primary' : ''),
+    state.settings.autoSign ? 'Auto-sign: on' : 'Auto-sign: off');
+  auto.dataset.tip = 'Auto-sign|Takes the best offer that fits in your spare capacity, '
+    + 'whenever a slot is free. Turn it on when placing machines is the part you enjoy.';
+  auto.onclick = () => { state.settings.autoSign = !state.settings.autoSign; markDirty(); renderUI(); };
+  const autoRow = el('div', 'btnrow'); autoRow.append(auto); head.append(autoRow);
   out.push(sec('Book', head));
 
   const act = state.contracts.active.map((c) => {
@@ -432,6 +516,7 @@ function panelContracts(state, d) {
     const card = el('div', 'card click' + (fits && slot ? '' : ' cant'));
     const title = el('div', 'title');
     title.append(el('b', null, o.name));
+    if (state.day - (o.posted ?? state.day) < 1.2) title.append(el('span', 'pill new', 'new'));
     title.append(el('span', fits ? 'pill acc' : 'pill warn', fits ? 'fits' : 'over capacity'));
     title.append(el('span', 'price ok', rate(o.pay * d.mods.priceMult)));
     card.append(title, el('div', 'desc', o.client + ' — ' + (t?.blurb || '')));
@@ -445,6 +530,7 @@ function panelContracts(state, d) {
       ['you hold', (d.uptime * 100).toFixed(1) + '%'],
       ['term', o.days + ' days'],
       ['penalty', '×' + o.penalty + ' on breach'],
+      ['expires', Math.max(0, (o.expires ?? state.day) - state.day).toFixed(1) + ' days'],
       ['total', money(o.pay * d.mods.priceMult * o.days * DAY_SECONDS)],
     ];
     for (const [k, v] of bits) { const s = el('span'); s.append(k + ' ', el('b', null, v)); meta.append(s); }
@@ -891,13 +977,33 @@ export function renderInspector(state, d) {
   const box = document.getElementById('inspector');
   const sel = app.view.sel;
   if (!sel) {
-    if (box.dataset.mode !== 'empty') {
-      box.dataset.mode = 'empty';
-      fill(box, el('div', 'empty',
-        'Click a tile to inspect it. Racks show their temperature, power coverage and what is installed.'));
+    // With nothing selected, this space is worth more as a to-do list.
+    const sig = d.problems.map((p) => p.text).join('|');
+    if (box.dataset.sig === sig) return;
+    box.dataset.sig = sig;
+    box.dataset.mode = 'todo';
+    const kids = [];
+    kids.push(el('div', 'todohead', d.problems.length
+      ? 'Needs attention' : 'Nothing needs attention'));
+    if (!d.problems.length) {
+      kids.push(el('div', 'empty',
+        'The site is balanced and everything is sold. Build more, or push research.'));
     }
+    for (const p of d.problems.slice(0, 6)) {
+      const row = el('button', 'todo ' + p.tone);
+      row.append(el('span', 'dot'), el('span', 'txt', p.text), el('span', 'go', 'fix →'));
+      row.onclick = () => {
+        if (p.overlay) app.setOverlay(p.overlay);
+        if (p.cat) setBuildCat(p.cat);
+        goTab(p.tab);
+      };
+      kids.push(row);
+    }
+    kids.push(el('div', 'empty', 'Click any tile on the floor to inspect it instead.'));
+    fill(box, kids);
     return;
   }
+  box.dataset.sig = '';
   const tile = tileAt(state, sel.x, sel.y);
   if (!tile) {
     box.dataset.mode = 'blank';
@@ -969,13 +1075,22 @@ export function renderInspector(state, d) {
 // -------------------------------------------------------------- live events
 
 /** Chips for whatever is currently distorting the numbers. */
+let eventSig = '';
+
 export function renderEvents(state) {
   const box = document.getElementById('events');
   const list = state.events.active;
-  if (!list.length) {
-    if (box.childElementCount) box.replaceChildren();
+  // Only rebuild when the set changes, so a chip you are hovering survives.
+  const sig = list.map((e) => e.id + ':' + Math.round(e.until * 10)).join('|');
+  if (sig === eventSig) {
+    const spans = box.querySelectorAll('.ev .t');
+    list.forEach((ev, i) => {
+      if (spans[i]) spans[i].textContent = Math.max(0, ev.until - state.day).toFixed(1) + 'd left';
+    });
     return;
   }
+  eventSig = sig;
+  if (!list.length) { box.replaceChildren(); return; }
   fill(box, list.map((ev) => {
     const def = EVENTS_BY_ID[ev.id];
     const tone = ev.tone || def?.tone || 'neutral';
@@ -983,8 +1098,8 @@ export function renderEvents(state) {
     const left = Math.max(0, ev.until - state.day);
     const chip = el('div', 'ev ' + (tone === 'good' ? 'good' : tone === 'bad' ? 'bad' : ''));
     chip.append(el('b', null, name), el('span', 't', left.toFixed(1) + 'd left'));
-    chip.title = (def?.text || 'In effect until day ' + Math.ceil(ev.until)) + '\n\n'
-      + describeMods(ev.mods || def?.mods || {});
+    chip.dataset.tip = name + '|' + (def?.text || 'In effect until day ' + Math.ceil(ev.until))
+      + '\n' + describeMods(ev.mods || def?.mods || {});
     return chip;
   }));
 }

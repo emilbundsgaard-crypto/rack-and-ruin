@@ -36,7 +36,7 @@ That is the entire game in miniature. Skip it from the card, or start it again
 from Menu → Run the guide again. The **Guide** button in the top bar explains
 every number and every colour on screen at any point after that.
 
-![The cooling overlay, showing which racks nothing is pointed at](docs/screenshot-cooling-overlay.png)
+![A small room, with the to-do list under the floor](docs/screenshot-floor.png)
 
 ## The idea
 
@@ -68,6 +68,7 @@ campus. Only the numbers and the machinery change.
 | Cash upgrades | 32 permanent purchases |
 | Contract types | 18, gated behind reputation |
 | Random events | 20, seven of which stop and ask you a question |
+| Machine icons | 32 hand-drawn glyphs, animated where it earns its place |
 | Objectives | 35, in a guided chain |
 | Achievements | 36 |
 | Legacy perks | 15, bought with the points from selling the company |
@@ -75,11 +76,20 @@ campus. Only the numbers and the machinery change.
 A full run to the end of the research tree is a long evening — roughly five
 hours, less if you are ruthless with your floor plan.
 
+![A campus at tier six](docs/screenshot-campus.png)
+
 ## Playing
 
 Place a power strip, a rack and a box fan. Put hardware in the rack. Sign a
 contract off the board. From there it is a balancing act:
 
+- **The strip under the floor is a to-do list.** With no tile selected it
+  names every fixable problem — racks with no PDU in range, compute sitting
+  unsold, research you can afford — worst first. Click a row and it takes you
+  to the tab that fixes it, with the right overlay already on.
+- **Contracts arrive continuously.** Roughly a couple of offers a day, each
+  good for about a week before it goes stale. There is always something on the
+  board; you never wait for a refresh.
 - **The top bar tells you what is wrong.** The Compute tile names the current
   bottleneck in plain words — *short of electricity*, *cooling is behind*,
   *compute is unsold* — and clicking it takes you to the tab that fixes it.

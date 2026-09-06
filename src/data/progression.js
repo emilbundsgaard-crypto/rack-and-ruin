@@ -117,7 +117,7 @@ export const OBJECTIVES = [
     check: (s) => s.unitsTotal >= 3, reward: { money: 5400 } },
   { id: 'o4', name: 'Move the air', hint: 'Place a box fan, or any cooler, near your rack.',
     check: (s) => s.counts.anyCooling > 0, reward: { money: 4200 } },
-  { id: 'o5', name: 'Get paid', hint: 'Sign your first contract.',
+  { id: 'o5', name: 'Get paid', hint: 'Sign your first contract from the board.',
     check: (s) => s.state.contracts.active.length > 0, reward: { money: 7200 } },
   { id: 'o6', name: 'Learn something', hint: 'Complete any research node.',
     check: (s) => s.state.research.done.length > 0, reward: { rp: 4 } },
