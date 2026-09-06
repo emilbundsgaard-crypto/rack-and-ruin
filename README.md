@@ -20,11 +20,11 @@ runs on a phone, but you will spend a lot of time panning.
 (A plain `file://` open will not work — the game is written as ES modules, and
 browsers refuse to load modules from the filesystem. Any static server does.)
 
-![The guided opening: five steps, each pointing at the control that does the job](docs/screenshot-guided-start.png)
+![The guided opening: ten steps, each pointing at the control that does the job](docs/screenshot-guided-start.png)
 
 ## The first five minutes
 
-A new game opens with a five-step guide. Each step names one thing to do,
+A new game opens with a ten-step guide. Each step names one thing to do,
 switches to the tab that does it, and puts a ring around the exact control —
 then completes itself when the game state says you did it.
 
@@ -33,8 +33,14 @@ then completes itself when the game state says you did it.
 3. **Move the heat.** A box fan, before you fill the rack rather than after.
 4. **Fill it with iron.** One button buys as much as cash and power allow.
 5. **Now get paid.** Sign a contract that fits inside your spare capacity.
+6. **Buy more electricity.** One socket will not run a datacentre.
+7. **Set some compute aside.** The R&D slider is where everything new comes from.
+8. **Unlock something.** Every machine in the game sits behind a research node.
+9. **Hire a technician.** Without one, a broken machine stays broken.
+10. **Look at what it costs.** Ashbrook, and why the town tab exists.
 
-That is the entire game in miniature. Skip it from the card, or start it again
+That is the entire game in miniature — power, heat, deals, research, payroll,
+and the village paying for all of it. Skip it from the card, or start it again
 from Menu → Run the guide again. The **Guide** button in the top bar explains
 every number and every colour on screen at any point after that.
 
@@ -243,11 +249,11 @@ src/
     contracts.js    contract templates
     events.js       random events and decisions
     progression.js  facilities, staff, upgrades, objectives, achievements, legacy
-src/tutorial.js     the five-step guided opening
+src/tutorial.js     the ten-step guided opening
 tools/
   balance.mjs       headless economy probe
   bot.mjs           an automated player, used to check pacing over a long run
-  browser-check.mjs twenty-two end-to-end checks in a real browser
+  browser-check.mjs twenty-three end-to-end checks in a real browser
   shots.mjs         regenerates every screenshot in docs/
 ```
 

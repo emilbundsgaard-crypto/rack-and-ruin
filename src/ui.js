@@ -55,7 +55,13 @@ export function initUI(a) {
   fill(tabs, TABS.map((t) => {
     const b = el('button', 'tab' + (t.id === tab ? ' on' : ''), t.name);
     b.dataset.tab = t.id;
-    b.onclick = () => { tab = t.id; markDirty(); syncTabs(); renderUI(); };
+    b.onclick = () => {
+      tab = t.id;
+      // The guide's last step asks you to go and look at the town; this is how
+      // it knows you did.
+      if (t.id === 'town' && app.state?.tutorial) app.state.tutorial.sawTown = true;
+      markDirty(); syncTabs(); renderUI();
+    };
     return b;
   }));
 
@@ -104,7 +110,11 @@ function syncTabs() {
 export function markDirty() { dirty = true; }
 export function setBuildCat(c) { buildCat = c; }
 export function currentTab() { return tab; }
-export function goTab(id) { tab = id; syncTabs(); markDirty(); renderUI(); }
+export function goTab(id) {
+  tab = id;
+  if (id === 'town' && app.state?.tutorial) app.state.tutorial.sawTown = true;
+  syncTabs(); markDirty(); renderUI();
+}
 
 // ------------------------------------------------------------------ top bar
 
@@ -848,6 +858,7 @@ function panelResearch(state, d) {
       cls: (done ? 'owned' : ok ? (afford ? '' : 'cant') : 'locked')
         + (flashResearch === node.id ? ' flash' : ''),
       onClick: !done && ok ? () => app.act(() => A.buyResearch(state, node.id, app.hooks)) : null,
+      data: !done && ok && afford ? { research: node.id } : null,
     });
   });
   for (const [name, list] of groups) {
@@ -913,6 +924,7 @@ function panelStaff(state, d) {
     if (unlocked) {
       const hire = el('button', 'btn primary small', 'Hire');
       hire.disabled = d.staffTotal >= d.staffCap || state.money < cost;
+      hire.dataset.hire = role.id;
       hire.onclick = () => app.act(() => A.hire(state, d, role.id, app.hooks));
       const fireB = el('button', 'btn small danger', 'Let go');
       fireB.disabled = have === 0;
@@ -970,6 +982,7 @@ function panelUtilities(state, d) {
     const cost = A.gridUpgradeCost(state, n);
     const b = el('button', 'btn small', label + ' — ' + money(cost));
     b.disabled = n <= 0 || state.money < cost;
+    b.dataset.grid = String(n);
     b.onclick = () => app.act(() => A.buyGrid(state, n, app.hooks));
     buys.append(b);
   }
@@ -1197,6 +1210,7 @@ function panelSite(state, d) {
     if (state.money < next.cost) need.push(money(next.cost));
     const b = el('button', 'btn primary', 'Move into ' + next.name + ' — ' + money(next.cost));
     b.disabled = need.length > 0;
+    b.dataset.facility = 'next';
     b.onclick = () => app.act(() => A.upgradeFacility(state, app.hooks));
     const r = el('div', 'btnrow'); r.append(b);
     c.append(r);

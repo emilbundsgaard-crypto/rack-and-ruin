@@ -48,7 +48,7 @@ export function newGame(legacy) {
     contracts: { active: [], offers: [], nextOffer: 0, seq: 1 },
     events: { active: [], next: 90, pending: null, seq: 1 },
     objectives: { done: [] },
-    tutorial: { step: 0, skipped: false },
+    tutorial: { step: 0, skipped: false, sawTown: false },
     achievements: [],
     legacy: { points: lg.points, perks: { ...lg.perks }, resets: lg.resets, lifetime: lg.lifetime },
 

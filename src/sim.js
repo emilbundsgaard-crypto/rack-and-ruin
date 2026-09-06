@@ -30,6 +30,11 @@ function baseMods() {
   for (const k of MULT_KEYS) m[k] = 1;
   for (const k of ADD_KEYS) m[k] = 0;
   m.offerSize = 1;
+  // Room for one person on the payroll before any office exists. Without this
+  // you cannot hire your first technician until an office is researched and
+  // built, which leaves broken machines with nobody to fix them through the
+  // whole opening — and made the guide ask for something impossible.
+  m.staffCap = 1;
   m.offlineHours = 2;
   m.offlineRate = 0.35;
   return m;

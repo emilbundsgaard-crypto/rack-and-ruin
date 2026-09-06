@@ -1,4 +1,4 @@
-// A five-step guided opening. Each step names one thing to do, points at the
+// A ten-step guided opening. Each step names one thing to do, points at the
 // control that does it, and completes itself when the game state says so.
 //
 //   tab / cat  – where the step lives; the panel switches there once, when the
@@ -52,12 +52,62 @@ export const STEPS = [
     aim: () => ['[data-sign]'],
     done: (d) => d.state.contracts.active.length > 0,
   },
+  {
+    id: 't6',
+    title: 'Buy more electricity',
+    body: 'One socket will not run a datacentre. On the Running tab, buy more from the utility — '
+      + 'it is the cheapest power there is, and everything you build needs it.',
+    note: 'When you run out, machines throttle and deals start slipping.',
+    tab: 'ops',
+    aim: () => ['[data-grid]'],
+    done: (d) => d.state.gridPower > 6.001,
+  },
+  {
+    id: 't7',
+    title: 'Set some compute aside',
+    body: 'The slider on the Upgrade tab decides how much of your compute goes to R&D instead of '
+      + 'being sold. R&D earns points, and points are the only way anything new is unlocked.',
+    note: 'Selling everything today means nothing better to sell tomorrow.',
+    tab: 'upgrade',
+    aim: () => ['#tabbody input[type="range"]'],
+    done: (d) => d.state.rp >= 4 || d.state.research.done.length > 0,
+  },
+  {
+    id: 't8',
+    title: 'Unlock something',
+    body: 'Spend those points. Every machine, cooler and cabinet in the game sits behind a node '
+      + 'here — if something is greyed out on the Build tab, this is why.',
+    note: 'Cheapest first is a perfectly good strategy.',
+    tab: 'upgrade',
+    aim: () => ['[data-research]'],
+    done: (d) => d.state.research.done.length > 0,
+  },
+  {
+    id: 't9',
+    title: 'Hire a technician',
+    body: 'Machines wear out and break. A technician repairs them while you get on with something '
+      + 'else — without one, a broken machine stays broken.',
+    note: 'Wages come out every day, whether the site is earning or not.',
+    tab: 'ops',
+    aim: () => ['[data-hire="tech"]'],
+    done: (d) => (d.state.staff.tech || 0) > 0,
+  },
+  {
+    id: 't10',
+    title: 'Look at what it costs',
+    body: 'Open the Town tab. Ashbrook is the village your site is built next to, and everything '
+      + 'you draw, take and cover comes out of it. It only ever goes one way.',
+    note: 'Ruining it completely is the last objective in the game.',
+    tab: 'town',
+    aim: () => ['#tabs [data-tab="town"]'],
+    done: (d) => d.state.tutorial.sawTown === true,
+  },
 ];
 
 export const FINISH = {
   title: 'That is the whole game',
-  body: 'Power, cooling, water, network, repairs — and deals to pay for all of it. '
-    + 'Everything from here is the same handful of problems, just bigger. '
+  body: 'Power, cooling, water, network, repairs, wages and research — and deals to pay for all '
+    + 'of it. Everything from here is the same handful of problems, just bigger. '
     + 'When something is wrong, the list under the floor will tell you, and clicking it takes you '
     + 'straight to the fix.',
 };

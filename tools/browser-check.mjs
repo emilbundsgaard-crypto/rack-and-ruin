@@ -41,35 +41,66 @@ async function clickTile(page, gx, gy) {
   const page = await newPage();
   await page.click('text=Start in the cupboard');
   await page.waitForTimeout(500);
+  await page.evaluate(() => { window.__rr.state.settings.speed = 5; });
   const seen = [];
   const step = () => page.evaluate(() => ({
     n: window.__rr.state.tutorial.step,
-    aimed: [...document.querySelectorAll('.tut-target')].map((x) => x.dataset.build || x.dataset.fill || x.dataset.sign || x.id),
+    aimed: [...document.querySelectorAll('.tut-target')].map((x) => x.dataset.build || x.dataset.fill
+      || x.dataset.sign || x.dataset.grid || x.dataset.research || x.dataset.hire
+      || x.dataset.tab || x.id || x.tagName),
   }));
 
-  seen.push(await step());
-  await page.click('[data-build="pdu"]');
-  await clickTile(page, 2, 2);
-  seen.push(await step());
-  await page.click('[data-build="rack"]');
-  await clickTile(page, 3, 2);
-  seen.push(await step());
-  await page.click('[data-build="fan"]');
-  await clickTile(page, 3, 3);
-  seen.push(await step());
-  await page.click('[data-fill="desktop"]');
-  await page.waitForTimeout(900);
-  seen.push(await step());
-  const signable = await page.locator('[data-sign]').count();
-  if (signable) await page.locator('[data-sign]').first().click();
-  await page.waitForTimeout(900);
+  // Walk it the way a player does: act on whatever the guide is ringing, and
+  // let each step decide for itself when it is satisfied.
+  const spots = [[2, 2], [3, 2], [3, 3]];
+  let placed = 0;
+  for (let guard = 0; guard < 30; guard++) {
+    const st = await step();
+    if (st.n >= 10) break;
+    if (seen.length === st.n) seen.push(st);
+    const target = await page.$('.tut-target');
+    if (!target) { await page.waitForTimeout(600); continue; }
+    const id = await page.evaluate((n) => n.id, target);
+    const tag = await page.evaluate((n) => n.tagName, target);
+    if (id === 'canvaswrap') {
+      const spot = spots[Math.min(placed++, spots.length - 1)];
+      await clickTile(page, spot[0], spot[1]);
+    } else if (tag === 'INPUT') {
+      // The R&D slider: nudge it, then let the points accrue.
+      await page.evaluate((n) => { n.value = '40'; n.dispatchEvent(new Event('input')); }, target);
+      await page.waitForTimeout(700);
+    } else {
+      await target.click().catch(() => {});
+    }
+    await page.waitForTimeout(800);
+  }
   const done = await page.evaluate(() => window.__rr.state.tutorial.step);
   const heat = await page.evaluate(() => window.__rr.d.maxTemp);
+  const covered = await page.evaluate(async () => {
+    const s = window.__rr.state;
+    return {
+      grid: s.gridPower > 6.001,
+      research: s.research.done.length > 0,
+      tech: (s.staff.tech || 0) > 0,
+      town: s.tutorial.sawTown === true,
+      deal: s.contracts.active.length > 0,
+    };
+  });
 
-  if (done === 5) pass('guide completes in five steps');
-  else fail('guide completes in five steps', 'stopped at step ' + done);
-  if (seen.every((s, i) => s.n === i && s.aimed.length > 0)) pass('every step rings a control');
-  else fail('every step rings a control', JSON.stringify(seen));
+  if (done === 10) pass('guide completes in ten steps');
+  else fail('guide completes in ten steps', 'stopped at step ' + done);
+  if (seen.length === 10 && seen.every((x, i) => x.n === i && x.aimed.length > 0)) {
+    pass('every step rings a control');
+  } else {
+    fail('every step rings a control', JSON.stringify(seen.map((x) => x.n + ':' + x.aimed)));
+  }
+  // The whole point of the longer guide: nobody should finish it without
+  // having bought power, researched something, hired somebody and seen the town.
+  if (covered.grid && covered.research && covered.tech && covered.town && covered.deal) {
+    pass('the guide covers power, research, staff, deals and the town');
+  } else {
+    fail('the guide covers power, research, staff, deals and the town', JSON.stringify(covered));
+  }
   if (heat < 40) pass('guide never cooks the first rack', heat.toFixed(1) + ' °C');
   else fail('guide never cooks the first rack', heat.toFixed(1) + ' °C');
   await page.close();
