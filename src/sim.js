@@ -1,7 +1,7 @@
 // The whole simulation: modifiers, the per-tick derived snapshot of the site,
 // and the state mutations that follow from it.
 
-import { clamp, sum, noise, weightedPick, fmt as fmtShort } from './util.js';
+import { clamp, sum, noise, weightedPick, fmt as fmtShort, money } from './util.js';
 import { HARDWARE_BY_ID } from './data/hardware.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import { RESEARCH_BY_ID, RESEARCH } from './data/research.js';
@@ -320,7 +320,17 @@ export function derive(state) {
     if (!t) return 0;
     return c.effUptime < t.uptime ? (c.livePay || c.pay) * t.penalty * mods.penaltyMult : 0;
   });
-  const costs = powerCost + fuelCost + waterBill + upkeepCost + penalties;
+  // Interest is a running cost like any other, so it shows up in the ledger
+  // and in net income rather than silently eating the balance.
+  const debt = state.bank?.debt || 0;
+  const interestCost = debt * LOAN_RATE / DAY_SECONDS;
+  // The limit follows what the site earns, so it has to be worked out here
+  // rather than by calling creditLimit(), which wants a finished snapshot.
+  const creditLine = Math.max(
+    9_000 * Math.pow(2.8, state.facility),
+    Math.max(0, revenue) * DAY_SECONDS * 10,
+  ) * (1 + Math.min(1.5, (state.reputation || 0) / 90));
+  const costs = powerCost + fuelCost + waterBill + upkeepCost + penalties + interestCost;
 
   // What is holding the site back right now, in plain words.
   let bottleneck = null;
@@ -338,6 +348,19 @@ export function derive(state) {
 
   // A concrete to-do list. Only things the player can act on, worst first.
   const problems = [];
+  if (debt >= creditLine - 0.5 && revenue < costs) {
+    problems.push({
+      tone: 'bad', tab: 'site',
+      text: 'The bank has stopped your credit. Sell machines you cannot run, or let staff go, '
+        + 'until the site earns more than it spends.',
+    });
+  } else if (debt > 0 && revenue < costs) {
+    problems.push({
+      tone: 'bad', tab: 'site',
+      text: `You owe ${money(debt)} and the site is still losing money. `
+        + `The debt grows ${Math.round(LOAN_RATE * 100)}% a day — open the Site tab.`,
+    });
+  }
   const noPower = racks.filter((r) => r.used > 0 && r.pduFactor < 0.95).length;
   const noCool = racks.filter((r) => r.used > 0 && r.cover < 0.95).length;
   if (rawPowerFactor < 0.98) {
@@ -447,7 +470,13 @@ export function derive(state) {
     computeTotal, computeResearch, computeSellable, contractDemand, deliverRatio,
     uptime, maxTemp, avgTemp: tempW > 0 ? tempSum / tempW : ambient, ambient,
     revenue, costs, netIncome: revenue - costs,
-    powerCost, fuelCost, waterBill, upkeepCost, penalties, salaries,
+    powerCost, fuelCost, waterBill, upkeepCost, penalties, interestCost,
+    // Salaries are folded into upkeep for the maths, but the player needs to
+    // see the wage bill on its own — it is the cost they can actually choose.
+    salaries, salaryCost: salaries * mods.upkeepMult / DAY_SECONDS,
+    machineUpkeep: upkeep * mods.upkeepMult / DAY_SECONDS,
+    debt, creditLimit: creditLine, creditFree: Math.max(0, creditLine - debt),
+    insolvent: debt >= creditLine - 0.5 && revenue < costs,
     rpPerSec, freeCompute: computeSellable - contractDemand,
     boardSize: Math.max(3, Math.round(5 + mods.boardSize + boardBonus + Math.min(4, state.staff.sales / 2))),
     repairRate: (0.12 + state.staff.tech * 1.35) * repairBoost * mods.repairMult,
@@ -482,26 +511,67 @@ export function tick(state, dt, d, hooks) {
   state.market.power = clamp(0.16 * swing * nightDiscount, 0.03, 1.4);
   state.market.compute = clamp(3.36 * (1 + 0.28 * Math.sin(state.day * 0.63 + phase * 3) * stab), 1.2, 9);
 
-  // Money.
-  const delta = d.netIncome * dt;
-  state.money += delta;
+  // Money. Income lands first, then the bank takes its cut, then anything the
+  // site could not pay for becomes debt rather than quietly evaporating.
+  const bank = state.bank;
+  // Every spend path reads this rather than needing its own snapshot.
+  state.creditStopped = !!d.insolvent;
+  state.money += d.netIncome * dt;
   if (d.revenue > 0) state.lifetimeEarnings += d.revenue * dt;
-  if (state.money < 0) state.money = 0;
 
-  // A site that cannot pay for itself would otherwise be stuck forever, with
-  // no cash to demolish its way out. The bank steps in, at a price.
-  if (state.money < 1 && d.netIncome < 0) {
-    state.brokeFor = (state.brokeFor || 0) + days;
-    if (state.brokeFor > 2 && state.day - (state.lastLoan || -99) > 25) {
-      state.lastLoan = state.day;
-      state.brokeFor = 0;
-      const bridge = Math.max(50_000, -d.netIncome * 320);
-      state.money += bridge;
-      state.reputation = Math.max(0, state.reputation - 10);
-      hooks?.log('Emergency credit line drawn. The bank wants the site profitable, and so do your customers.', 'bad');
+  if (bank) {
+    // Interest, charged on the balance, every day it is outstanding.
+    if (bank.debt > 0) {
+      const interest = bank.debt * LOAN_RATE * days;
+      bank.debt += interest;
+      bank.interestPaid += interest;
     }
-  } else if (state.money > 1) {
-    state.brokeFor = 0;
+
+    // A share of what you actually make goes back to the bank before it is
+    // yours to spend, so a loan clears itself if the site is earning.
+    if (bank.debt > 0 && d.netIncome > 0 && state.money > 0) {
+      const pay = Math.min(bank.debt, d.netIncome * REPAY_SHARE * dt, state.money);
+      if (pay > 0) { state.money -= pay; bank.debt -= pay; }
+      if (bank.debt < 0.01) {
+        bank.debt = 0;
+        hooks?.log('Loan cleared. The site pays for itself again.', 'good');
+      }
+    }
+
+    // Costs you cannot cover are borrowed, not forgiven. The bank charges for
+    // the privilege, and stops entirely once you are past the limit.
+    if (state.money < 0) {
+      const short = -state.money;
+      const room = creditFree(state, d);
+      const drawn = Math.min(short, room);
+      if (drawn > 0) {
+        const fee = drawn * OVERDRAFT_FEE;
+        bank.debt += drawn + fee;
+        bank.borrowed += drawn;
+        state.money += drawn;
+        // Count episodes, not ticks — an overdraft that runs for a week is one
+        // event the player lived through, not four hundred.
+        if (state.day - (state.lastOverdraft || -99) > 3) {
+          state.lastOverdraft = state.day;
+          bank.overdrafts++;
+          hooks?.log(`The site could not cover its costs. ${money(drawn)} drawn on the overdraft, plus a ${money(fee)} fee.`, 'bad');
+        }
+      }
+      // Past the limit there is nowhere left to draw from. The shortfall is
+      // written off so cash never goes negative, but the site is insolvent
+      // and pays for it in reputation until the bleeding stops.
+      if (state.money < 0) {
+        state.money = 0;
+        bank.overLimitDays += days;
+        state.reputation = Math.max(0, state.reputation - 3 * days);
+        if (state.day - (state.lastInsolvent || -99) > 6) {
+          state.lastInsolvent = state.day;
+          hooks?.log('The bank has stopped your credit. Sell machines or cut costs — your name is taking the damage.', 'bad');
+        }
+      }
+    }
+  } else if (state.money < 0) {
+    state.money = 0;
   }
 
   // Research.
@@ -741,7 +811,14 @@ function eventsTick(state, d, dt, hooks) {
   if (state.events.next > 0 || state.events.pending) return;
   state.events.next = 75 + Math.random() * 95;
 
-  const pool = EVENTS.filter((e) => (e.minTier || 0) <= state.facility);
+  // A tier gate is not enough on its own: an event has to make sense for the
+  // site it lands on. Nobody poaches technicians you have not hired, and a UPS
+  // cannot catch fire before you own one.
+  const pool = EVENTS.filter((e) => {
+    if ((e.minTier || 0) > state.facility) return false;
+    if (!e.when) return true;
+    try { return !!e.when(state, d); } catch (err) { return false; }
+  });
   if (!pool.length) return;
   const ev = weightedPick(pool, (e) => e.weight);
 
@@ -788,6 +865,17 @@ export function resolveDecision(state, d, effect, hooks) {
     case 'vc_decline':
       state.reputation += 8;
       return 'You kept the cap table clean. The industry noticed.';
+    case 'town_buy': {
+      const cost = Math.max(120_000, d.netIncome * DAY_SECONDS * 8);
+      if (state.money < cost) return 'You cannot cover the purchase. The families stay put.';
+      state.money -= cost;
+      state.expand.h = (state.expand.h || 0) + 2;
+      state.reputation = Math.max(0, state.reputation - 6);
+      return 'The row came down over a weekend. Two more rows of floor, and nobody left to object.';
+    }
+    case 'town_leave':
+      state.reputation += 10;
+      return 'You let them stay. It cost you nothing but the floor you did not take.';
     case 'recall_return': {
       let removed = 0, refund = 0;
       for (const r of d.racks) {
@@ -839,6 +927,62 @@ export function resolveDecision(state, d, effect, hooks) {
     default:
       return 'Nothing happened.';
   }
+}
+
+// ------------------------------------------------------------------ the bank
+
+// Interest is charged per game day on whatever is outstanding. It is meant to
+// be felt: a loan taken to buy a rack should be paid off by that rack inside a
+// few days, and sitting on the debt should hurt.
+export const LOAN_RATE = 0.05;        // per day, on the whole balance
+export const OVERDRAFT_FEE = 0.05;    // one-off, on money the bank forces out
+export const REPAY_SHARE = 0.4;       // of positive income, while you owe
+
+/**
+ * How much the bank will lend in total. Small at the start — a few thousand
+ * against a cupboard — and widening as the site starts earning, so a loan is
+ * always a nudge rather than a way to skip a tier.
+ */
+export function creditLimit(state, d) {
+  if (d && typeof d.creditLimit === 'number') return d.creditLimit;
+  const base = 9_000 * Math.pow(2.8, state.facility);
+  const againstEarnings = Math.max(0, d?.revenue || 0) * DAY_SECONDS * 10;
+  const standing = 1 + Math.min(1.5, (state.reputation || 0) / 90);
+  return Math.max(base, againstEarnings) * standing;
+}
+
+/** What is left to draw right now. */
+export function creditFree(state, d) {
+  return Math.max(0, creditLimit(state, d) - (state.bank?.debt || 0));
+}
+
+/** Take a loan. The money is yours immediately; so is the interest. */
+export function borrow(state, d, amount, hooks) {
+  const bank = state.bank;
+  if (!bank) return 'No bank.';
+  const free = creditFree(state, d);
+  if (free < 1) return 'The bank will not lend you any more until you have paid some back.';
+  const take = Math.min(amount, free);
+  if (!(take > 0)) return 'Nothing to borrow.';
+  bank.debt += take;
+  bank.borrowed += take;
+  state.money += take;
+  hooks?.log(`Borrowed ${money(take)}. Interest runs at 5% a day until it is paid off.`, 'warn');
+  return null;
+}
+
+/** Pay off what you can, from cash. */
+export function repay(state, amount, hooks) {
+  const bank = state.bank;
+  if (!bank || bank.debt <= 0) return 'You do not owe anything.';
+  const pay = Math.min(amount, bank.debt, state.money);
+  if (!(pay > 0)) return 'No cash to pay with.';
+  state.money -= pay;
+  bank.debt -= pay;
+  if (bank.debt < 0.01) bank.debt = 0;
+  hooks?.log(bank.debt > 0 ? `Paid ${money(pay)} off the loan.` : 'Loan cleared.',
+    bank.debt > 0 ? 'info' : 'good');
+  return null;
 }
 
 // -------------------------------------------------------- objectives & badges

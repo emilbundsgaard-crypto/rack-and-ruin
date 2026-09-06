@@ -14,6 +14,7 @@ import {
 import * as A from './actions.js';
 import { BUILDINGS as ALL_BUILDINGS } from './data/buildings.js';
 import { legacyGain, canPrestige, rackCapacity, signContract } from './sim.js';
+import * as SIM from './sim.js';
 import { tileAt, DAY_SECONDS } from './state.js';
 import { iconFor } from './render.js';
 import { STAGES, stageOf, drawTown } from './town.js';
@@ -126,6 +127,7 @@ export function renderTop(state, d) {
     const mk = {};
     const vital = (id, label) => {
       const n = el('div', 'vital');
+      n.id = id;
       const big = el('div', 'big');
       const sub = el('div', 'sub');
       n.append(el('div', 'lbl', label), big, sub);
@@ -155,7 +157,8 @@ export function renderTop(state, d) {
       meter('m_water', 'H2O'), meter('m_net', 'NET'));
     const minis = el('div', 'minis');
     minis.append(mini('x_temp', 'Temp'), mini('x_up', 'Uptime'), mini('x_rp', 'Points'),
-      mini('x_rep', 'Name'), mini('x_con', 'Deals'), mini('x_town', 'Town'));
+      mini('x_rep', 'Name'), mini('x_con', 'Deals'), mini('x_owed', 'Owed'),
+      mini('x_town', 'Town'));
 
     // Speed is a labelled segmented control. It is one of the two things a new
     // player looks for, so it is not allowed to be subtle.
@@ -220,6 +223,10 @@ export function renderTop(state, d) {
       + 'Open the Town tab to watch it happen.';
     mk.x_town.n.style.cursor = 'pointer';
     mk.x_town.n.onclick = () => goTab('town');
+    mk.x_owed.n.dataset.tip = 'The bank|What you owe. Interest runs every day, and part of your '
+      + 'income goes to paying it off before it reaches you. Click to open the bank.';
+    mk.x_owed.n.style.cursor = 'pointer';
+    mk.x_owed.n.onclick = () => goTab('site');
   }
 
   const t = topBuilt;
@@ -264,6 +271,7 @@ export function renderTop(state, d) {
   small(t.x_rep, fmt(state.reputation));
   small(t.x_con, String(state.contracts.active.length),
     d.freeCompute > d.computeSellable * 0.15 ? 'acc' : '');
+  small(t.x_owed, d.debt > 0 ? fmt(d.debt) : '—', d.insolvent ? 'bad' : d.debt > 0 ? 'warn' : '');
   small(t.x_town, ((state.town?.damage || 0) * 100).toFixed(0) + '%',
     (state.town?.damage || 0) > 0.5 ? 'bad' : (state.town?.damage || 0) > 0.2 ? 'warn' : '');
 
@@ -996,8 +1004,12 @@ function panelUtilities(state, d) {
   line('Electricity', '−' + money(d.powerCost), '#e8615f');
   line('Fuel', '−' + money(d.fuelCost), '#e8615f');
   line('Water', '−' + money(d.waterBill), '#e8615f');
-  line('Upkeep & salaries', '−' + money(d.upkeepCost), '#e8615f');
+  // Wages are the cost the player actually chooses, so they get their own line
+  // rather than hiding inside upkeep.
+  line('Wages', '−' + money(d.salaryCost), '#e8615f');
+  line('Machine upkeep', '−' + money(d.machineUpkeep), '#e8615f');
   line('SLA penalties', '−' + money(d.penalties), '#e8615f');
+  if (d.debt > 0) line('Loan interest', '−' + money(d.interestCost), '#e8615f');
   line('Net', (d.netIncome >= 0 ? '+' : '−') + money(Math.abs(d.netIncome)),
     d.netIncome >= 0 ? '#6fe0a0' : '#e8615f');
   led.append(t);
@@ -1007,10 +1019,72 @@ function panelUtilities(state, d) {
 
 // ---------------------------------------------------------------------- site
 
+/**
+ * Borrowing, what it costs, and what is left of the credit line. The bank is
+ * deliberately a poor deal: it exists to get a stuck site moving again, not to
+ * skip a tier.
+ */
+function bankCard(state, d) {
+  const c = el('div', 'card');
+  const kv = el('div', 'kv');
+  kv.append(el('div', 'k', 'Owed'),
+    el('div', 'v' + (d.debt > 0 ? ' bad' : ''), d.debt > 0 ? money(d.debt) : 'Nothing'));
+  kv.append(el('div', 'k', 'Credit line'), el('div', 'v', money(d.creditLimit)));
+  kv.append(el('div', 'k', 'Left to draw'), el('div', 'v', money(d.creditFree)));
+  if (d.debt > 0) {
+    kv.append(el('div', 'k', 'Interest'), el('div', 'v bad', money(d.interestCost) + '/s'));
+    kv.append(el('div', 'k', 'Repaying'),
+      el('div', 'v', Math.round(SIM.REPAY_SHARE * 100) + '% of income'));
+  }
+  c.append(kv);
+
+  // Debt is never good news, so the meter is amber at best and red when the
+  // line is nearly used up — never the green a normal bar would paint.
+  const used = d.debt / Math.max(d.creditLimit, 1e-9);
+  const bar = el('div', 'bar ' + (used > 0.7 ? 'bad' : 'warn'));
+  bar.append(el('i'));
+  bar.firstChild.style.width = clamp(d.debt / Math.max(d.creditLimit, 1e-9), 0, 1) * 100 + '%';
+  c.append(bar);
+
+  c.append(el('div', 'desc', d.insolvent
+    ? 'Your credit is stopped. Nothing new can be bought until the site earns again — '
+      + 'sell machines you cannot run, or let go of staff you cannot pay.'
+    : 'Interest runs at ' + Math.round(SIM.LOAN_RATE * 100) + '% a day on whatever you owe, and '
+      + Math.round(SIM.REPAY_SHARE * 100) + '% of your income goes straight back to the bank until '
+      + 'it is clear. Borrowing is a way out of a hole, not a way to grow.'));
+
+  const row = el('div', 'btnrow');
+  for (const frac of [0.25, 0.5, 1]) {
+    const amount = d.creditFree * frac;
+    const b = el('button', 'btn small' + (frac === 1 ? '' : ''), 'Borrow ' + money(amount));
+    b.disabled = amount < 1;
+    b.dataset.tip = 'Take a loan|' + money(amount) + ' in your account now, added to what you owe. '
+      + 'Interest starts immediately.';
+    b.onclick = () => app.act(() => SIM.borrow(state, d, amount, app.hooks));
+    row.append(b);
+  }
+  c.append(row);
+
+  if (d.debt > 0) {
+    const pay = el('div', 'btnrow');
+    const all = Math.min(d.debt, state.money);
+    const b = el('button', 'btn small primary', 'Repay ' + money(all));
+    b.disabled = all < 1;
+    b.dataset.tip = 'Pay it off|Clears what you can from cash on hand. Every day you wait costs '
+      + Math.round(SIM.LOAN_RATE * 100) + '% more.';
+    b.onclick = () => app.act(() => SIM.repay(state, all, app.hooks));
+    pay.append(b);
+    c.append(pay);
+  }
+  return c;
+}
+
 function panelSite(state, d) {
   const out = [];
   const f = d.fac;
   const next = A.nextFacility(state);
+
+  out.push(sec('Bank', bankCard(state, d)));
 
   const c = el('div', 'card');
   const kv = el('div', 'kv');

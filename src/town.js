@@ -52,7 +52,12 @@ export function tickTown(state, d, hooks) {
     if (target >= st.at && !state.town.seen.includes(i)) {
       state.town.seen.push(i);
       state.town.sinceDay[i] = Math.floor(state.day);
-      if (i > 0) hooks?.log('Ashbrook: ' + st.title + ' — ' + st.line, 'bad');
+      if (i > 0) {
+        hooks?.log('Ashbrook: ' + st.title + ' — ' + st.line, 'bad');
+        // Losing another piece of the town is one of the few things in a run
+        // that only ever happens once, so it gets the same card a new site does.
+        hooks?.onMilestone?.('Ashbrook · ' + Math.round(st.at * 100) + '% gone', st.title, st.line);
+      }
     }
   }
 }

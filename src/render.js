@@ -270,6 +270,11 @@ export class FloorView {
       this.dragging = true;
       this.panned = false;
       this.button = e.button;
+      // Remember where the drag began. A drag paints the tiles it moves over,
+      // so without this the tile the pointer went down on is never touched and
+      // dragging across a row always leaves its first tile behind.
+      this.downTile = this.pick(last.x, last.y);
+      this.paintedDown = false;
     });
 
     c.addEventListener('pointermove', (e) => {
@@ -293,6 +298,10 @@ export class FloorView {
         if (this.button === 1 || this.button === 2 || !this.tool) {
           this.ox += dx; this.oy += dy;
         } else if (this.tool && this.panned) {
+          if (!this.paintedDown && this.downTile) {
+            this.paintedDown = true;
+            this.cb.onPaint?.(this.downTile.x, this.downTile.y);
+          }
           this.cb.onPaint?.(this.hover.x, this.hover.y);
         }
         last = p;

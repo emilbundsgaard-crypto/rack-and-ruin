@@ -12,12 +12,28 @@ import { rackCapacity, legacyGain } from './sim.js';
 export const buildCost = (b, d) => b.cost * d.mods.buildCostMult;
 export const hwCost = (h, d) => h.cost * d.mods.hwCostMult;
 
+/**
+ * The bank has stopped lending and the site is losing money: nothing new gets
+ * bought until that is fixed. Selling and demolishing stay open, because they
+ * are the way out.
+ */
+function frozen(state, d) {
+  // The tick stamps this on the state each step, so every spend path can ask
+  // without having to be handed a fresh snapshot.
+  const stopped = d ? d.insolvent : state.creditStopped;
+  return stopped
+    ? 'Your credit is stopped. Sell machines or cut costs before buying anything else.'
+    : null;
+}
+
 export function place(state, d, x, y, buildingId, hooks) {
   const b = BUILDINGS_BY_ID[buildingId];
   if (!b) return 'Unknown building.';
   if (!inBounds(state, x, y)) return 'Outside the floor.';
   if (tileAt(state, x, y)) return 'That tile is taken.';
   const cost = buildCost(b, d);
+  const stop = frozen(state, d);
+  if (stop) return stop;
   if (state.money < cost) return 'Not enough money.';
   state.money -= cost;
   state.stats.spentBuild += cost;
@@ -66,6 +82,8 @@ export function install(state, d, tile, hardwareId, count, hooks) {
   if (hw.req && !state.research.done.includes(hw.req)) return 'Not researched yet.';
   const room = freeSlots(state, d, tile);
   if (room <= 0) return 'No free slots in that rack.';
+  const stop = frozen(state, d);
+  if (stop) return stop;
   const unit = hwCost(hw, d);
   const affordable = Math.floor(state.money / unit);
   const n = Math.min(count, room, affordable);
@@ -160,6 +178,8 @@ export function upgradeRacks(state, d, buildingId, hooks) {
   const target = BUILDINGS_BY_ID[buildingId];
   if (!target || target.cat !== 'compute') return 'Not a rack.';
   if (target.req && !state.research.done.includes(target.req)) return 'Not researched yet.';
+  const stop = frozen(state, d);
+  if (stop) return stop;
   const unit = buildCost(target, d);
   let done = 0, spent = 0;
   for (const k in state.tiles) {
@@ -207,6 +227,8 @@ export function buyGrid(state, kw, hooks) {
   kw = Math.min(kw, gridCap(state) - state.gridPower);
   if (kw <= 0) return 'The utility will not sell you any more at this site size.';
   const cost = gridUpgradeCost(state, kw);
+  const stop = frozen(state);
+  if (stop) return stop;
   if (state.money < cost) return 'Not enough money.';
   state.money -= cost;
   state.gridPower += kw;
@@ -236,6 +258,8 @@ export function hire(state, d, role, hooks) {
   if (!def) return 'Unknown role.';
   if (def.req && !state.research.done.includes(def.req)) return 'Not unlocked yet.';
   if (d.staffTotal >= d.staffCap) return 'No desk space — build another office.';
+  const stop = frozen(state, d);
+  if (stop) return stop;
   const cost = staffCost(role, state.staff[role]);
   if (state.money < cost) return 'Not enough money for the signing cost.';
   state.money -= cost;
@@ -269,6 +293,8 @@ export function buyUpgrade(state, d, id, hooks) {
   const u = UPGRADES_BY_ID[id];
   if (!u) return 'Unknown upgrade.';
   if (state.upgrades.includes(id)) return 'Already owned.';
+  const stop = frozen(state, d);
+  if (stop) return stop;
   if (state.money < u.cost) return 'Not enough money.';
   state.money -= u.cost;
   state.upgrades.push(id);
@@ -294,6 +320,8 @@ export function expand(state, d, axis, hooks) {
   if (axis !== 'w' && axis !== 'h') return 'Unknown direction.';
   if (!canExpand(state, axis)) return 'This site cannot take any more floor. Move somewhere bigger.';
   const cost = expandCost(state, d);
+  const stop = frozen(state, d);
+  if (stop) return stop;
   if (state.money < cost) return 'Not enough money.';
   state.money -= cost;
   state.stats.spentBuild += cost;
@@ -313,6 +341,8 @@ export function upgradeFacility(state, hooks) {
   const next = nextFacility(state);
   if (!next) return 'This is the largest site there is.';
   if (state.reputation < (next.rep || 0)) return `Needs ${next.rep} reputation.`;
+  const stop = frozen(state);
+  if (stop) return stop;
   if (state.money < next.cost) return 'Not enough money.';
   state.money -= next.cost;
   state.facility++;

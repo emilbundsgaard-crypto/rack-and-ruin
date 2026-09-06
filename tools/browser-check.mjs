@@ -357,6 +357,135 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------------------------- the screen never shifts under you
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(async () => {
+    const app = window.__rr;
+    const A = await import('/src/actions.js');
+    const sim = await import('/src/sim.js');
+    const R = await import('/src/data/research.js');
+    const s = app.state;
+    s.tutorial.skipped = true; s.money = 5e8; s.rp = 5000; s.gridPower = 20000;
+    for (const r of R.RESEARCH.slice(0, 20)) s.research.done.push(r.id);
+    app.d = sim.derive(s);
+    for (let x = 0; x < 6; x++) { A.place(s, app.d, x, 1, 'rack', null); app.d = sim.derive(s); }
+    A.fillAll(s, app.d, 'server', null);
+    app.d = sim.derive(s);
+    s.settings.speed = 5;
+  });
+  // Watch every box that frames the floor across a few hundred frames. Numbers
+  // growing a digit, the to-do list changing length and the objective text
+  // rewrapping must not move any of them.
+  const moved = await page.evaluate(() => new Promise((res) => {
+    const ids = ['topbar', 'logbar', 'objective', 'main', 'floor', 'panel', 'canvaswrap', 'inspector'];
+    const seen = {};
+    for (const id of ids) seen[id] = new Set();
+    let n = 0;
+    const step = () => {
+      for (const id of ids) {
+        const e = document.getElementById(id);
+        if (!e) continue;
+        const r = e.getBoundingClientRect();
+        seen[id].add(Math.round(r.height) + '@' + Math.round(r.top));
+      }
+      if (++n < 240) requestAnimationFrame(step);
+      else res(ids.filter((id) => seen[id].size > 1)
+        .map((id) => id + ' ' + [...seen[id]].join('/')));
+    };
+    requestAnimationFrame(step);
+  }));
+  if (!moved.length) pass('the layout never shifts while the numbers grow');
+  else fail('the layout never shifts while the numbers grow', moved.slice(0, 3).join(' | '));
+  await page.close();
+}
+
+// ------------------------------------------------------ debt is real, and paid
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  const r = await page.evaluate(async () => {
+    const app = window.__rr;
+    const A = await import('/src/actions.js');
+    const sim = await import('/src/sim.js');
+    const s = app.state;
+    s.tutorial.skipped = true;
+    s.objectives.done = new Array(40).fill('x');   // no reward cascade in here
+    app.d = sim.derive(s);
+
+    const out = { startLimit: Math.round(app.d.creditLimit) };
+    // A loan is capped by the credit line, not by what you ask for.
+    sim.borrow(s, app.d, 1e12, { log() {} });
+    out.borrowed = Math.round(s.bank.debt);
+    out.cappedAtLimit = Math.abs(s.bank.debt - app.d.creditLimit) < 1;
+
+    // Interest accrues, and shows up as a cost the ledger can see.
+    app.d = sim.derive(s);
+    out.interestIsACost = app.d.interestCost > 0;
+    const before = s.bank.debt;
+    for (let i = 0; i < 40; i++) { sim.tick(s, 0.2, app.d); app.d = sim.derive(s); }
+    out.interestAccrues = s.bank.debt > before;
+
+    // A site that cannot pay builds debt rather than having it forgiven.
+    s.money = 50_000; s.bank.debt = 0; s.staff.tech = 4; s.gridPower = 400;
+    app.d = sim.derive(s);
+    out.built = A.place(s, app.d, 0, 0, 'pdu', null) === null
+      && A.place(s, app.d, 1, 0, 'rack', null) === null;
+    app.d = sim.derive(s);
+    s.money = 100;                 // now take the cash away and let it bleed
+    for (let i = 0; i < 600; i++) { sim.tick(s, 0.2, app.d); app.d = sim.derive(s); }
+    out.cashNeverNegative = s.money >= 0;
+    out.debtBuilt = s.bank.debt > 0;
+
+    // Run it into the ground: past the limit, buying stops.
+    for (let i = 0; i < 4000 && !app.d.insolvent; i++) { sim.tick(s, 0.2, app.d); app.d = sim.derive(s); }
+    out.insolvent = !!app.d.insolvent;
+    out.buyBlocked = /credit is stopped/i.test(A.place(s, app.d, 3, 0, 'rack', null) || '');
+    out.sellStillWorks = A.sell(s, app.d, 1, 0, { log() {} }) === null;
+
+    // Paying it off from cash clears it.
+    s.money = s.bank.debt * 2;
+    sim.repay(s, s.bank.debt, { log() {} });
+    out.repaid = s.bank.debt === 0;
+    return out;
+  });
+  const ok = r.startLimit === 9000 && r.cappedAtLimit && r.interestIsACost && r.interestAccrues
+    && r.built
+    && r.cashNeverNegative && r.debtBuilt && r.insolvent && r.buyBlocked && r.sellStillWorks
+    && r.repaid;
+  if (ok) pass('debt is real, and the bank stops lending', 'limit ' + r.startLimit);
+  else fail('debt is real, and the bank stops lending', JSON.stringify(r));
+  await page.close();
+}
+
+// --------------------------------------------- events only fire when they fit
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  const r = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const E = await import('/src/data/events.js');
+    const s = window.__rr.state;
+    s.tutorial.skipped = true;
+    s.facility = 9;                 // tier gate wide open
+    s.staff = { tech: 0, eng: 0, sales: 0, ops: 0 };
+    const d = sim.derive(s);        // an empty site: no machines, no staff
+    const wouldFire = E.EVENTS.filter((e) => {
+      if ((e.minTier || 0) > s.facility) return false;
+      try { return !e.when || !!e.when(s, d); } catch (err) { return false; }
+    }).map((e) => e.id);
+    return { wouldFire, total: E.EVENTS.length, guarded: E.EVENTS.filter((e) => e.when).length };
+  });
+  // Nobody poaches staff you never hired, and nothing can break on an empty floor.
+  if (!r.wouldFire.length && r.guarded === r.total) {
+    pass('no event fires on a site it makes no sense for', r.guarded + ' guarded');
+  } else {
+    fail('no event fires on a site it makes no sense for', JSON.stringify(r));
+  }
+  await page.close();
+}
+
 // ------------------------------------------------------------- narrow screen
 for (const [w, h] of [[1024, 720], [520, 900]]) {
   const page = await newPage(w, h);

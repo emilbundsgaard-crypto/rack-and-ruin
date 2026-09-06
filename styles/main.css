@@ -75,16 +75,20 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 /* --------------------------------------------------------------- top bar */
 
 #topbar {
-  display: flex; align-items: stretch; gap: 20px; flex-wrap: wrap;
-  /* When it wraps, the controls stay on the right rather than sliding left. */
+  display: flex; align-items: stretch; gap: 20px; flex-wrap: nowrap;
   background: linear-gradient(180deg, #191510, #120f0c);
   border-bottom: 1px solid var(--line); padding: 8px 16px 7px;
+  /* Fixed height for the same reason as the footer: a number growing a digit
+     must never reflow the bar and resize the floor underneath it. */
+  height: 74px; overflow: hidden;
 }
-.vital { display: flex; flex-direction: column; justify-content: center; min-width: 96px; }
+.vital { display: flex; flex-direction: column; justify-content: center;
+  min-width: 132px; flex: none; }
 .vital .big {
   font-family: var(--mono); font-size: 23px; font-weight: 600; line-height: 1.1;
   letter-spacing: -.8px; font-variant-numeric: tabular-nums;
 }
+.vital .big, .vital .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .vital .sub { font-size: 11px; color: var(--dim); font-family: var(--mono); }
 .vital.good .big { color: var(--good); }
 .vital.bad  .big { color: var(--bad); }
@@ -93,8 +97,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .vital.jump:hover { background: #1e1913; }
 .vital.jump .sub::after { content: ' \2192'; }
 
-.meters { display: grid; grid-template-columns: repeat(2, minmax(158px, 1fr));
-  gap: 5px 20px; align-content: center; min-width: 0; }
+.meters { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr));
+  gap: 5px 18px; align-content: center; min-width: 0; }
 .meter { display: grid; grid-template-columns: 34px 1fr 82px; align-items: center; gap: 9px; }
 .meter .mbar { height: 6px; background: #0c0a08; box-shadow: inset 0 0 0 1px #2a2419; overflow: hidden; }
 .meter .mbar > i { display: block; height: 100%; background: var(--cold); transition: width .25s; }
@@ -104,11 +108,12 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .meter.bad .mbar > i { background: var(--bad); }
 .meter.bad .mv { color: var(--bad); }
 
-.minis { display: grid; grid-template-columns: repeat(3, auto); gap: 3px 18px;
-  align-content: center; min-width: 0; }
+.minis { display: grid; grid-template-columns: repeat(3, auto); gap: 3px 16px;
+  align-content: center; min-width: 0; flex: none; }
 .mini { display: flex; gap: 8px; align-items: baseline; }
 .mini .mk { min-width: 46px; }
-.mini .mv { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums; }
+.mini .mv { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums;
+  min-width: 52px; white-space: nowrap; }
 .mini.warn .mv { color: var(--warn); }
 .mini.bad .mv { color: var(--bad); }
 .mini.acc .mv { color: var(--acc); }
@@ -392,8 +397,15 @@ input[type=text], textarea {
 /* ------------------------------------------------------------------- log */
 
 #logbar { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: center;
-  border-top: 1px solid var(--line); background: #120f0c; padding: 6px 16px; min-height: 54px; }
-#objective { font-size: 12px; line-height: 1.32; }
+  border-top: 1px solid var(--line); background: #120f0c; padding: 6px 16px;
+  /* Fixed, not min-: a taller footer used to shrink the floor and shunt the
+     whole board up and down as the objective text changed length. */
+  height: 62px; overflow: hidden; }
+#objective { font-size: 12px; line-height: 1.32; height: 48px; overflow: hidden; }
+/* Each of the three lines keeps its own row, so wrapping can never add one. */
+#objective .k, #objective .n, #objective .h {
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 #objective .n { color: var(--acc); font-weight: 650; }
 #objective .h { color: var(--dim); }
 #logfeed { display: flex; gap: 18px; overflow: hidden; font-size: 12px; white-space: nowrap; }
@@ -500,13 +512,54 @@ button:focus:not(:focus-visible) { outline: none; }
 
 /* ------------------------------------------------------------ responsive */
 
-@media (max-width: 1460px) {
+/* The bar never wraps and never changes height, so as the window narrows the
+   parts that are duplicated inside the panels are dropped, widest first. The
+   cash and compute readouts and the speed controls always survive.
+   Breakpoints come from the measured widths: vitals 300, meters 298,
+   minis 354, controls 491, plus gaps. */
+@media (max-width: 1560px) {
   #topbar { gap: 15px; }
   .minis { grid-template-columns: repeat(2, auto); }
 }
+@media (max-width: 1330px) {
+  .minis { display: none; }
+}
 @media (max-width: 1180px) {
   #main { grid-template-columns: 1fr 356px; }
-  .meters { grid-template-columns: 1fr; }
+}
+@media (max-width: 1000px) {
+  .meters { display: none; }
+}
+/* Phone and small-tablet widths: everything still reachable, just tighter.
+   Guide and Menu keep their first letters as labels rather than disappearing,
+   because they are the only way into the rules and the save. */
+@media (max-width: 900px) {
+  #topbar { height: 66px; gap: 11px; padding: 7px 10px 6px; }
+  .speedlbl { display: none; }
+  .divider { display: none; }
+  .vital { min-width: 104px; }
+  .vital .big { font-size: 20px; }
+  .sp { min-width: 32px; padding: 6px 6px; font-size: 11.5px; }
+  .topbtn { padding: 7px 9px; font-size: 11.5px; }
+  .topbtn.icon { padding: 6px 7px; }
+  .speed { gap: 2px; }
+}
+@media (max-width: 620px) {
+  #topbar {
+    gap: 8px;
+    /* Last resort on a phone: rather than clip a control off the edge, let the
+       bar scroll sideways. Nothing is ever unreachable. */
+    overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  }
+  #topbar::-webkit-scrollbar { display: none; }
+  /* Compute has its own big readout at the top of the Deals tab, one tap away,
+     so on a phone the bar keeps cash and gives the room to the controls. */
+  #v_compute { display: none; }
+  .vital { min-width: 88px; }
+  .vital .big { font-size: 18px; }
+  .vital .sub { font-size: 10px; }
+  .sp { min-width: 27px; padding: 6px 4px; font-size: 11px; }
+  .topbtn { padding: 7px 7px; font-size: 11px; }
 }
 @media (max-width: 900px) {
   #main { grid-template-columns: 1fr; grid-template-rows: minmax(300px, 1fr) 44vh; }
