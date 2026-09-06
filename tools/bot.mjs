@@ -1,11 +1,11 @@
 // A crude but competent player bot, used to check pacing over a long run.
-import { newGame, facilityOf, tileAt, key } from '../src/state.js';
+import { newGame, facilityOf, tileAt, key, DAY_SECONDS } from '../src/state.js';
 import { derive, tick, signContract, resolveDecision, legacyGain, takeRescue } from '../src/sim.js';
 import * as A from '../src/actions.js';
 import { HARDWARE } from '../src/data/hardware.js';
 import { BUILDINGS } from '../src/data/buildings.js';
 import { RESEARCH, available } from '../src/data/research.js';
-import { UPGRADES, OBJECTIVES } from '../src/data/progression.js';
+import { UPGRADES, OBJECTIVES, STAFF_BY_ID } from '../src/data/progression.js';
 import { fmt, money, fmtTime } from '../src/util.js';
 
 const quiet = { log: () => {}, onDecision: (ev) => { pending = ev; } };
@@ -144,12 +144,27 @@ function step() {
     }
   }
 
-  // Staff.
+  // Staff. Hiring used to be free money when objectives paid for everything;
+  // now a wage is a standing cost, so only take one on if the site is earning
+  // and the salary is a small share of that. Otherwise a cupboard hires three
+  // technicians it cannot pay and never recovers.
   d = derive(s);
   for (const role of ['tech', 'eng', 'sales', 'ops']) {
-    if (d.staffTotal < d.staffCap) {
-      const c = A.staffCost(role, s.staff[role]);
-      if (can(c * 4)) A.hire(s, d, role, quiet);
+    if (d.staffTotal >= d.staffCap) continue;
+    const def = STAFF_BY_ID[role];
+    const wage = (def?.salary || 0) / DAY_SECONDS;
+    if (d.netIncome <= 0 || wage > d.netIncome * 0.25) continue;
+    const c = A.staffCost(role, s.staff[role]);
+    if (can(c * 4)) A.hire(s, d, role, quiet);
+  }
+
+  // And let people go if the payroll has outgrown the site.
+  if (d.netIncome < 0 && d.salaryCost > 0) {
+    for (const role of ['sales', 'ops', 'eng', 'tech']) {
+      if ((s.staff[role] || 0) > 0 && d.salaryCost > Math.max(0, d.revenue) * 0.4) {
+        A.fire(s, role, quiet);
+        d = derive(s);
+      }
     }
   }
 
@@ -174,6 +189,7 @@ function step() {
 const DT = 0.25;
 const HOURS = 5;
 const total = HOURS * 3600;
+let botWentUnder = false;
 let t = 0, nextStep = 0, nextReport = 0, lastTier = -1, treeDone = false, objDone = false;
 const t0 = Date.now();
 while (t < total) {
@@ -192,6 +208,12 @@ while (t < total) {
   if (s.objectives.done.length === OBJECTIVES.length && !objDone) {
     objDone = true;
     console.log('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  all objectives complete');
+  }
+  if (s.money < 0 && !botWentUnder) {
+    botWentUnder = true;
+    console.log('DIAG went overdrawn at ' + (t/60).toFixed(1) + 'm  tier ' + s.facility
+      + '  net ' + d.netIncome.toFixed(1) + '  staff ' + JSON.stringify(s.staff)
+      + '  tiles ' + Object.keys(s.tiles).length + '  rescues ' + s.bank.rescues);
   }
   if (t >= nextReport) {
     nextReport = t + 900;

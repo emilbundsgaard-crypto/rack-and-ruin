@@ -357,8 +357,8 @@ export function derive(state) {
     problems.push({
       tone: 'bad', tab: 'site',
       text: `You are overdrawn by ${money(-state.money)}. Nothing can be bought until you are back `
-        + `above zero, and it costs ${Math.round(OVERDRAFT_RATE * 100)}% a day. Sell machines you `
-        + 'cannot run, or let staff go.',
+        + 'above zero. Sell machines you cannot run and let staff go until the site earns more '
+        + `than it spends — the ${Math.round(OVERDRAFT_RATE * 100)}% a day stops the moment it does.`,
     });
   } else if (debt > 0 && revenue < costs) {
     problems.push({
@@ -572,13 +572,20 @@ export function tick(state, dt, d, hooks) {
     // counter pinned at zero. It costs more than a loan does, and your name
     // suffers for as long as it lasts.
     if (state.money < 0) {
-      // Compounding on an unbounded hole is exponential: left alone it runs to
-      // billions and the run is over in a way no player could have answered.
-      // Interest stops once the hole is past every offer the bank would make,
-      // so what is on screen stays a number a person could still act on.
-      const floorAt = OVERDRAFT_FLOOR;
-      if (state.money > floorAt) {
-        state.money = Math.max(floorAt, state.money + state.money * OVERDRAFT_RATE * days);
+// Interest on the hole, but only while the site is still losing money.
+      //
+      // Charged unconditionally it is a death sentence rather than a pressure:
+      // at 10% a day on a $44,000 hole the interest alone was $4,400 a day,
+      // more than a small site can earn, so a player who did exactly what the
+      // game told them — sell what you cannot run, let staff go — still sank
+      // to the floor and could never buy anything again. The way out has to
+      // work. Get operations back above water and the bank stops charging;
+      // the balance then climbs on its own.
+      //
+      // It is also bounded, because compounding on an unbounded hole runs to
+      // billions and puts the number beyond anything a person could answer.
+      if (d.netIncome < 0 && state.money > OVERDRAFT_FLOOR) {
+        state.money = Math.max(OVERDRAFT_FLOOR, state.money + state.money * OVERDRAFT_RATE * days);
       }
       bank.overdraftDays = (bank.overdraftDays || 0) + days;
       state.reputation = Math.max(0, state.reputation - 2 * days);
@@ -972,7 +979,7 @@ export function resolveDecision(state, d, effect, hooks) {
 // be felt: a loan taken to buy a rack should be paid off by that rack inside a
 // few days, and sitting on the debt should hurt.
 export const LOAN_RATE = 0.05;        // per day, on a loan you chose to take
-export const OVERDRAFT_RATE = 0.10;   // per day, on a balance below zero
+export const OVERDRAFT_RATE = 0.03;   // per day, on a balance below zero
 export const REPAY_SHARE = 0.4;       // of positive income, while you owe
 
 // How far under you have to be before the bank offers a way out. There are

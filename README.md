@@ -99,8 +99,10 @@ and the first site upgrade is roughly half an hour of that.
 Cash is real, and it can go below zero.
 
 **Overdrawn, you buy nothing.** Not a machine, not a kilowatt, not a hire. The
-balance shows in red, it costs **10% a day** while it lasts, and your name goes
-with it. Selling and demolishing stay open — they are the way back.
+balance shows in red and your name goes with it. Selling and demolishing stay
+open — they are the way back, and they always work: the overdraft charges
+**3% a day** only while the site is losing money, so cutting costs until you
+are earning again stops the bleeding and the balance climbs on its own.
 
 **The bank will lend you money on purpose.** A credit line that starts at
 **$9,000** against a broom cupboard and widens with the tier and with what the
@@ -253,7 +255,7 @@ src/tutorial.js     the ten-step guided opening
 tools/
   balance.mjs       headless economy probe
   bot.mjs           an automated player, used to check pacing over a long run
-  browser-check.mjs twenty-three end-to-end checks in a real browser
+  browser-check.mjs twenty-four end-to-end checks in a real browser
   shots.mjs         regenerates every screenshot in docs/
 ```
 

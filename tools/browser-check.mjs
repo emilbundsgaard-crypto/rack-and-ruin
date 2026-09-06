@@ -540,6 +540,64 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------------------- an overdrawn site can always be saved
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  const r = await page.evaluate(async () => {
+    const app = window.__rr;
+    const sim = await import('/src/sim.js');
+    const A = await import('/src/actions.js');
+    const R = await import('/src/data/research.js');
+    const s = app.state;
+    s.tutorial.skipped = true;
+    s.objectives.done = new Array(40).fill('x');
+    s.money = 20_000; s.gridPower = 60;
+    for (const r2 of R.RESEARCH.slice(0, 8)) s.research.done.push(r2.id);
+    let d = sim.derive(s);
+    A.place(s, d, 2, 2, 'pdu', null); d = sim.derive(s);
+    for (let x = 0; x < 5; x++) { A.place(s, d, x, 1, 'rack', null); d = sim.derive(s); }
+    A.place(s, d, 3, 3, 'fan', null); d = sim.derive(s);
+    A.fillAll(s, d, 'desktop', null); d = sim.derive(s);
+    s.staff.tech = 3;                      // over-hired, which is how it starts
+    d = sim.derive(s);
+
+    // Sink it well under.
+    for (let i = 0; i < 6000 && s.money > -50_000; i++) {
+      sim.tick(s, 0.2, d, { log() {}, onRescue() {} });
+      d = sim.derive(s);
+    }
+    const low = Math.round(s.money);
+
+    // Now do exactly what the game tells you to: let staff go, sell what you
+    // cannot run. This has to be enough — a player who follows the advice and
+    // still sinks for ever has been handed an unwinnable save.
+    A.fire(s, 'tech', { log() {} }); A.fire(s, 'tech', { log() {} }); A.fire(s, 'tech', { log() {} });
+    d = sim.derive(s);
+    let sold = 0;
+    for (const k of Object.keys(s.tiles)) {
+      if (sold >= 3) break;
+      if (!s.tiles[k].units) continue;
+      const [x, y] = k.split(',').map(Number);
+      if (!A.sell(s, d, x, y, { log() {} })) { sold++; d = sim.derive(s); }
+    }
+    let recovered = false, days = null;
+    for (let i = 0; i < 90_000; i++) {
+      sim.tick(s, 0.2, d, { log() {}, onRescue() {} });
+      d = sim.derive(s);
+      for (const o of [...s.contracts.offers]) sim.signContract(s, d, o, { log() {} });
+      if (s.money > 0) { recovered = true; days = +(i * 0.2 / 60).toFixed(1); break; }
+    }
+    return { low, recovered, days, sold };
+  });
+  if (r.recovered && r.low <= -30_000) {
+    pass('an overdrawn site can always be traded back', 'from $' + r.low + ' in ' + r.days + ' days');
+  } else {
+    fail('an overdrawn site can always be traded back', JSON.stringify(r));
+  }
+  await page.close();
+}
+
 // ------------------------------------------- the economy holds under any state
 {
   const page = await newPage();
