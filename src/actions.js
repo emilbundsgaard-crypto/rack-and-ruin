@@ -98,27 +98,37 @@ export function uninstall(state, d, tile, hardwareId, count, hooks) {
   return null;
 }
 
-/** Fill every rack on the floor with as much of one type as money allows. */
+/**
+ * Fill every rack with as much of one type as money — and the electricity
+ * supply — will carry. Overfilling browns the whole site out, so the button
+ * stops at the headroom rather than handing you a wrecked floor.
+ */
 export function fillAll(state, d, hardwareId, hooks) {
   const hw = HARDWARE_BY_ID[hardwareId];
   if (!hw) return 'Unknown hardware.';
   if (hw.req && !state.research.done.includes(hw.req)) return 'Not researched yet.';
-  let placed = 0;
   const unit = hwCost(hw, d);
+  const perUnitKW = hw.power * d.mods.powerMult;
+  const firm = d.firmSupply !== undefined ? d.firmSupply : d.supplyKW;
+  let budget = Math.max(0, (firm * 0.95) - d.actualDraw);
+  let allowed = perUnitKW > 0 ? Math.floor(budget / perUnitKW) : Infinity;
+  let placed = 0, stoppedOnPower = false;
+
   for (const k in state.tiles) {
+    if (allowed <= 0) { stoppedOnPower = true; break; }
     const tile = state.tiles[k];
     const b = BUILDINGS_BY_ID[tile.b];
     if (!b || b.cat !== 'compute') continue;
-    let room = freeSlots(state, d, tile);
-    while (room > 0 && state.money >= unit) {
-      const batch = Math.min(room, Math.floor(state.money / unit));
-      if (batch <= 0) break;
-      install(state, d, tile, hardwareId, batch, null);
-      placed += batch;
-      room = freeSlots(state, d, tile);
-    }
+    const room = Math.min(freeSlots(state, d, tile), allowed, Math.floor(state.money / unit));
+    if (room <= 0) continue;
+    install(state, d, tile, hardwareId, room, null);
+    placed += room;
+    allowed -= room;
   }
-  hooks?.log(placed ? `Installed ${placed} × ${hw.name} across the floor.` : 'Nothing to install — no room or no money.', placed ? 'good' : 'bad');
+  const msg = placed
+    ? `Installed ${placed} × ${hw.name}` + (stoppedOnPower ? ' — stopped at the power headroom.' : ' across the floor.')
+    : (allowed <= 0 ? 'No power headroom. Buy more supply first.' : 'Nothing to install — no free slots or no money.');
+  hooks?.log(msg, placed ? 'good' : 'bad');
   return null;
 }
 

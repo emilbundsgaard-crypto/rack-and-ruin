@@ -46,27 +46,27 @@ export const BUILDINGS = [
 
   // ------------------------------------------------------------------ power
   {
-    id: 'pdu', name: 'Power strip', cat: 'power', cost: 400, radius: 2, powerCap: 8,
+    id: 'pdu', name: 'Power strip', cat: 'power', cost: 400, radius: 2, powerCap: 30,
     draw: 0.02, upkeep: 1, color: '#d8a13a',
     desc: 'Eight sockets on a cable. Distributes 8 kW within 2 tiles.',
   },
   {
-    id: 'pdu2', name: 'Rack PDU', cat: 'power', cost: 6_500, radius: 3, powerCap: 55,
+    id: 'pdu2', name: 'Rack PDU', cat: 'power', cost: 6_500, radius: 3, powerCap: 400,
     draw: 0.05, upkeep: 6, color: '#e8b44a', req: 'rnd_pdu2',
     desc: 'Metered, switched, and it will not melt at 40 amps.',
   },
   {
-    id: 'pdu3', name: 'Busway tap', cat: 'power', cost: 140_000, radius: 4, powerCap: 460,
+    id: 'pdu3', name: 'Busway tap', cat: 'power', cost: 140_000, radius: 4, powerCap: 8_000,
     draw: 0.3, upkeep: 90, color: '#f5c95f', req: 'rnd_pdu3',
     desc: 'Overhead busway. Add taps wherever a row grows.',
   },
   {
-    id: 'pdu4', name: 'Substation bay', cat: 'power', cost: 6_800_000, radius: 6, powerCap: 5_200,
+    id: 'pdu4', name: 'Substation bay', cat: 'power', cost: 6_800_000, radius: 6, powerCap: 120_000,
     draw: 3, upkeep: 3_400, color: '#ffd980', req: 'rnd_pdu4',
     desc: 'Medium voltage in, three-phase out, humming all night.',
   },
   {
-    id: 'pdu5', name: 'HVDC spine', cat: 'power', cost: 900_000_000, radius: 9, powerCap: 96_000,
+    id: 'pdu5', name: 'HVDC spine', cat: 'power', cost: 900_000_000, radius: 9, powerCap: 2_000_000,
     draw: 30, upkeep: 400_000, color: '#ffe9b0', req: 'rnd_pdu5',
     desc: 'One conversion step instead of four. The efficiency is the point.',
   },
@@ -76,32 +76,32 @@ export const BUILDINGS = [
     desc: 'Rides through 12 seconds of grid loss. Stack them for longer.',
   },
   {
-    id: 'genset', name: 'Diesel genset', cat: 'power', cost: 48_000, supplyKW: 90,
+    id: 'genset', name: 'Diesel genset', cat: 'power', cost: 48_000, supplyKW: 220,
     upkeep: 60, fuel: 0.32, color: '#a8632c', req: 'rnd_genset', heatOut: 6,
     desc: 'Starts in nine seconds, costs a fortune per kWh, saves the quarter.',
   },
   {
-    id: 'solar', name: 'Solar array', cat: 'power', cost: 130_000, supplyKW: 70,
+    id: 'solar', name: 'Solar array', cat: 'power', cost: 130_000, supplyKW: 160,
     upkeep: 25, color: '#4a7fc0', req: 'rnd_solar', solar: true,
     desc: 'Free power between sunrise and sunset. Nothing at 03:00.',
   },
   {
-    id: 'wind', name: 'Wind turbine', cat: 'power', cost: 1_100_000, supplyKW: 480,
+    id: 'wind', name: 'Wind turbine', cat: 'power', cost: 1_100_000, supplyKW: 900,
     upkeep: 320, color: '#7fa8c8', req: 'rnd_wind', wind: true,
     desc: 'Output rides the weather. Averages well, spikes badly.',
   },
   {
-    id: 'turbine', name: 'Gas turbine', cat: 'power', cost: 9_200_000, supplyKW: 3_600,
+    id: 'turbine', name: 'Gas turbine', cat: 'power', cost: 9_200_000, supplyKW: 9_000,
     upkeep: 4_200, fuel: 0.11, color: '#c0703a', req: 'rnd_turbine', heatOut: 90,
     desc: 'Combined cycle when you bolt a heat recovery unit on the back.',
   },
   {
-    id: 'smr', name: 'Small modular reactor', cat: 'power', cost: 2_400_000_000, supplyKW: 92_000,
+    id: 'smr', name: 'Small modular reactor', cat: 'power', cost: 2_400_000_000, supplyKW: 260_000,
     upkeep: 1_100_000, color: '#5fd0a8', req: 'rnd_smr', heatOut: 900,
     desc: '77 MWe behind the fence, refuelled once a decade.',
   },
   {
-    id: 'fusion', name: 'Fusion tokamak', cat: 'power', cost: 900_000_000_000, supplyKW: 2_400_000,
+    id: 'fusion', name: 'Fusion tokamak', cat: 'power', cost: 900_000_000_000, supplyKW: 6_000_000,
     upkeep: 90_000_000, color: '#9ff0d8', req: 'rnd_fusion', heatOut: 12_000,
     desc: 'Twenty years away, as always. You got there first.',
   },
@@ -178,22 +178,22 @@ export const BUILDINGS = [
 
   // ---------------------------------------------------------------- support
   {
-    id: 'switch', name: 'Top-of-rack switch', cat: 'support', cost: 900, net: 4,
+    id: 'switch', name: 'Top-of-rack switch', cat: 'support', cost: 900, net: 12,
     draw: 0.25, upkeep: 6, color: '#8f6fd8',
     desc: 'Four gigabits of switching for the row.',
   },
   {
-    id: 'switch2', name: 'Aggregation switch', cat: 'support', cost: 180_000, net: 220,
+    id: 'switch2', name: 'Aggregation switch', cat: 'support', cost: 180_000, net: 700,
     draw: 2.2, upkeep: 190, color: '#a07fe8', req: 'rnd_switch2',
     desc: 'Spine layer. Now the racks can actually talk to each other.',
   },
   {
-    id: 'switch3', name: 'Optical spine', cat: 'support', cost: 24_000_000, net: 14_000,
+    id: 'switch3', name: 'Optical spine', cat: 'support', cost: 24_000_000, net: 45_000,
     draw: 30, upkeep: 21_000, color: '#b494f5', req: 'rnd_switch3',
     desc: 'Coherent optics between halls, at wire speed.',
   },
   {
-    id: 'switch4', name: 'Transit landing', cat: 'support', cost: 9_000_000_000, net: 900_000,
+    id: 'switch4', name: 'Transit landing', cat: 'support', cost: 9_000_000_000, net: 3_000_000,
     draw: 600, upkeep: 6_500_000, color: '#c8adff', req: 'rnd_switch4',
     desc: 'Your own subsea landing station. Peering is now free.',
   },

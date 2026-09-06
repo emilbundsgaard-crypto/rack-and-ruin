@@ -28,7 +28,7 @@ function baseMods() {
   const m = {};
   for (const k of MULT_KEYS) m[k] = 1;
   for (const k of ADD_KEYS) m[k] = 0;
-  m.contractSlots = 2;
+  m.contractSlots = 3;
   m.offlineHours = 2;
   m.offlineRate = 0.35;
   return m;
@@ -120,7 +120,7 @@ export function derive(state) {
   const counts = {};
   let ownSupply = 0, miscDraw = 0, upkeep = 0, fuelCost = 0;
   let waterSupply = 0, waterCost = 0, netCap = 1.5, staffCap = mods.staffCap;
-  let repairBoost = 1, uptimeBoost = 0, researchFlat = 0, contractSlots = 0;
+  let repairBoost = 1, uptimeBoost = 0, researchFlat = 0, contractSlots = 0, firmOwn = 0;
   let security = mods.securityBonus, genHeat = 0, freeSlots = 0, unitsTotal = 0;
   let brokenTotal = 0;
   const units = {};
@@ -131,32 +131,40 @@ export function derive(state) {
     const b = BUILDINGS_BY_ID[tile.b];
     if (!b) continue;
     counts[b.id] = (counts[b.id] || 0) + 1;
+    counts['cat_' + b.cat] = (counts['cat_' + b.cat] || 0) + 1;
+    if (b.powerCap) counts.anyPdu = (counts.anyPdu || 0) + 1;
+    if (b.coolCap) counts.anyCooling = (counts.anyCooling || 0) + 1;
+    if (b.net) counts.anySwitch = (counts.anySwitch || 0) + 1;
+    if (b.supplyWater) counts.anyWater = (counts.anyWater || 0) + 1;
     if (b.upkeep) upkeep += b.upkeep;
     if (b.draw) miscDraw += b.draw * (b.cat === 'cooling' ? mods.coolDrawMult : 1);
 
     if (b.cat === 'compute') {
       counts.rackAll = (counts.rackAll || 0) + 1;
       const cap = rackCapacity(b, mods);
-      let compute = 0, power = 0, heat = 0, net = 0, used = 0, broken = 0, worst = 1;
+      let compute = 0, power = 0, heat = 0, net = 0, used = 0, broken = 0, down = 0, worst = 1;
       for (const g of tile.units || []) {
         const hw = HARDWARE_BY_ID[g.t];
         if (!hw) continue;
         used += g.n;
         broken += g.broken;
         worst = Math.min(worst, g.cond);
-        const live = Math.max(0, g.n - g.broken);
+        // Below half condition a growing slice of the group is simply down.
+        const degraded = Math.round(g.n * clamp((0.45 - g.cond) * 2, 0, 0.9));
+        const live = Math.max(0, g.n - g.broken - degraded);
+        down += g.broken + degraded;
         units[g.t] = (units[g.t] || 0) + g.n;
-        const health = 0.55 + 0.45 * g.cond;
+        const health = 0.7 + 0.3 * g.cond;
         compute += hw.compute * live * mods.computeMult * health;
         power += hw.power * live * mods.powerMult;
         heat += hw.heat * live * mods.heatMult;
         net += hw.net * live;
       }
       unitsTotal += used;
-      brokenTotal += broken;
+      brokenTotal += down;
       freeSlots += Math.max(0, cap - used);
       heat *= 1 - (b.coolSelf || 0);
-      racks.push({ x, y, tile, b, cap, used, broken, cond: worst, compute, power, heat, net });
+      racks.push({ x, y, tile, b, cap, used, broken, down, cond: worst, compute, power, heat, net });
     } else if (b.cat === 'cooling') {
       coolers.push({ x, y, tile, b, cap: b.coolCap * mods.coolMult, radius: b.radius });
     } else if (b.powerCap) {
@@ -168,6 +176,7 @@ export function derive(state) {
       if (b.solar) out *= sun;
       if (b.wind) out *= windNoise;
       ownSupply += out;
+      if (!b.solar && !b.wind) firmOwn += b.supplyKW;
       if (b.fuel) fuelCost += out * b.fuel * mods.fuelMult * ENERGY_RATE;
       if (b.heatOut) genHeat += b.heatOut * (out / b.supplyKW);
     }
@@ -263,7 +272,7 @@ export function derive(state) {
   }
 
   const brokenFrac = unitsTotal > 0 ? brokenTotal / unitsTotal : 0;
-  const baseUptime = clamp(0.90 + mods.uptimeBonus + uptimeBoost, 0, 0.9995);
+  const baseUptime = clamp(0.965 + mods.uptimeBonus + uptimeBoost, 0, 0.9998);
   const uptime = clamp(baseUptime * (1 - brokenFrac * 0.75) * (0.35 + 0.65 * powerFactor), 0, 0.9999);
 
   const alloc = clamp(state.researchAlloc, 0, 0.6);
@@ -278,7 +287,8 @@ export function derive(state) {
   for (const c of state.contracts.active) {
     const t = TEMPLATES_BY_ID[c.tid];
     c.delivered = deliverRatio;
-    c.effUptime = deliverRatio * uptime;
+    c.instUptime = deliverRatio * uptime;
+    if (c.effUptime === undefined) c.effUptime = c.instUptime;
     c.livePay = c.pay * mods.priceMult;
     revenue += c.livePay * deliverRatio * uptime;
     if (t && t.research) contractResearch += t.research * deliverRatio;
@@ -307,10 +317,25 @@ export function derive(state) {
   });
   const costs = powerCost + fuelCost + waterBill + upkeepCost + penalties;
 
+  // What is holding the site back right now, in plain words.
+  let bottleneck = null;
+  const worstCover = racks.length ? Math.min(...racks.map((r) => (r.used > 0 ? r.cover : 1))) : 1;
+  const worstPdu = racks.length ? Math.min(...racks.map((r) => (r.used > 0 ? r.pduFactor : 1))) : 1;
+  if (unitsTotal === 0) bottleneck = 'no hardware installed';
+  else if (rawPowerFactor < 0.98) bottleneck = 'short of electricity';
+  else if (worstPdu < 0.95) bottleneck = 'a rack has no PDU in range';
+  else if (netFactor < 0.98) bottleneck = 'short of switching';
+  else if (waterFactor < 0.95) bottleneck = 'short of water';
+  else if (worstCover < 0.95 || maxTemp > 34) bottleneck = 'cooling is behind';
+  else if (contractDemand < computeSellable * 0.8) bottleneck = 'compute is unsold';
+  else if (freeSlots > unitsTotal * 0.25) bottleneck = 'empty rack slots';
+  else bottleneck = 'running clean';
+
   return {
-    state, mods, fac, racks, coolers, pdus, counts, units, unitsTotal, brokenTotal,
+    state, mods, fac, racks, coolers, pdus, counts, units, unitsTotal, brokenTotal, bottleneck,
     freeSlots, staffCap, staffTotal: sum(Object.keys(state.staff), (k) => state.staff[k] || 0),
-    ownSupply, gridSupply, supplyKW, powerDraw: demandKW, actualDraw, gridUsed, powerFactor, rawPowerFactor,
+    ownSupply, firmSupply: gridSupply + firmOwn * mods.powerSupplyMult,
+    gridSupply, supplyKW, powerDraw: demandKW, actualDraw, gridUsed, powerFactor, rawPowerFactor,
     waterSupply: waterAvail, waterDemand, waterUsed, waterFactor,
     heatLoad, coolCap: coolCapRaw * waterEff, netCap, netNeed, netFactor,
     computeTotal, computeResearch, computeSellable, contractDemand, deliverRatio,
@@ -318,7 +343,8 @@ export function derive(state) {
     revenue, costs, netIncome: revenue - costs,
     powerCost, fuelCost, waterBill, upkeepCost, penalties, salaries,
     rpPerSec, contractSlots: Math.floor(mods.contractSlots + contractSlots),
-    repairRate: (0.35 + state.staff.tech * 0.75) * repairBoost * mods.repairMult,
+    repairRate: (0.8 + state.staff.tech * 1.2) * repairBoost * mods.repairMult,
+    rackCount: Math.max(1, racks.length),
     security: clamp(security, 0, 0.9), sun, sellPrice: state.market.compute,
   };
 }
@@ -343,13 +369,29 @@ export function tick(state, dt, d, hooks) {
   const nightDiscount = 1 - 0.28 * Math.max(0, Math.cos((dayF - 0.5) * Math.PI * 2));
   const swing = 1 + (0.5 * Math.sin(state.day * 1.7 + phase) + 0.3 * Math.sin(state.day * 0.41 + phase * 2)) * stab;
   state.market.power = clamp(0.16 * swing * nightDiscount, 0.03, 1.4);
-  state.market.compute = clamp(0.14 * (1 + 0.28 * Math.sin(state.day * 0.63 + phase * 3) * stab), 0.04, 0.45);
+  state.market.compute = clamp(3.36 * (1 + 0.28 * Math.sin(state.day * 0.63 + phase * 3) * stab), 1.2, 9);
 
   // Money.
   const delta = d.netIncome * dt;
   state.money += delta;
   if (d.revenue > 0) state.lifetimeEarnings += d.revenue * dt;
   if (state.money < 0) state.money = 0;
+
+  // A site that cannot pay for itself would otherwise be stuck forever, with
+  // no cash to demolish its way out. The bank steps in, at a price.
+  if (state.money < 1 && d.netIncome < 0) {
+    state.brokeFor = (state.brokeFor || 0) + days;
+    if (state.brokeFor > 2 && state.day - (state.lastLoan || -99) > 25) {
+      state.lastLoan = state.day;
+      state.brokeFor = 0;
+      const bridge = Math.max(50_000, -d.netIncome * 320);
+      state.money += bridge;
+      state.reputation = Math.max(0, state.reputation - 10);
+      hooks?.log('Emergency credit line drawn. The bank wants the site profitable, and so do your customers.', 'bad');
+    }
+  } else if (state.money > 1) {
+    state.brokeFor = 0;
+  }
 
   // Research.
   const rp = d.rpPerSec * dt;
@@ -380,38 +422,43 @@ export function tick(state, dt, d, hooks) {
 }
 
 function wearAndRepair(state, d, days, hooks) {
-  let repairBudget = d.repairRate * days;
+  // Repair effort is shared out over the racks, so a bigger site needs more
+  // technicians, workshops and automation to stand still.
+  const perRack = (d.repairRate / d.rackCount) * days;
   for (const r of d.racks) {
-    const tempStress = Math.pow(2, Math.max(0, r.temp - 24) / 12);
-    for (const g of r.tile.units || []) {
+    const tempStress = Math.pow(2, Math.max(0, r.temp - 26) / 13);
+    const groups = r.tile.units || [];
+    if (!groups.length) continue;
+    const share = perRack / groups.length;
+    for (const g of groups) {
       const hw = HARDWARE_BY_ID[g.t];
       if (!hw) continue;
-      const wear = hw.wear * d.mods.wearMult * tempStress * days * 0.012;
-      g.cond = clamp(g.cond - wear, 0, 1);
-      // Units start dying once condition drops.
-      const risk = g.cond < 0.6 ? (0.6 - g.cond) * 0.8 * tempStress * days : 0;
+      g.cond = clamp(g.cond - hw.wear * d.mods.wearMult * tempStress * days * 0.006, 0, 1);
+
+      // Outright failures are rare and mostly a heat problem.
+      const risk = clamp((0.75 - g.cond), 0, 1) * 0.03 * tempStress * days;
       if (risk > 0) {
         const live = g.n - g.broken;
-        const dead = Math.min(live, Math.floor(live * risk) + (Math.random() < (live * risk) % 1 ? 1 : 0));
-        if (dead > 0) {
-          g.broken += dead;
-          state.stats.failed += dead;
-        }
+        const expected = live * risk;
+        let dead = Math.floor(expected);
+        if (Math.random() < expected - dead) dead++;
+        dead = Math.min(live, dead);
+        if (dead > 0) { g.broken += dead; state.stats.failed += dead; }
       }
-      if (repairBudget > 0) {
-        if (g.broken > 0) {
-          const fixed = Math.min(g.broken, repairBudget);
-          g.broken -= Math.floor(fixed);
-          if (fixed < 1 && Math.random() < fixed) g.broken -= 1;
-          g.broken = Math.max(0, g.broken);
-          state.stats.repaired += Math.floor(fixed);
-          repairBudget -= fixed;
-        }
-        if (g.cond < 1 && repairBudget > 0) {
-          const heal = Math.min(repairBudget * 0.1, 1 - g.cond);
-          g.cond += heal;
-          repairBudget -= heal * 2;
-        }
+
+      // Swap the dead boards out first, then bring condition back up.
+      let effort = share;
+      if (g.broken > 0 && effort > 0) {
+        const fixable = Math.min(g.broken, effort * 8);
+        let fixed = Math.floor(fixable);
+        if (Math.random() < fixable - fixed) fixed++;
+        fixed = Math.min(g.broken, fixed);
+        g.broken -= fixed;
+        state.stats.repaired += fixed;
+        effort -= fixed / 8;
+      }
+      if (effort > 0 && g.cond < 1) {
+        g.cond = clamp(g.cond + effort * 0.5, 0, 1);
       }
     }
   }
@@ -454,15 +501,18 @@ export function signContract(state, d, offer, hooks) {
 }
 
 function contractsTick(state, d, days, hooks) {
-  // Penalties and breach tracking.
+  // Penalties and breach tracking. A brief dip is survivable; a bad day is not.
   for (const c of state.contracts.active) {
+    const k = Math.min(1, days * 1.6);
+    c.effUptime = c.effUptime * (1 - k) + (c.instUptime ?? c.effUptime) * k;
     if (c.effUptime < c.uptimeReq) {
       if (!c.breached) {
         c.breached = true;
         state.stats.breaches++;
         hooks?.log(`SLA breach on ${c.name}. ${c.client} is not pleased.`, 'bad');
       }
-      state.reputation = Math.max(0, state.reputation - days * 1.4);
+      const floor = (state.repPeak || 0) * 0.6;
+      state.reputation = Math.max(floor, state.reputation - days * 0.6);
     } else if (c.breached && c.effUptime > c.uptimeReq + 0.01) {
       c.breached = false;
     }
@@ -473,8 +523,9 @@ function contractsTick(state, d, days, hooks) {
   for (const c of finished) {
     const t = TEMPLATES_BY_ID[c.tid];
     const clean = !c.breached && c.effUptime >= c.uptimeReq;
-    const gain = (2 + (t?.minRep || 0) * 0.05) * (clean ? 1 : 0.2) * d.mods.repMult;
+    const gain = (2.5 + (t?.minRep || 0) * 0.09) * (clean ? 1 : 0.25) * Math.sqrt(d.mods.repMult);
     state.reputation += gain;
+    state.repPeak = Math.max(state.repPeak || 0, state.reputation);
     state.stats.contractsDone++;
     if (clean) {
       const bonus = (c.livePay || c.pay) * DAY_SECONDS * 1.5;

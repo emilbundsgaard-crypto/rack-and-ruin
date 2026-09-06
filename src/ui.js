@@ -90,8 +90,8 @@ export function renderTop(state, d) {
   stats.push(stat('Cash', money(state.money),
     (d.netIncome >= 0 ? '+' : '') + rate(d.netIncome),
     d.netIncome >= 0 ? 'good' : 'bad'));
-  stats.push(stat('Compute', fmt(d.computeTotal),
-    fmt(d.computeSellable) + ' sellable'));
+  stats.push(stat('Compute', fmt(d.computeTotal), d.bottleneck,
+    d.bottleneck === 'running clean' ? 'good' : 'warn'));
   stats.push(stat('Contracted', fmt(d.contractDemand),
     Math.round(d.deliverRatio * 100) + '% delivered',
     d.deliverRatio > 0.995 ? '' : 'warn'));
@@ -293,7 +293,7 @@ function panelRacks(state, d) {
         if (t) app.act(() => A.install(state, d, t, hw.id, 10, app.hooks));
       };
       rowBtns.append(fillBtn, oneBtn, tenBtn);
-      if (owned === 0 && hw.tier > 0) {
+      if (hw.tier > 0) {
         const retire = el('button', 'btn small danger', 'Retire everything older');
         retire.onclick = () => app.act(() => A.retireOlderThan(state, d, hw.id, app.hooks));
         rowBtns.append(retire);
@@ -367,17 +367,27 @@ function panelContracts(state, d) {
     title.append(el('span', fits ? 'pill acc' : 'pill warn', fits ? 'fits' : 'over capacity'));
     title.append(el('span', 'price ok', rate(o.pay * d.mods.priceMult)));
     card.append(title, el('div', 'desc', o.client + ' — ' + (t?.blurb || '')));
+    const useFrac = free > 0 ? o.demand / free : Infinity;
     const meta = el('div', 'meta');
     const bits = [
       ['needs', fmt(o.demand) + ' compute'],
+      ['uses', (isFinite(useFrac) ? Math.round(useFrac * 100) : 999) + '% of headroom'],
       ['bandwidth', fmt(o.net) + ' Gbps'],
       ['SLA', (o.uptimeReq * 100).toFixed(1) + '%'],
+      ['you hold', (d.uptime * 100).toFixed(1) + '%'],
       ['term', o.days + ' days'],
       ['penalty', '×' + o.penalty + ' on breach'],
-      ['total', money(o.pay * d.mods.priceMult * o.days * 120)],
+      ['total', money(o.pay * d.mods.priceMult * o.days * 60)],
     ];
     for (const [k, v] of bits) { const s = el('span'); s.append(k + ' ', el('b', null, v)); meta.append(s); }
     card.append(meta);
+    if (d.uptime < o.uptimeReq) {
+      card.append(el('div', 'desc', 'Your uptime is below this SLA right now. '
+        + 'Sign it and the penalty starts as soon as the ink dries.'));
+    } else if (useFrac > 0.85) {
+      card.append(el('div', 'desc', 'This takes almost everything you have spare. '
+        + 'One bad event and you are under-delivering.'));
+    }
     const btn = el('button', 'btn primary small', slot ? 'Sign' : 'No free slot');
     btn.disabled = !slot;
     btn.onclick = () => app.act(() => signContract(state, d, o, app.hooks));
@@ -516,6 +526,7 @@ function panelUtilities(state, d) {
   const kv = el('div', 'kv');
   const row = (k, v) => kv.append(el('div', 'k', k), el('div', 'v', v));
   row('Draw', fmt(d.actualDraw) + ' kW');
+  row('Firm supply', fmt(d.firmSupply) + ' kW');
   row('Utility feed', fmt(state.gridPower) + ' / ' + fmt(cap) + ' kW');
   row('On site', fmt(d.ownSupply) + ' kW');
   row('Headroom', fmt(d.supplyKW - d.actualDraw) + ' kW');

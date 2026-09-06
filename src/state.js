@@ -4,13 +4,13 @@ export const SAVE_KEY = 'rack-and-ruin-save-v1';
 export const SAVE_VERSION = 1;
 
 /** Seconds of real time per in-game day. */
-export const DAY_SECONDS = 120;
+export const DAY_SECONDS = 60;
 
 /** $ per kW per real second, at a price of $1/kWh. Time is compressed. */
-export const ENERGY_RATE = 0.40;
+export const ENERGY_RATE = 9.6;
 
 /** $ per litre per real second, at a price of $1/m³. */
-export const WATER_RATE = 0.11;
+export const WATER_RATE = 2.64;
 
 export function legacyLevel(state, id) {
   return state.legacy.perks[id] || 0;
@@ -32,13 +32,14 @@ export function newGame(legacy) {
     money: 6_000 * Math.pow(LEGACY_BY_ID.l_start.per, seedLevels),
     lifetimeEarnings: 0,
     reputation: repStart,
+    repPeak: repStart,
     rp: 0,
     rpLifetime: 0,
 
     facility: headStart,
     tiles: {},
     gridPower: 6,            // kW of utility connection bought so far
-    researchAlloc: 0.25,     // fraction of compute diverted to R&D
+    researchAlloc: 0.15,     // fraction of compute diverted to R&D
 
     research: { done: [] },
     upgrades: [],
@@ -49,7 +50,7 @@ export function newGame(legacy) {
     achievements: [],
     legacy: { points: lg.points, perks: { ...lg.perks }, resets: lg.resets, lifetime: lg.lifetime },
 
-    market: { power: 0.16, compute: 0.14, phase: Math.random() * 1000 },
+    market: { power: 0.16, compute: 3.36, phase: Math.random() * 1000 },
     uptimeAvg: 1,
     upsCharge: 1,
 
