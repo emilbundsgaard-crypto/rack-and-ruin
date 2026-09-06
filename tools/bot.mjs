@@ -5,7 +5,7 @@ import * as A from '../src/actions.js';
 import { HARDWARE } from '../src/data/hardware.js';
 import { BUILDINGS } from '../src/data/buildings.js';
 import { RESEARCH, available } from '../src/data/research.js';
-import { UPGRADES } from '../src/data/progression.js';
+import { UPGRADES, OBJECTIVES } from '../src/data/progression.js';
 import { fmt, money, fmtTime } from '../src/util.js';
 
 const quiet = { log: () => {}, onDecision: (ev) => { pending = ev; } };
@@ -153,11 +153,14 @@ function step() {
   // Contracts.
   d = derive(s);
   let free = d.computeSellable - s.contracts.active.reduce((a, c) => a + c.demand, 0);
-  const fits = s.contracts.offers.filter((o) => o.demand <= free * 0.92).sort((a, b) => b.pay - a.pay);
-  for (const o of fits) {
-    if (s.contracts.active.length >= d.contractSlots) break;
-    free -= o.demand;
-    signContract(s, d, o, quiet);
+  // No slot limit any more: keep taking work while there is compute for it.
+  for (let guard = 0; guard < 12; guard++) {
+    const fits = s.contracts.offers
+      .filter((o) => o.demand <= free * 0.92)
+      .sort((a, b) => b.pay - a.pay);
+    if (!fits.length) break;
+    free -= fits[0].demand;
+    signContract(s, d, fits[0], quiet);
   }
 }
 
@@ -179,7 +182,7 @@ while (t < total) {
     treeDone = true;
     console.log('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  research tree complete');
   }
-  if (s.objectives.done.length === 35 && !objDone) {
+  if (s.objectives.done.length === OBJECTIVES.length && !objDone) {
     objDone = true;
     console.log('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  all objectives complete');
   }

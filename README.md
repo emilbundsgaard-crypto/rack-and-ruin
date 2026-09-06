@@ -66,7 +66,7 @@ campus. Only the numbers and the machinery change.
 | Hardware generations | 12, from a salvaged desktop to a zettascale core |
 | Research nodes | 87 across seven branches |
 | Cash upgrades | 32 permanent purchases |
-| Contract types | 18, gated behind reputation |
+| Contract types | 18, gated behind your name, each with a few possible clients |
 | Random events | 20, seven of which stop and ask you a question |
 | Machine icons | 32 hand-drawn glyphs, on the floor and in the build list |
 | The town next door | Ashbrook, in nine stages, from cricket pitch to nothing |
@@ -88,9 +88,10 @@ contract off the board. From there it is a balancing act:
   names every fixable problem — racks with no PDU in range, compute sitting
   unsold, research you can afford — worst first. Click a row and it takes you
   to the tab that fixes it, with the right overlay already on.
-- **Contracts arrive continuously.** Roughly a couple of offers a day, each
-  good for about a week before it goes stale. There is always something on the
-  board; you never wait for a refresh.
+- **Contracts arrive continuously**, roughly a couple of offers a day, each
+  good for about a week. There is no limit on how many you run at once — the
+  only thing stopping you is spare compute. Promise more than you produce and
+  you start paying fines.
 - **The top bar tells you what is wrong.** The Compute tile names the current
   bottleneck in plain words — *short of electricity*, *cooling is behind*,
   *compute is unsold* — and clicking it takes you to the tab that fixes it.
@@ -134,6 +135,15 @@ contract off the board. From there it is a balancing act:
 Keyboard: `1`–`9` switch tabs, `O` cycles overlays, `Space` pauses, `Esc`
 clears the current tool. Wheel zooms, dragging pans, and dragging with a
 machine selected places a whole row.
+
+## Starting again
+
+Once you reach Data hall A you can sell the company. You get legacy points for
+what you built, and start over in the cupboard with nothing — except the
+points, the fifteen permanent perks they buy, and your achievements. Perks
+compound: more compute per machine, cheaper hardware, more slots per rack, a
+tier of head start. The second run goes further than the first, and the fourth
+goes further still.
 
 ## Saving
 

@@ -253,7 +253,7 @@ export const LEGACY_PERKS = [
   { id: 'l_slots', name: 'Standard rack spec', base: 5, growth: 2.6, max: 12,
     per: 2, desc: '+2 slots in every rack per level.' },
   { id: 'l_contract', name: 'Rolodex', base: 8, growth: 3.0, max: 6,
-    per: 1, desc: '+1 contract slot per level.' },
+    per: 1, desc: 'One more offer on the board per level.' },
   { id: 'l_wear', name: 'Maintenance doctrine', base: 4, growth: 2.2, max: 15,
     per: 0.08, desc: '-8% hardware wear per level.' },
   { id: 'l_build', name: 'Standing contractors', base: 4, growth: 2.2, max: 15,

@@ -31,10 +31,14 @@ export const STAGES = [
 /** Footprint, weighted, on a log scale so it climbs steadily across a run. */
 export function townTarget(state, d) {
   const tiles = Object.keys(state.tiles).length;
-  const power = Math.log10(1 + d.actualDraw) / Math.log10(1 + 3.5e6);
-  const thirst = Math.log10(1 + d.waterDemand) / Math.log10(1 + 40_000);
-  const heat = Math.log10(1 + d.heatLoad) / Math.log10(1 + 3e6);
-  const land = tiles / 640;
+  // Each strand is capped a little above its target, so a site that is huge on
+  // power can cover a small shortfall on water. Finishing the town should be
+  // hard, not a knife edge.
+  const cap = (v) => clamp(v, 0, 1.3);
+  const power = cap(Math.log10(1 + d.actualDraw) / Math.log10(1 + 2.4e6));
+  const thirst = cap(Math.log10(1 + d.waterDemand) / Math.log10(1 + 22_000));
+  const heat = cap(Math.log10(1 + d.heatLoad) / Math.log10(1 + 1.8e6));
+  const land = cap(tiles / 540);
   return clamp(power * 0.34 + thirst * 0.26 + heat * 0.18 + land * 0.22, 0, 1);
 }
 

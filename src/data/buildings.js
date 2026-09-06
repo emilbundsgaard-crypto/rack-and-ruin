@@ -225,7 +225,7 @@ export const BUILDINGS = [
   {
     id: 'sales', name: 'Sales floor', glyph: 'tag', tag: 'SALES', h: 22, cat: 'support', cost: 12_000_000, contract: 1,
     draw: 5, upkeep: 26_000, color: '#e8a05f', req: 'rnd_salesfloor',
-    desc: 'One extra contract slot, and better offers on the board.',
+    desc: 'One more offer on the board, and better ones.',
   },
 ];
 

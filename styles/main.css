@@ -320,6 +320,18 @@ input[type=text], textarea {
 .sparkends { display: flex; justify-content: space-between; font-family: var(--mono);
   font-size: 10px; color: var(--dimmer); margin-top: 3px; }
 .sparklabel { margin-bottom: 3px; }
+.keeps { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0 4px; }
+.keep .kh { font-size: 9.5px; letter-spacing: .14em; text-transform: uppercase; font-weight: 600;
+  margin-bottom: 5px; }
+.keep.good .kh { color: var(--good); }
+.keep.bad .kh { color: var(--bad); }
+.keep .ki { font-size: 12px; color: var(--dim); padding-left: 11px; position: relative; }
+.keep .ki::before { content: ''; position: absolute; left: 0; top: 7px; width: 4px; height: 4px;
+  background: currentColor; opacity: .5; }
+.lvlbar { display: flex; gap: 2px; margin-top: 7px; }
+.lvlbar i { flex: 1; height: 3px; background: #2f281e; }
+.lvlbar i.on { background: var(--acc); }
+
 .townstage { font-size: 15px; font-weight: 650; margin: 12px 0 3px; }
 
 #paused { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none;
@@ -413,6 +425,18 @@ input[type=text], textarea {
 .toast.bad { color: #f2bcb5; border-left-color: var(--bad); }
 .toast.warn { color: #f2dfb2; border-left-color: var(--warn); }
 @keyframes pop { from { opacity: 0; transform: translateY(6px); } }
+
+/* --------------------------------------------------------- accessibility */
+
+:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; border-radius: 2px; }
+button:focus:not(:focus-visible) { outline: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .001ms !important; animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+}
 
 /* ------------------------------------------------------------ responsive */
 

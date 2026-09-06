@@ -5,7 +5,7 @@ import { clamp, sum, noise, weightedPick, fmt as fmtShort } from './util.js';
 import { HARDWARE_BY_ID } from './data/hardware.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import { RESEARCH_BY_ID, RESEARCH } from './data/research.js';
-import { CONTRACT_TEMPLATES, TEMPLATES_BY_ID, decorate } from './data/contracts.js';
+import { CONTRACT_TEMPLATES, TEMPLATES_BY_ID, decorate, pickClient } from './data/contracts.js';
 import { EVENTS, EVENTS_BY_ID } from './data/events.js';
 import {
   FACILITIES, STAFF_BY_ID, UPGRADES_BY_ID, LEGACY_BY_ID,
@@ -15,13 +15,13 @@ import { facilityOf, roomOf, allTiles, DAY_SECONDS, ENERGY_RATE, WATER_RATE } fr
 import { tickTown } from './town.js';
 
 const MULT_KEYS = [
-  'computeMult', 'powerMult', 'heatMult', 'coolMult', 'coolDrawMult', 'waterMult',
+  'offerSize', 'computeMult', 'powerMult', 'heatMult', 'coolMult', 'coolDrawMult', 'waterMult',
   'wearMult', 'repairMult', 'researchMult', 'priceMult', 'repMult', 'gridCostMult',
   'waterCostMult', 'fuelMult', 'upkeepMult', 'hwCostMult', 'buildCostMult',
   'penaltyMult', 'priceStability', 'powerSupplyMult', 'waterSupplyMult',
 ];
 const ADD_KEYS = [
-  'contractSlots', 'staffCap', 'offlineHours', 'offlineRate', 'uptimeBonus',
+  'boardSize', 'staffCap', 'offlineHours', 'offlineRate', 'uptimeBonus',
   'rackSlotBonus', 'securityBonus',
 ];
 
@@ -29,7 +29,7 @@ function baseMods() {
   const m = {};
   for (const k of MULT_KEYS) m[k] = 1;
   for (const k of ADD_KEYS) m[k] = 0;
-  m.contractSlots = 4;
+  m.offerSize = 1;
   m.offlineHours = 2;
   m.offlineRate = 0.35;
   return m;
@@ -62,7 +62,7 @@ export function modifiers(state) {
   m.buildCostMult *= Math.pow(1 - LEGACY_BY_ID.l_build.per, lv('l_build'));
   m.hwCostMult *= Math.pow(1 - LEGACY_BY_ID.l_hw.per, lv('l_hw'));
   m.rackSlotBonus += LEGACY_BY_ID.l_slots.per * lv('l_slots');
-  m.contractSlots += LEGACY_BY_ID.l_contract.per * lv('l_contract');
+  m.boardSize += LEGACY_BY_ID.l_contract.per * lv('l_contract');
   m.offlineHours += LEGACY_BY_ID.l_offline.per * lv('l_offline');
 
   // Staff.
@@ -123,7 +123,7 @@ export function derive(state) {
   const counts = {};
   let ownSupply = 0, miscDraw = 0, upkeep = 0, fuelCost = 0;
   let waterSupply = 0, waterCost = 0, netCap = 1.5, staffCap = mods.staffCap;
-  let repairBoost = 1, uptimeBoost = 0, researchFlat = 0, contractSlots = 0, firmOwn = 0;
+  let repairBoost = 1, uptimeBoost = 0, researchFlat = 0, boardBonus = 0, firmOwn = 0;
   let security = mods.securityBonus, genHeat = 0, freeSlots = 0, unitsTotal = 0;
   let brokenTotal = 0;
   const units = {};
@@ -192,7 +192,7 @@ export function derive(state) {
     if (b.repair) repairBoost += b.repair;
     if (b.uptime) uptimeBoost += b.uptime;
     if (b.research) researchFlat += b.research;
-    if (b.contract) contractSlots += b.contract;
+    if (b.contract) boardBonus += b.contract;
     if (b.security) security += b.security;
     if (b.ride) counts.rideSeconds = (counts.rideSeconds || 0) + b.ride;
   }
@@ -392,11 +392,12 @@ export function derive(state) {
       text: `Your network only reaches ${Math.round(netFactor * 100)}% of your machines. The rest sit idle.`,
     });
   }
-  const freeSlotsNow = state.contracts.active.length < Math.floor(mods.contractSlots + contractSlots);
-  if (freeSlotsNow && state.contracts.offers.length) {
+  const freeCompute = computeSellable - contractDemand;
+  const takeable = state.contracts.offers.filter((o) => o.demand <= freeCompute).length;
+  if (takeable) {
     problems.push({
       tone: 'good', tab: 'deals',
-      text: `${state.contracts.offers.length} deal${state.contracts.offers.length > 1 ? 's' : ''} waiting, and you have room to sign one.`,
+      text: `${takeable} deal${takeable > 1 ? 's' : ''} you have the spare compute to take.`,
     });
   }
   if (contractDemand < computeSellable * 0.7 && computeSellable > 1) {
@@ -419,6 +420,15 @@ export function derive(state) {
       text: `You can afford ${affordableRnD} upgrade${affordableRnD > 1 ? 's' : ''} right now.`,
     });
   }
+  if (state.facility >= 4) {
+    const worth = Math.floor(Math.pow(Math.max(0, state.lifetimeEarnings) / 2.5e8, 0.40));
+    if (worth >= 1) {
+      problems.push({
+        tone: 'good', tab: 'site',
+        text: `You could sell the company for ${worth} legacy point${worth > 1 ? 's' : ''} and start again stronger.`,
+      });
+    }
+  }
   const nextFac = FACILITIES[state.facility + 1];
   if (nextFac && state.money >= nextFac.cost && state.reputation >= (nextFac.rep || 0)) {
     problems.push({
@@ -438,7 +448,8 @@ export function derive(state) {
     uptime, maxTemp, avgTemp: tempW > 0 ? tempSum / tempW : ambient, ambient,
     revenue, costs, netIncome: revenue - costs,
     powerCost, fuelCost, waterBill, upkeepCost, penalties, salaries,
-    rpPerSec, contractSlots: Math.floor(mods.contractSlots + contractSlots),
+    rpPerSec, freeCompute: computeSellable - contractDemand,
+    boardSize: Math.max(3, Math.round(5 + mods.boardSize + boardBonus + Math.min(4, state.staff.sales / 2))),
     repairRate: (0.12 + state.staff.tech * 1.35) * repairBoost * mods.repairMult,
     rackCount: Math.max(1, racks.length),
     security: clamp(security, 0, 0.9), sun, sellPrice: state.market.compute,
@@ -589,15 +600,21 @@ export function makeOffer(state, d, seedIndex) {
   const t = weightedPick(fresh.length ? fresh : pool, (x) => 1 + x.minRep / 40);
   const committed = sum(state.contracts.active, (c) => c.demand);
   const free = Math.max(4, d.computeSellable - committed);
-  const scale = 0.65 + Math.random() * 0.8;
-  const demand = Math.max(2, free * t.size * scale);
+  // A mix of sizes: without a slot limit, the useful board is one where a
+  // small job can always top up whatever headroom you have left.
+  const r = Math.random();
+  const band = r < 0.34 ? 0.3 + Math.random() * 0.2
+    : r < 0.82 ? 0.7 + Math.random() * 0.5
+    : 1.3 + Math.random() * 0.4;
+  const scale = band;
+  const demand = Math.max(2, free * t.size * scale * d.mods.offerSize);
   const repBonus = 1 + Math.min(1.5, state.reputation / 220);
   const pay = demand * state.market.compute * t.pay * repBonus;
   return {
     cid: state.contracts.seq++,
     tid: t.id,
     name: decorate(t, Math.random()),
-    client: t.client,
+    client: pickClient(t),
     demand,
     net: (demand / 1000) * t.net,
     pay,
@@ -609,7 +626,11 @@ export function makeOffer(state, d, seedIndex) {
 }
 
 export function signContract(state, d, offer, hooks) {
-  if (state.contracts.active.length >= d.contractSlots) return 'No free contract slot.';
+  // Compute is the only limit. If you cannot produce it, you cannot promise it.
+  const free = d.computeSellable - sum(state.contracts.active, (c) => c.demand);
+  if (offer.demand > free) {
+    return `You would need ${Math.ceil(offer.demand - free)} more compute to take this on.`;
+  }
   state.contracts.offers = state.contracts.offers.filter((o) => o.cid !== offer.cid);
   const c = { ...offer, startDay: state.day, endDay: state.day + offer.days, breached: false, delivered: 1, effUptime: 1 };
   state.contracts.active.push(c);
@@ -619,20 +640,27 @@ export function signContract(state, d, offer, hooks) {
 
 function contractsTick(state, d, days, hooks) {
   // Penalties and breach tracking. A brief dip is survivable; a bad day is not.
+  let breaching = 0;
   for (const c of state.contracts.active) {
     const k = Math.min(1, days * 1.6);
     c.effUptime = c.effUptime * (1 - k) + (c.instUptime ?? c.effUptime) * k;
     if (c.effUptime < c.uptimeReq) {
+      breaching++;
       if (!c.breached) {
         c.breached = true;
         state.stats.breaches++;
-        hooks?.log(`SLA breach on ${c.name}. ${c.client} is not pleased.`, 'bad');
+        hooks?.log(`You are under-delivering on ${c.name}. ${c.client} is not pleased.`, 'bad');
       }
-      const floor = (state.repPeak || 0) * 0.6;
-      state.reputation = Math.max(floor, state.reputation - days * 0.6);
     } else if (c.breached && c.effUptime > c.uptimeReq + 0.01) {
       c.breached = false;
     }
+  }
+  // Your name takes one hit for the site's performance, however many customers
+  // are on the phone about it. The per-contract fines are punishment enough.
+  if (breaching) {
+    const share = breaching / Math.max(1, state.contracts.active.length);
+    const floor = (state.repPeak || 0) * 0.6;
+    state.reputation = Math.max(floor, state.reputation - days * 0.9 * share);
   }
 
   // Completion.
@@ -664,7 +692,7 @@ function contractsTick(state, d, days, hooks) {
   state.contracts.offers = state.contracts.offers.filter((o) => state.day < o.expires);
   if (state.contracts.offers.length < before) hooks?.onBoard?.();
 
-  const cap = 5 + Math.min(4, Math.floor(state.staff.sales / 2));
+  const cap = d.boardSize;
   const post = () => {
     const o = makeOffer(state, d, state.contracts.seq);
     if (!o) return false;
@@ -686,17 +714,16 @@ function contractsTick(state, d, days, hooks) {
     post();
     // Deal flow follows demand: an empty board or a free slot pulls the next
     // offer in sooner.
-    const keen = state.contracts.offers.length < 3
-      || state.contracts.active.length < d.contractSlots;
+    const keen = state.contracts.offers.length < 3 || d.freeCompute > d.computeSellable * 0.2;
     state.contracts.nextOffer = (keen ? 0.7 : 1.9) + Math.random() * 1.2;
   }
 
   // Optional hands-off signing, for when placing machines is the fun part.
   if (state.settings.autoSign) {
     let free = d.computeSellable - sum(state.contracts.active, (c) => c.demand);
-    while (state.contracts.active.length < d.contractSlots) {
+    for (let guard = 0; guard < 8; guard++) {
       const fits = state.contracts.offers
-        .filter((o) => o.demand <= free * 1.05)
+        .filter((o) => o.demand <= free)
         .sort((a, b) => b.pay - a.pay);
       if (!fits.length) break;
       free -= fits[0].demand;

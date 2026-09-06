@@ -236,13 +236,31 @@ export class FloorView {
   _bind() {
     const c = this.c;
     let last = null;
+    const touches = new Map();
+    let pinch = null;
     const pos = (e) => {
       const r = c.getBoundingClientRect();
       return { x: e.clientX - r.left, y: e.clientY - r.top };
     };
+    const spread = () => {
+      const [a, b] = [...touches.values()];
+      return {
+        d: Math.hypot(a.x - b.x, a.y - b.y),
+        mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      };
+    };
 
     c.addEventListener('pointerdown', (e) => {
       c.setPointerCapture(e.pointerId);
+      touches.set(e.pointerId, pos(e));
+      if (touches.size === 2) {
+        // Two fingers means pinch, not paint.
+        const sp = spread();
+        pinch = { d: sp.d, zoom: this.zoom };
+        this.dragging = false;
+        this.panned = true;
+        return;
+      }
       last = pos(e);
       this.dragging = true;
       this.panned = false;
@@ -251,6 +269,18 @@ export class FloorView {
 
     c.addEventListener('pointermove', (e) => {
       const p = pos(e);
+      if (touches.has(e.pointerId)) touches.set(e.pointerId, p);
+      if (pinch && touches.size === 2) {
+        const sp = spread();
+        if (sp.d > 4 && pinch.d > 4) {
+          const nz = clamp(pinch.zoom * (sp.d / pinch.d), 0.18, 2.4);
+          const f = nz / this.zoom;
+          this.ox = sp.mid.x - (sp.mid.x - this.ox) * f;
+          this.oy = sp.mid.y - (sp.mid.y - this.oy) * f;
+          this.zoom = nz;
+        }
+        return;
+      }
       this.hover = this.pick(p.x, p.y);
       if (this.dragging && last) {
         const dx = p.x - last.x, dy = p.y - last.y;
@@ -266,6 +296,8 @@ export class FloorView {
     });
 
     const end = (e) => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) pinch = null;
       if (this.dragging && !this.panned) {
         const p = pos(e);
         const t = this.pick(p.x, p.y);
@@ -275,7 +307,12 @@ export class FloorView {
       last = null;
     };
     c.addEventListener('pointerup', end);
-    c.addEventListener('pointercancel', () => { this.dragging = false; last = null; });
+    c.addEventListener('pointercancel', (e) => {
+      touches.delete(e.pointerId);
+      if (touches.size < 2) pinch = null;
+      this.dragging = false;
+      last = null;
+    });
     c.addEventListener('pointerleave', () => { this.hover = null; this.cb.onHover?.(null); });
     c.addEventListener('contextmenu', (e) => e.preventDefault());
 

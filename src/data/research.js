@@ -4,7 +4,7 @@
 // effects keys (all optional, multiplied/added together across nodes):
 //   computeMult powerMult heatMult coolMult waterMult wearMult repairMult
 //   researchMult priceMult repMult gridCostMult fuelMult upkeepMult
-//   contractSlots staffCap offlineHours uptimeBonus rackSlotBonus
+//   offerSize boardSize staffCap offlineHours uptimeBonus rackSlotBonus
 
 export const RESEARCH = [
   // ============================================================== hardware
@@ -172,11 +172,11 @@ export const RESEARCH = [
 
   // ============================================================== business
   { id: 'rnd_sales1', name: 'First sales hire', cat: 'business', cost: 13, req: ['rnd_office'],
-    effects: { contractSlots: 1 }, desc: '+1 contract slot.' },
+    effects: { offerSize: 1.2 }, desc: 'Customers offer 20% bigger jobs.' },
   { id: 'rnd_sla', name: 'SLA templates', cat: 'business', cost: 35, req: ['rnd_sales1'],
     effects: { priceMult: 1.2 }, desc: 'Contracts pay 20% more.' },
   { id: 'rnd_sales2', name: 'Account management', cat: 'business', cost: 114, req: ['rnd_sla'],
-    effects: { contractSlots: 1, repMult: 1.3 }, desc: '+1 contract slot, +30% reputation gain.' },
+    effects: { boardSize: 1, repMult: 1.3 }, desc: 'One more offer on the board, +30% reputation gain.' },
   { id: 'rnd_switch2', name: 'Spine-leaf fabric', cat: 'business', cost: 103, req: ['rnd_sla'],
     desc: 'Unlocks the aggregation switch.' },
   { id: 'rnd_brand', name: 'Industry reputation', cat: 'business', cost: 262, req: ['rnd_sales2'],
@@ -184,7 +184,7 @@ export const RESEARCH = [
   { id: 'rnd_switch3', name: 'Coherent optics', cat: 'business', cost: 739, req: ['rnd_switch2'],
     desc: 'Unlocks the optical spine.' },
   { id: 'rnd_salesfloor', name: 'Enterprise sales', cat: 'business', cost: 900, req: ['rnd_brand'],
-    effects: { contractSlots: 1 }, desc: '+1 contract slot and unlocks the sales floor.' },
+    effects: { offerSize: 1.25 }, desc: '25% bigger jobs, and unlocks the sales floor.' },
   { id: 'rnd_hedge', name: 'Energy hedging', cat: 'business', cost: 1_223, req: ['rnd_salesfloor'],
     effects: { priceStability: 0.5 }, desc: 'Halves swings in the electricity price.' },
   { id: 'rnd_lean', name: 'Lean operations', cat: 'business', cost: 1_794, req: ['rnd_hedge'],
@@ -192,7 +192,7 @@ export const RESEARCH = [
   { id: 'rnd_switch4', name: 'Own transit', cat: 'business', cost: 2_873, req: ['rnd_switch3'],
     desc: 'Unlocks the transit landing.' },
   { id: 'rnd_hyper', name: 'Hyperscale contracts', cat: 'business', cost: 3_938, req: ['rnd_lean', 'rnd_switch4'],
-    effects: { contractSlots: 2, priceMult: 1.5 }, desc: '+2 contract slots, +50% contract pay.' },
+    effects: { offerSize: 1.5, priceMult: 1.5 }, desc: 'Jobs half again as big, and they pay 50% more.' },
   { id: 'rnd_monopoly', name: 'Regional monopoly', cat: 'business', cost: 6_800, req: ['rnd_hyper'],
     effects: { priceMult: 1.8, repMult: 2 }, desc: '+80% contract pay. Nobody else can build here.' },
 ];

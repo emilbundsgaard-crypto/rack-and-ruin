@@ -203,7 +203,8 @@ export function renderTop(state, d) {
       + 'research. Spend them on the Upgrade tab.';
     mk.x_rep.n.dataset.tip = 'Your name|Earned by finishing deals without letting customers down. '
       + 'It unlocks bigger sites and better customers.';
-    mk.x_con.n.dataset.tip = 'Contracts|Signed against slots available.';
+    mk.x_con.n.dataset.tip = 'Deals|How many jobs you are running. There is no limit on the '
+      + 'number — the only thing stopping you is spare compute.';
     mk.x_town.n.dataset.tip = 'Ashbrook|How much of the town next door your site has ruined. '
       + 'Open the Town tab to watch it happen.';
     mk.x_town.n.style.cursor = 'pointer';
@@ -250,8 +251,8 @@ export function renderTop(state, d) {
   small(t.x_up, (d.uptime * 100).toFixed(1) + '%', d.uptime > 0.98 ? '' : 'warn');
   small(t.x_rp, fmt(state.rp), 'acc');
   small(t.x_rep, fmt(state.reputation));
-  small(t.x_con, state.contracts.active.length + '/' + d.contractSlots,
-    state.contracts.active.length < d.contractSlots ? 'acc' : '');
+  small(t.x_con, String(state.contracts.active.length),
+    d.freeCompute > d.computeSellable * 0.15 ? 'acc' : '');
   small(t.x_town, ((state.town?.damage || 0) * 100).toFixed(0) + '%',
     (state.town?.damage || 0) > 0.5 ? 'bad' : (state.town?.damage || 0) > 0.2 ? 'warn' : '');
 
@@ -617,8 +618,9 @@ function panelContracts(state, d) {
   const head = el('div', 'card');
   const kv = el('div', 'kv');
   const row = (k, v) => kv.append(el('div', 'k', k), el('div', 'v', v));
-  row('Slots', state.contracts.active.length + ' / ' + d.contractSlots);
-  row('Committed compute', fmt(d.contractDemand) + ' / ' + fmt(d.computeSellable));
+  row('Deals running', String(state.contracts.active.length));
+  row('Compute promised', fmt(d.contractDemand) + ' of ' + fmt(d.computeSellable));
+  row('Spare compute', fmt(Math.max(0, d.freeCompute)));
   row('Delivering', (d.deliverRatio * 100).toFixed(1) + '%');
   row('Market rate', '$' + state.market.compute.toFixed(3) + ' per compute·s');
   row('Next offer in', fmtTime(Math.max(0, state.contracts.nextOffer) * DAY_SECONDS));
@@ -663,13 +665,13 @@ function panelContracts(state, d) {
   const free = d.computeSellable - committed;
   const offers = state.contracts.offers.map((o) => {
     const t = TEMPLATES_BY_ID[o.tid];
-    const fits = o.demand <= free * 1.02;
-    const slot = state.contracts.active.length < d.contractSlots;
-    const card = el('div', 'card click' + (fits && slot ? '' : ' cant'));
+    const fits = o.demand <= free;
+    const card = el('div', 'card click' + (fits ? '' : ' cant'));
     const title = el('div', 'title');
     title.append(el('b', null, o.name));
     if (state.day - (o.posted ?? state.day) < 1.2) title.append(el('span', 'pill new', 'new'));
-    title.append(el('span', fits ? 'pill acc' : 'pill warn', fits ? 'fits' : 'over capacity'));
+    title.append(el('span', fits ? 'pill acc' : 'pill warn',
+      fits ? 'you can take this' : 'needs ' + fmt(o.demand - free) + ' more compute'));
     title.append(el('span', 'price ok', rate(o.pay * d.mods.priceMult)));
     card.append(title, el('div', 'desc', o.client + ' — ' + (t?.blurb || '')));
     const useFrac = free > 0 ? o.demand / free : Infinity;
@@ -687,16 +689,16 @@ function panelContracts(state, d) {
     ];
     for (const [k, v] of bits) { const s = el('span'); s.append(k + ' ', el('b', null, v)); meta.append(s); }
     card.append(meta);
-    if (d.uptime < o.uptimeReq) {
+    if (fits && d.uptime < o.uptimeReq) {
       card.append(el('div', 'desc', 'You cannot stay up as much as this deal asks. '
         + 'Sign it and you start paying a fine straight away.'));
-    } else if (useFrac > 0.85) {
+    } else if (fits && useFrac > 0.85) {
       card.append(el('div', 'desc', 'This uses almost all your spare compute. '
         + 'One bad day and you will not be able to deliver it.'));
     }
-    const btn = el('button', 'btn primary small', slot ? 'Sign' : 'No free slot');
-    if (slot && fits) btn.dataset.sign = String(o.cid);
-    btn.disabled = !slot;
+    const btn = el('button', 'btn primary small', fits ? 'Sign' : 'Not enough spare compute');
+    if (fits) btn.dataset.sign = String(o.cid);
+    btn.disabled = !fits;
     btn.onclick = () => app.act(() => signContract(state, d, o, app.hooks));
     const r = el('div', 'btnrow'); r.append(btn); card.append(r);
     return card;
@@ -1187,34 +1189,76 @@ function panelTown(state, d) {
 function panelLegacy(state, d) {
   const out = [];
   const gain = legacyGain(state);
+  const can = canPrestige(state);
+  const next = FACILITIES[4];
+
   const c = el('div', 'card');
+  c.append(el('div', 'sparklabel', 'Selling the company'));
+  c.append(el('div', 'bignum', fmtInt(gain) + (gain === 1 ? ' point' : ' points')));
+  c.append(el('div', 'desc',
+    'When a run has gone as far as you want it to, you can sell up. You start again in the '
+    + 'broom cupboard with nothing — but you keep the points, and points buy permanent perks '
+    + 'that make every run after this one easier.'));
+
   const kv = el('div', 'kv');
-  kv.append(el('div', 'k', 'Legacy points'), el('div', 'v', fmtInt(state.legacy.points)));
-  kv.append(el('div', 'k', 'Company sales'), el('div', 'v', String(state.legacy.resets)));
-  kv.append(el('div', 'k', 'This run would give'), el('div', 'v', fmtInt(gain)));
+  kv.append(el('div', 'k', 'Points banked'), el('div', 'v', fmtInt(state.legacy.points)));
+  kv.append(el('div', 'k', 'Companies sold'), el('div', 'v', String(state.legacy.resets)));
+  kv.append(el('div', 'k', 'Earned this run'), el('div', 'v', money(state.lifetimeEarnings)));
+  kv.append(el('div', 'k', 'This run is worth'), el('div', 'v', fmtInt(gain)));
   c.append(kv);
-  c.append(el('div', 'desc', 'Selling the company resets the floor, your cash, research and contracts. '
-    + 'Legacy points and perks stay, and so do achievements. You need Data hall A (tier 4) before anybody will buy.'));
-  const b = el('button', 'btn primary', canPrestige(state) ? 'Sell the company for ' + fmtInt(gain) + ' points' : 'Not sellable yet');
-  b.disabled = !canPrestige(state);
+
+  const keep = el('div', 'keeps');
+  const col = (title, items, cls) => {
+    const n = el('div', 'keep ' + cls);
+    n.append(el('div', 'kh', title));
+    for (const i of items) n.append(el('div', 'ki', i));
+    return n;
+  };
+  keep.append(
+    col('You keep', ['Legacy points and perks', 'Every achievement', 'What you learned'], 'good'),
+    col('You lose', ['The floor and everything on it', 'Your cash and your name',
+      'All research and every deal'], 'bad'),
+  );
+  c.append(keep);
+
+  const b = el('button', 'btn primary',
+    can ? 'Sell the company for ' + fmtInt(gain) + ' points'
+      : state.facility < 4 ? 'Nobody will buy a site this small yet'
+      : 'Earn more before anybody will pay for it');
+  b.disabled = !can;
+  b.dataset.tip = can
+    ? 'Sell up|Bank ' + fmtInt(gain) + ' points and start again from the cupboard.'
+    : 'Not yet|You need to reach ' + next.name + ' (tier 4) and earn enough for the sale to be '
+      + 'worth at least one point.';
   b.onclick = () => app.confirmPrestige();
-  const r = el('div', 'btnrow'); r.append(b); c.append(r);
-  out.push(sec('Exit', c));
+  const r = el('div', 'btnrow');
+  r.append(b);
+  c.append(r);
+  out.push(sec('Prestige', c));
 
   const perks = LEGACY_PERKS.map((p) => {
     const lvl = state.legacy.perks[p.id] || 0;
     const maxed = lvl >= p.max;
     const cost = perkCost(p, lvl);
     const afford = state.legacy.points >= cost;
-    const card = el('div', 'card' + (maxed ? ' owned' : afford ? ' click' : ' cant'));
-    const title = el('div', 'title');
-    title.append(el('b', null, p.name), el('span', 'pill', lvl + ' / ' + p.max));
-    title.append(el('span', 'price' + (afford && !maxed ? ' ok' : ''), maxed ? 'maxed' : cost + ' LP'));
-    card.append(title, el('div', 'desc', p.desc));
-    if (!maxed) card.onclick = () => app.act(() => A.buyPerk(state, p.id, app.hooks));
-    return card;
+    const bar = el('div', 'lvlbar');
+    for (let i = 0; i < p.max; i++) bar.append(el('i', i < lvl ? 'on' : ''));
+    const row = listRow({
+      iconText: maxed ? 'MAX' : String(cost),
+      iconColor: maxed ? '#93cc6d' : afford ? '#f2a83c' : '#6e6458',
+      name: p.name,
+      pills: [{ text: lvl + ' / ' + p.max, cls: lvl ? 'acc' : '' }],
+      price: maxed ? 'maxed' : cost + (cost === 1 ? ' point' : ' points'),
+      priceOk: afford && !maxed,
+      desc: p.desc,
+      cls: maxed ? 'owned' : afford ? '' : 'cant',
+      data: { perk: p.id },
+      onClick: maxed ? null : () => app.act(() => A.buyPerk(state, p.id, app.hooks)),
+    });
+    row.querySelector('.body').append(bar);
+    return row;
   });
-  out.push(sec('Legacy perks', perks));
+  out.push(sec('Permanent perks (' + fmtInt(state.legacy.points) + ' points to spend)', perks));
   return out;
 }
 

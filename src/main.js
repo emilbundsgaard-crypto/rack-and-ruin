@@ -228,10 +228,25 @@ let last = performance.now();
 let uiClock = 0;
 let saveClock = 0;
 
+let frameErrors = 0;
+
 function frame(now) {
+  try {
+    step(now);
+  } catch (err) {
+    // A single bad frame should cost a frame, not the session. The player's
+    // save is worth more than a clean stack trace.
+    frameErrors++;
+    if (frameErrors <= 3) console.error('frame failed', err);
+    if (frameErrors === 3) toast('Something went wrong drawing the site. Your save is fine.', 'bad');
+  }
+  requestAnimationFrame(frame);
+}
+
+function step(now) {
   const real = Math.min(0.25, (now - last) / 1000);
   last = now;
-  if (!app.running) { requestAnimationFrame(frame); return; }
+  if (!app.running) return;
 
   const state = app.state;
   const speed = state.settings.speed;
@@ -270,8 +285,6 @@ function frame(now) {
 
   saveClock += real;
   if (saveClock > 15) { saveClock = 0; save(state); }
-
-  requestAnimationFrame(frame);
 }
 
 // ------------------------------------------------------------------ startup
@@ -497,6 +510,11 @@ function showHelp() {
       ['R&D', 'The slider on the R&D tab trades sellable compute for research points.'],
       ['What you sell', 'Compute, not machines. The Contracts tab breaks your output into '
         + 'sold, unsold and diverted to research.'],
+    ]),
+    guideSection('Starting again', [
+      ['Selling up', 'Once you reach Data hall A you can sell the company for legacy points.'],
+      ['What carries', 'The points, the perks you buy with them, and your achievements.'],
+      ['Why', 'Perks are permanent. Every run after the first one starts easier and goes further.'],
     ]),
     guideSection('Ashbrook', [
       ['The town', 'The village next door. It does nothing to you; it is simply the bill.'],
