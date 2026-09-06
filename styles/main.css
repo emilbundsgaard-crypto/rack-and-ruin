@@ -107,6 +107,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .meter.warn .mbar > i { background: var(--warn); }
 .meter.bad .mbar > i { background: var(--bad); }
 .meter.bad .mv { color: var(--bad); }
+/* The town drivers need room for a word and a real number, unlike the top-bar
+   meters they borrow their shape from. */
+.townmeter { grid-template-columns: 54px 1fr 92px; margin: 5px 0; }
+.townmeter .mk { white-space: nowrap; }
+.townmeter .mv { font-size: 11px; }
 
 .minis { display: grid; grid-template-columns: repeat(3, auto); gap: 3px 16px;
   align-content: center; min-width: 0; flex: none; }

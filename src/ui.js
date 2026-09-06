@@ -17,7 +17,7 @@ import { legacyGain, canPrestige, rackCapacity, signContract } from './sim.js';
 import * as SIM from './sim.js';
 import { tileAt, DAY_SECONDS } from './state.js';
 import { iconFor } from './render.js';
-import { STAGES, stageOf, drawTown } from './town.js';
+import { STAGES, stageOf, drawTown, townStrands, population } from './town.js';
 import { roomOf, EXPAND_CAP } from './state.js';
 import { STEPS, current as tutStep, skip as tutSkip } from './tutorial.js';
 
@@ -1267,17 +1267,37 @@ function panelTown(state, d) {
   bar.firstChild.style.width = (dmg * 100).toFixed(1) + '%';
   head.append(bar);
   const kv = el('div', 'kv');
-  kv.append(el('div', 'k', 'Ruined'), el('div', 'v', (dmg * 100).toFixed(1) + '%'));
-  kv.append(el('div', 'k', 'Draw'), el('div', 'v', fmt(d.actualDraw) + ' kW'));
-  kv.append(el('div', 'k', 'Water taken'), el('div', 'v', fmt(d.waterDemand) + ' L/s'));
-  kv.append(el('div', 'k', 'Land taken'), el('div', 'v', Object.keys(state.tiles).length + ' tiles'));
+  const pop = population(dmg);
+  kv.append(el('div', 'k', 'Population'),
+    el('div', 'v' + (pop === 0 ? ' bad' : ''), pop === 0 ? 'Nobody' : fmtInt(pop) + ' left'));
+  kv.append(el('div', 'k', 'Ruined'), el('div', 'v bad', (dmg * 100).toFixed(1) + '%'));
+  const nextStage = STAGES[stageOf(dmg) + 1];
+  kv.append(el('div', 'k', 'Next'), el('div', 'v', nextStage
+    ? nextStage.title + ' at ' + Math.round(nextStage.at * 100) + '%'
+    : 'Nothing left to take'));
   head.append(kv);
   out.push(sec('Ashbrook', head));
 
-  out.push(sec(null, el('div', 'hint',
-    'Ashbrook was here first. Nothing it does affects your site — it is simply the bill. '
-    + 'The dial follows your footprint: megawatts drawn, litres taken, acres covered. '
-    + 'It only ever goes one way.')));
+  // What is actually driving the dial, so the player knows what to build more
+  // of rather than guessing at it.
+  const drivers = el('div', 'card');
+  for (const st of townStrands(state, d)) {
+    const row = el('div', 'meter townmeter');
+    row.append(el('div', 'mk', st.label));
+    const b = el('div', 'mbar');
+    const i = el('i');
+    i.style.width = clamp(st.at, 0, 1) * 100 + '%';
+    i.style.background = st.at >= 0.999 ? 'var(--bad)' : 'var(--warn)';
+    b.append(i);
+    row.append(b, el('div', 'mv', fmt(st.now) + ' ' + st.unit));
+    drivers.append(row);
+  }
+  drivers.append(el('div', 'desc',
+    'Ashbrook was here first. The dial follows what your site takes from it, and it only ever '
+    + 'goes one way. Power counts for most, then water, then the land you cover and the heat you '
+    + 'dump. Take enough and the town starts pushing back — noise complaints, a challenge to your '
+    + 'abstraction licence, a reporter at the fence.'));
+  out.push(sec('What is taking it', drivers));
 
   const list = STAGES.map((st, i) => {
     const reached = dmg >= st.at;

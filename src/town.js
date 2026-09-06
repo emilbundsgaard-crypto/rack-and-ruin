@@ -1,11 +1,12 @@
 // Ashbrook, the town next door.
 //
-// Nothing here feeds back into the simulation: the town is the bill for what
-// the site takes. Damage is a ratchet driven by the footprint you currently
-// run — the megawatts, the litres, the acres — so it only ever goes one way.
-// Wrecking it completely is the other victory condition.
+// The town is the bill for what the site takes. Damage is a ratchet driven by
+// the footprint you currently run — the megawatts, the litres, the acres — so
+// it only ever goes one way. Wrecking it completely is the other victory
+// condition, and on the way Ashbrook does push back: see the town events in
+// data/events.js, which only appear once you have taken enough to be noticed.
 
-import { clamp } from './util.js';
+import { clamp, sum } from './util.js';
 
 export const STAGES = [
   { at: 0.00, title: 'Ashbrook, population 940',
@@ -29,17 +30,37 @@ export const STAGES = [
 ];
 
 /** Footprint, weighted, on a log scale so it climbs steadily across a run. */
-export function townTarget(state, d) {
+/**
+ * The four things the site takes from Ashbrook, each on its own scale, with
+ * the weight it carries. Exported so the town panel can show what is actually
+ * driving the dial — and therefore what to build more of.
+ */
+export function townStrands(state, d) {
   const tiles = Object.keys(state.tiles).length;
   // Each strand is capped a little above its target, so a site that is huge on
   // power can cover a small shortfall on water. Finishing the town should be
   // hard, not a knife edge.
   const cap = (v) => clamp(v, 0, 1.3);
-  const power = cap(Math.log10(1 + d.actualDraw) / Math.log10(1 + 2.4e6));
-  const thirst = cap(Math.log10(1 + d.waterDemand) / Math.log10(1 + 22_000));
-  const heat = cap(Math.log10(1 + d.heatLoad) / Math.log10(1 + 1.8e6));
-  const land = cap(tiles / 540);
-  return clamp(power * 0.34 + thirst * 0.26 + heat * 0.18 + land * 0.22, 0, 1);
+  return [
+    { id: 'power', label: 'Power', weight: 0.34, unit: 'kW', now: d.actualDraw,
+      full: 2.4e6, at: cap(Math.log10(1 + d.actualDraw) / Math.log10(1 + 2.4e6)) },
+    { id: 'water', label: 'Water', weight: 0.26, unit: 'L/s', now: d.waterDemand,
+      full: 22_000, at: cap(Math.log10(1 + d.waterDemand) / Math.log10(1 + 22_000)) },
+    { id: 'heat', label: 'Heat', weight: 0.18, unit: 'kW', now: d.heatLoad,
+      full: 1.8e6, at: cap(Math.log10(1 + d.heatLoad) / Math.log10(1 + 1.8e6)) },
+    { id: 'land', label: 'Land', weight: 0.22, unit: 'tiles', now: tiles,
+      full: 540, at: cap(tiles / 540) },
+  ];
+}
+
+export function townTarget(state, d) {
+  const strands = townStrands(state, d);
+  return clamp(sum(strands, (x) => x.at * x.weight), 0, 1);
+}
+
+/** Ashbrook started at 940 people. It does not go back up. */
+export function population(damage) {
+  return Math.max(0, Math.round(940 * (1 - damage) ** 1.4));
 }
 
 export function tickTown(state, d, hooks) {

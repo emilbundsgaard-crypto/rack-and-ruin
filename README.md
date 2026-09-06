@@ -69,9 +69,10 @@ campus. Only the numbers and the machinery change.
 | Research nodes | 87 across seven branches |
 | Cash upgrades | 32 permanent purchases |
 | Contract types | 18, gated behind your name, each with a few possible clients |
-| Random events | 20, seven of which stop and ask you a question |
+| Random events | 24, eight of which stop and ask you a question |
 | Machine icons | 32 hand-drawn glyphs, on the floor and in the build list |
 | The town next door | Ashbrook, in nine stages, from cricket pitch to nothing |
+| Ashbrook pushing back | 4 of those events, unlocked by how much you have taken |
 | Objectives | 35, in a guided chain |
 | Achievements | 36 |
 | Legacy perks | 15, bought with the points from selling the company |
@@ -80,6 +81,28 @@ A full run to the end of the research tree is a long evening — roughly five
 hours, less if you are ruthless with your floor plan.
 
 ![Ashbrook, halfway gone](docs/screenshot-town.png)
+
+## Money
+
+Cash is real and so is debt. Costs the site cannot cover are borrowed, not
+forgiven — there is a bank, and it is deliberately a poor deal:
+
+- The credit line starts at **$9,000** against a broom cupboard and widens with
+  the tier and with what the site actually earns.
+- Interest is **5% a day** on the balance, charged as a visible line in the
+  ledger, so it shows up in net income rather than quietly eating the balance.
+- **40%** of what you earn goes back to the bank before it reaches you, so a
+  loan clears itself if the site earns — and never becomes a trap if it does not.
+- A shortfall you cannot cover draws on the overdraft, with a fee on top.
+- Past the limit the bank stops. Nothing new can be bought and your name starts
+  to suffer. Selling and demolishing stay open, because they are the way out.
+
+A loan is a way out of a hole, not a way to skip a tier: a full run to the end
+of the research tree never needs one.
+
+The ledger on the Running tab breaks the whole thing down per second —
+electricity, fuel, water, wages, machine upkeep, SLA penalties and loan
+interest — so there is never a cost you cannot see.
 
 ## Playing
 
@@ -200,7 +223,7 @@ src/tutorial.js     the five-step guided opening
 tools/
   balance.mjs       headless economy probe
   bot.mjs           an automated player, used to check pacing over a long run
-  browser-check.mjs seventeen end-to-end checks in a real browser
+  browser-check.mjs twenty end-to-end checks in a real browser
   shots.mjs         regenerates every screenshot in docs/
 ```
 
