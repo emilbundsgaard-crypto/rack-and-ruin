@@ -29,7 +29,7 @@ export function newGame(legacy) {
     playtime: 0,
     day: 0,
 
-    money: 6_000 * Math.pow(LEGACY_BY_ID.l_start.per, seedLevels),
+    money: 10_000 * Math.pow(LEGACY_BY_ID.l_start.per, seedLevels),
     lifetimeEarnings: 0,
     reputation: repStart,
     repPeak: repStart,

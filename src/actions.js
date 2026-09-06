@@ -1,7 +1,7 @@
 // Everything the player can actually do. Each action validates, charges and
 // mutates state; the UI just calls these and re-renders.
 
-import { clamp } from './util.js';
+import { clamp, money } from './util.js';
 import { HARDWARE_BY_ID } from './data/hardware.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import { RESEARCH_BY_ID, available } from './data/research.js';
@@ -143,10 +143,39 @@ export function fillAll(state, d, hardwareId, hooks) {
     placed += room;
     allowed -= room;
   }
-  const msg = placed
-    ? `Installed ${placed} × ${hw.name}` + (stoppedOnPower ? ' — stopped at the power headroom.' : ' across the floor.')
-    : (allowed <= 0 ? 'No power headroom. Buy more supply first.' : 'Nothing to install — no free slots or no money.');
+  // Say what to do about it, not just what went wrong. Nearly always the
+  // answer is a bigger utility connection, which is one click away in Ops and
+  // which the player usually has the money for.
+  const spare = Math.max(0, gridCap(state) - state.gridPower);
+  const where = spare > 0
+    ? ` The utility will sell you ${Math.round(spare)} kW more — Running tab, Power.`
+    : ' Build your own generation, or move to a site with a bigger connection.';
+
+  let msg;
+  if (placed && stoppedOnPower) {
+    msg = `Installed ${placed} × ${hw.name}, then ran out of electricity.${where}`;
+  } else if (placed) {
+    msg = `Installed ${placed} × ${hw.name} across the floor.`;
+  } else if (allowed <= 0) {
+    msg = `No electricity left for another machine.${where}`;
+  } else if (Math.floor(state.money / unit) < 1) {
+    msg = `Not enough money — ${hw.name} costs ${money(unit)} each.`;
+  } else {
+    msg = 'Nothing to install — every rack is already full.';
+  }
   hooks?.log(msg, placed ? 'good' : 'bad');
+
+  // Machines in a rack with no power draw nothing and produce nothing, and the
+  // install otherwise looks like it worked. Say so.
+  if (placed) {
+    const dark = d.racks.filter((r) => r.used > 0 && r.pduFactor < 0.05).length;
+    if (dark > 0) {
+      hooks?.log(dark === 1
+        ? 'One rack has no power reaching it — the machines in it are doing nothing. Put a power strip within reach.'
+        : `${dark} racks have no power reaching them — the machines in them are doing nothing. `
+          + 'Put power strips within reach.', 'bad');
+    }
+  }
   return null;
 }
 

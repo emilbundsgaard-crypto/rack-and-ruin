@@ -401,6 +401,33 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------------ objectives nudge, they do not fund the whole run
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  const r = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const S = await import('/src/state.js');
+    const P = await import('/src/data/progression.js');
+    const s = S.newGame();
+    const d = sim.derive(s);
+    let cum = 0;
+    const first13 = P.OBJECTIVES.slice(0, 13)
+      .map((o, i) => { const c = sim.objectiveReward(o, d, i); cum += c; return Math.round(c); });
+    // Rewards must never exceed what the table allows, either.
+    const overCeiling = P.OBJECTIVES.some((o, i) =>
+      sim.objectiveReward(o, d, i) > (o.reward?.money || 0) + 0.01);
+    return { start: s.money, cumFirst13: Math.round(cum), first13, overCeiling };
+  });
+  // The first thirteen objectives arrive in the opening minutes. Paying their
+  // table value handed the player $815,000 there, which drowned out every
+  // contract in the game; a fresh site should still be counting thousands.
+  const ok = r.start === 10_000 && r.cumFirst13 < 60_000 && !r.overCeiling;
+  if (ok) pass('objectives nudge rather than fund the run', '$' + r.cumFirst13 + ' by objective 13');
+  else fail('objectives nudge rather than fund the run', JSON.stringify(r));
+  await page.close();
+}
+
 // --------------------------------------- overdrawn: no buying, and a way out
 {
   const page = await newPage();

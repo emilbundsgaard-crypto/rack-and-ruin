@@ -84,6 +84,12 @@ hours, less if you are ruthless with your floor plan.
 
 ## Money
 
+You start with **$10,000** and everything after that you earn. Contracts are
+the income; objectives are a nudge towards the next purchase, worth about half
+a day of what the site currently makes. They are not the economy — a rack that
+is powered, cooled and under contract nets around **$18/s** in the cupboard,
+and the first site upgrade is roughly half an hour of that.
+
 Cash is real, and it can go below zero.
 
 **Overdrawn, you buy nothing.** Not a machine, not a kilowatt, not a hire. The
@@ -106,7 +112,9 @@ and clearing the overdraft with a 5% loan is much cheaper than waiting for the
 call. The bank card offers it as one button.
 
 **Sink far enough and the bank rings.** At **$100K**, **$500K** and **$1M**
-overdrawn the clock stops and you get three answers:
+overdrawn the clock stops and you get three answers. There are three offers and
+no more — after the third the bank is done lending, and the only way out is to
+trade back above zero or start again:
 
 - **Take the terms.** They clear the hole and leave you three days of running
   costs to trade your way out — and you owe **2.5× all of it**, at 5% a day,
@@ -239,7 +247,7 @@ src/tutorial.js     the five-step guided opening
 tools/
   balance.mjs       headless economy probe
   bot.mjs           an automated player, used to check pacing over a long run
-  browser-check.mjs twenty-one end-to-end checks in a real browser
+  browser-check.mjs twenty-two end-to-end checks in a real browser
   shots.mjs         regenerates every screenshot in docs/
 ```
 

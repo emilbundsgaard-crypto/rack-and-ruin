@@ -157,8 +157,7 @@ export function renderTop(state, d) {
       meter('m_water', 'H2O'), meter('m_net', 'NET'));
     const minis = el('div', 'minis');
     minis.append(mini('x_temp', 'Temp'), mini('x_up', 'Uptime'), mini('x_rp', 'Points'),
-      mini('x_rep', 'Name'), mini('x_con', 'Deals'), mini('x_owed', 'Owed'),
-      mini('x_town', 'Town'));
+      mini('x_rep', 'Name'), mini('x_con', 'Deals'), mini('x_owed', 'Owed'));
 
     // Speed is a labelled segmented control. It is one of the two things a new
     // player looks for, so it is not allowed to be subtle.
@@ -219,10 +218,6 @@ export function renderTop(state, d) {
       + 'It unlocks bigger sites and better customers.';
     mk.x_con.n.dataset.tip = 'Deals|How many jobs you are running. There is no limit on the '
       + 'number — the only thing stopping you is spare compute.';
-    mk.x_town.n.dataset.tip = 'Ashbrook|How much of the town next door your site has ruined. '
-      + 'Open the Town tab to watch it happen.';
-    mk.x_town.n.style.cursor = 'pointer';
-    mk.x_town.n.onclick = () => goTab('town');
     mk.x_owed.n.dataset.tip = 'The bank|What you owe. Interest runs every day, and part of your '
       + 'income goes to paying it off before it reaches you. Click to open the bank.';
     mk.x_owed.n.style.cursor = 'pointer';
@@ -272,8 +267,6 @@ export function renderTop(state, d) {
   small(t.x_con, String(state.contracts.active.length),
     d.freeCompute > d.computeSellable * 0.15 ? 'acc' : '');
   small(t.x_owed, d.debt > 0 ? fmt(d.debt) : '—', d.overdrawn ? 'bad' : d.debt > 0 ? 'warn' : '');
-  small(t.x_town, ((state.town?.damage || 0) * 100).toFixed(0) + '%',
-    (state.town?.damage || 0) > 0.5 ? 'bad' : (state.town?.damage || 0) > 0.2 ? 'warn' : '');
 
   const snd = state.settings.sound !== false;
   const sb = t._sound.n;
@@ -457,6 +450,45 @@ function sec(title, ...kids) {
   return s;
 }
 
+/**
+ * Everything locked in this game is locked behind one thing — research — and
+ * the old note ("Locked — needs Enclosed racks.") never said so, never said
+ * where to go, and never said whether it was affordable. This does all three.
+ */
+function lockNote(state, reqId) {
+  const r = RESEARCH_BY_ID[reqId];
+  if (!r) return 'Locked.';
+  const affordable = state.rp >= r.cost;
+  return 'Research needed — "' + r.name + '", ' + fmt(r.cost) + ' points'
+    + (affordable ? ' (you can afford it now).' : '. You have ' + fmt(state.rp) + '.');
+}
+
+/** Takes you straight to the node that unlocks it. */
+function lockButton(state, reqId) {
+  const r = RESEARCH_BY_ID[reqId];
+  if (!r) return null;
+  const b = el('button', 'btn small' + (state.rp >= r.cost ? ' primary' : ''), 'Go to research');
+  b.dataset.tip = 'Research it|Opens the Upgrade tab at "' + r.name + '". '
+    + 'Points come from the share of your compute set aside for R&D.';
+  b.onclick = () => { goTab('upgrade'); highlightResearch(r.id); };
+  return b;
+}
+
+/** Ring the node for a moment so it is obvious which one to buy. */
+let flashResearch = null;
+function highlightResearch(id) {
+  flashResearch = id;
+  // The research panel shows one category at a time, so jumping to the tab is
+  // not enough — switch to the category the node actually lives in, or the
+  // player lands on a list that does not contain the thing they asked for.
+  const node = RESEARCH_BY_ID[id];
+  if (node) researchCat = node.cat;
+  // Render now rather than waiting for the panel's own slower clock, or the
+  // ring appears a beat after the tab has already changed under you.
+  markDirty(); renderUI();
+  setTimeout(() => { flashResearch = null; markDirty(); renderUI(); }, 2600);
+}
+
 function panelBuild(state, d) {
   const catRow = el('div', 'btnrow');
   for (const c of CATEGORIES) {
@@ -500,15 +532,16 @@ function panelBuild(state, d) {
       priceOk: afford && unlocked,
       desc: b.desc,
       meta: unlocked ? meta : null,
-      note: unlocked ? null : 'Locked — needs ' + (RESEARCH_BY_ID[b.req]?.name || b.req) + '.',
+      note: unlocked ? null : lockNote(state, b.req),
       cls: unlocked ? (afford ? '' : 'cant') : 'locked',
-      buttons: unlocked && b.cat === 'compute' && (d.counts.rackAll || 0) > 1 ? [(() => {
-        const up = el('button', 'btn small', 'Upgrade every rack');
-        up.dataset.tip = 'Upgrade every rack|Swaps every smaller cabinet on the floor for this '
-          + 'one, keeping the hardware inside. You pay the difference.';
-        up.onclick = (e) => { e.stopPropagation(); app.act(() => A.upgradeRacks(state, d, b.id, app.hooks)); };
-        return up;
-      })()] : null,
+      buttons: !unlocked ? [lockButton(state, b.req)].filter(Boolean)
+        : b.cat === 'compute' && (d.counts.rackAll || 0) > 1 ? [(() => {
+          const up = el('button', 'btn small', 'Upgrade every rack');
+          up.dataset.tip = 'Upgrade every rack|Swaps every smaller cabinet on the floor for this '
+            + 'one, keeping the hardware inside. You pay the difference.';
+          up.onclick = (e) => { e.stopPropagation(); app.act(() => A.upgradeRacks(state, d, b.id, app.hooks)); };
+          return up;
+        })()] : null,
       tip: b.name + '|' + b.desc + (detail.length ? '\n' + detail.join(' ') : ''),
       data: { build: b.id },
       onClick: unlocked ? () => {
@@ -556,7 +589,8 @@ function panelRacks(state, d) {
       cards.push(listRow({
         iconText: hw.short, iconColor: '#3f7dd6',
         name: hw.name, price: money(cost), cls: 'locked',
-        note: 'Locked — needs ' + (RESEARCH_BY_ID[hw.req]?.name || hw.req) + '.',
+        note: lockNote(state, hw.req),
+        buttons: [lockButton(state, hw.req)].filter(Boolean),
       }));
       continue;
     }
@@ -811,7 +845,8 @@ function panelResearch(state, d) {
       priceOk: afford && !done,
       desc: node.desc,
       note: !ok && !done ? 'Needs ' + missing : null,
-      cls: done ? 'owned' : ok ? (afford ? '' : 'cant') : 'locked',
+      cls: (done ? 'owned' : ok ? (afford ? '' : 'cant') : 'locked')
+        + (flashResearch === node.id ? ' flash' : ''),
       onClick: !done && ok ? () => app.act(() => A.buyResearch(state, node.id, app.hooks)) : null,
     });
   });
@@ -1181,7 +1216,9 @@ function panelSite(state, d) {
     title.append(el('b', null, (i + 1) + '. ' + o.name));
     if (cur) title.append(el('span', 'pill acc', 'current'));
     const rw = [];
-    if (o.reward?.money) rw.push(money(o.reward.money));
+    // Show what it will actually pay, not the ceiling in the table.
+    const cash = SIM.objectiveReward(o, d, i);
+    if (cash > 0) rw.push(money(cash));
     if (o.reward?.rp) rw.push(fmt(o.reward.rp) + ' RP');
     title.append(el('span', 'price', rw.join(' + ')));
     card.append(title);

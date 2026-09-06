@@ -113,7 +113,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .townmeter .mk { white-space: nowrap; }
 .townmeter .mv { font-size: 11px; }
 
-.minis { display: grid; grid-template-columns: repeat(3, auto); gap: 3px 16px;
+.minis { display: grid; grid-template-columns: repeat(3, auto); gap: 4px 18px;
+  grid-auto-flow: column; grid-template-rows: repeat(2, auto);
   align-content: center; min-width: 0; flex: none; }
 .mini { display: flex; gap: 8px; align-items: baseline; }
 .mini .mk { min-width: 46px; }
@@ -254,7 +255,20 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .row.click:active { background: #241d14; }
 .row.click:focus-visible { outline: 2px solid var(--acc); outline-offset: -2px; }
 .row.owned { background: #191a11; box-shadow: inset 2px 0 0 var(--good); }
-.row.locked { opacity: .38; }
+.row.locked { opacity: .5; }
+/* A locked row is locked behind research and nothing else, so it says so and
+   keeps its note readable rather than fading with the rest. */
+.row.locked .note { opacity: 1; color: var(--acc); }
+.row.locked .btn { opacity: 1; }
+/* Rung when you follow "Go to research" so the right node is obvious. */
+@keyframes flashrow {
+  0%, 100% { box-shadow: inset 0 0 0 0 transparent; }
+  50% { box-shadow: inset 0 0 0 2px var(--acc); background: #241d13; }
+}
+.row.flash { animation: flashrow .8s ease-in-out 3; }
+@media (prefers-reduced-motion: reduce) {
+  .row.flash { animation: none; box-shadow: inset 0 0 0 2px var(--acc); }
+}
 .row.cant .price { color: var(--warn); }
 .row .ico { width: 34px; height: 34px; border-radius: 3px; background: #100d0a center/22px no-repeat;
   border: 1px solid var(--line2); }
@@ -530,7 +544,6 @@ button:focus:not(:focus-visible) { outline: none; }
    minis 354, controls 491, plus gaps. */
 @media (max-width: 1560px) {
   #topbar { gap: 15px; }
-  .minis { grid-template-columns: repeat(2, auto); }
 }
 @media (max-width: 1330px) {
   .minis { display: none; }

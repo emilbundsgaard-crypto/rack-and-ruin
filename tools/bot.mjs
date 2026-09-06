@@ -1,6 +1,6 @@
 // A crude but competent player bot, used to check pacing over a long run.
 import { newGame, facilityOf, tileAt, key } from '../src/state.js';
-import { derive, tick, signContract, resolveDecision, legacyGain } from '../src/sim.js';
+import { derive, tick, signContract, resolveDecision, legacyGain, takeRescue } from '../src/sim.js';
 import * as A from '../src/actions.js';
 import { HARDWARE } from '../src/data/hardware.js';
 import { BUILDINGS } from '../src/data/buildings.js';
@@ -47,6 +47,13 @@ function step() {
   d = derive(s);
   const reserve = s.money * 0.15;
   const can = (c) => s.money - c > reserve;
+
+  // Answer the bank the way a player would: take the terms rather than let
+  // the site sink. Without this the offer sits unanswered for the whole run.
+  if (s.rescue) {
+    takeRescue(s, d, quiet);
+    d = derive(s);
+  }
 
   // Answer decision events immediately.
   if (pending) {

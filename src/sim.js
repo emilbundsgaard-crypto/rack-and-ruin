@@ -365,9 +365,24 @@ export function derive(state) {
   const noPower = racks.filter((r) => r.used > 0 && r.pduFactor < 0.95).length;
   const noCool = racks.filter((r) => r.used > 0 && r.cover < 0.95).length;
   if (rawPowerFactor < 0.98) {
+    // Almost always the fix is a bigger utility connection, already available
+    // and already affordable. Say that rather than leaving them to find it.
+    const spareGrid = Math.max(0, fac.gridCap - state.gridPower);
     problems.push({
       tone: 'bad', tab: 'ops',
-      text: `You need ${Math.ceil(demandKW - supplyKW)} kW more electricity. Everything is running slow.`,
+      text: `You need ${Math.ceil(demandKW - supplyKW)} kW more electricity — everything is running slow. `
+        + (spareGrid > 0
+          ? `The utility will sell you ${Math.round(spareGrid)} kW more on the Running tab.`
+          : 'Your utility connection is maxed out: build generation, or move to a bigger site.'),
+    });
+  } else if (state.gridPower < fac.gridCap * 0.999 && supplyKW - demandKW < demandKW * 0.15
+             && unitsTotal > 0) {
+    // Not starved yet, but one more rack will do it, and the connection is
+    // sitting there unbought.
+    problems.push({
+      tone: 'warn', tab: 'ops',
+      text: `You are close to your electricity limit. The utility will sell you `
+        + `${Math.round(fac.gridCap - state.gridPower)} kW more before you need it.`,
     });
   }
   if (noPower) {
@@ -552,7 +567,14 @@ export function tick(state, dt, d, hooks) {
     // counter pinned at zero. It costs more than a loan does, and your name
     // suffers for as long as it lasts.
     if (state.money < 0) {
-      state.money -= -state.money * OVERDRAFT_RATE * days;
+      // Compounding on an unbounded hole is exponential: left alone it runs to
+      // billions and the run is over in a way no player could have answered.
+      // Interest stops once the hole is past every offer the bank would make,
+      // so what is on screen stays a number a person could still act on.
+      const floorAt = OVERDRAFT_FLOOR;
+      if (state.money > floorAt) {
+        state.money = Math.max(floorAt, state.money + state.money * OVERDRAFT_RATE * days);
+      }
       bank.overdraftDays = (bank.overdraftDays || 0) + days;
       state.reputation = Math.max(0, state.reputation - 2 * days);
       if (state.day - (state.lastOverdraft || -99) > 5) {
@@ -567,7 +589,14 @@ export function tick(state, dt, d, hooks) {
       // per threshold.
       if (!state.rescue) {
         const level = bank.rescueLevel || 0;
-        if (-state.money >= rescueThreshold(level)) {
+        // The three lending offers land exactly on their thresholds. Once the
+        // bank is done lending the threshold stops moving, so that last
+        // offer — restart, or keep trying — is spaced out rather than
+        // re-asked every tick.
+        const spaced = canBorrowOut(state)
+          || state.day - (state.lastRescueOffer || -99) > 15;
+        if (spaced && -state.money >= rescueThreshold(level)) {
+          state.lastRescueOffer = state.day;
           state.rescue = { level, short: -state.money, day: state.day, net: d.netIncome };
           hooks?.onRescue?.(state.rescue);
         }
@@ -941,15 +970,21 @@ export const LOAN_RATE = 0.05;        // per day, on a loan you chose to take
 export const OVERDRAFT_RATE = 0.10;   // per day, on a balance below zero
 export const REPAY_SHARE = 0.4;       // of positive income, while you owe
 
-// How far under you have to be before the bank offers a way out. The first
-// three are the ones a player will actually meet; past those it keeps offering
-// at each doubling so a sinking site is never left without the choice.
+// How far under you have to be before the bank offers a way out. There are
+// three, and only three. Letting them go on doubling forever made the terms
+// compound: every rescue added debt, the interest on it sank the site faster,
+// and the next rescue was bigger — a loop that ran to infinity. After the
+// third the bank is done lending and the only way out is to start again.
 export const RESCUE_STEPS = [100_000, 500_000, 1_000_000];
+export const OVERDRAFT_FLOOR = -4_000_000;
 
 export function rescueThreshold(level) {
-  if (level < RESCUE_STEPS.length) return RESCUE_STEPS[level];
-  const last = RESCUE_STEPS[RESCUE_STEPS.length - 1];
-  return last * Math.pow(2, level - RESCUE_STEPS.length + 1);
+  return RESCUE_STEPS[Math.min(level, RESCUE_STEPS.length - 1)];
+}
+
+/** Whether the bank will still lend, or whether it is restart-or-nothing. */
+export function canBorrowOut(state) {
+  return (state.bank?.rescueLevel || 0) < RESCUE_STEPS.length;
 }
 
 /**
@@ -963,10 +998,11 @@ export function rescueTerms(state, d) {
   const multiple = 2.5 + level * 0.75;
   // Clearing the hole alone would be useless: a site losing money is back
   // under within a tick, and you still could not buy the thing that fixes it.
-  // So the deal includes a few days of running costs as a float — and you pay
-  // the same punitive multiple on all of it.
-  const loss = Math.max(0, -(d?.netIncome ?? state.rescue?.net ?? 0));
-  const float = loss * DAY_SECONDS * 3;
+  // So the deal includes a working float — but tied to the hole, never to the
+  // size of the loss. Scaling it with losses made repeated rescues a money
+  // printer: run at a huge deficit, take the terms, and be handed three days
+  // of those costs in cash, over and over.
+  const float = short * 0.2;
   return {
     level,
     short,
@@ -982,6 +1018,9 @@ export function rescueTerms(state, d) {
 /** Take the bank's offer: back to zero, and paying for it for a long time. */
 export function takeRescue(state, d, hooks) {
   if (!state.rescue) return 'There is nothing to settle.';
+  if (!canBorrowOut(state)) {
+    return 'The bank has lent you all it is going to. There is nothing left but to start again.';
+  }
   const bank = state.bank;
   // Settle against the balance as it stands now, not as it stood when the
   // offer was made, so accepting always leaves you at exactly zero.
@@ -1066,6 +1105,25 @@ export function repay(state, amount, hooks) {
 
 // -------------------------------------------------------- objectives & badges
 
+/**
+ * What an objective actually pays. The numbers in the table are ceilings from
+ * a time when they were the whole economy: taken literally they hand you
+ * $815,000 by the thirteenth objective, which arrives in the first few minutes
+ * and drowns out every contract you will ever sign.
+ *
+ * A reward is a nudge towards the next purchase, not the income. So it is the
+ * smaller of what the table says and half a day of what the site currently
+ * earns, floored at an amount that keeps the opening hour moving before there
+ * is any revenue at all.
+ */
+export function objectiveReward(o, d, index) {
+  const declared = o.reward?.money || 0;
+  if (!declared) return 0;
+  const halfDay = Math.max(0, d.revenue) * DAY_SECONDS * 0.5;
+  const floor = 400 * Math.pow(1.3, index);
+  return Math.min(declared, Math.max(floor, halfDay));
+}
+
 export function checkObjectives(state, d, hooks) {
   const total = RESEARCH.length;
   const met = (x) => { try { return !!x.check(d, total); } catch (err) { return false; } };
@@ -1081,7 +1139,8 @@ export function checkObjectives(state, d, hooks) {
     const ok = met(o) || OBJECTIVES.slice(i + 1).some(met);
     if (ok) {
       state.objectives.done.push(o.id);
-      if (o.reward?.money) { state.money += o.reward.money; state.lifetimeEarnings += o.reward.money; }
+      const cash = objectiveReward(o, d, i);
+      if (cash > 0) { state.money += cash; state.lifetimeEarnings += cash; }
       if (o.reward?.rp) state.rp += o.reward.rp;
       hooks?.log(`Objective complete — ${o.name}.`, 'good');
       hooks?.onObjective?.(o);

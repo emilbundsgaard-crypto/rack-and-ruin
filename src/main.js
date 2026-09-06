@@ -204,6 +204,19 @@ app.confirmPrestige = () => {
  */
 function onRescue(pending) {
   const t = rescueTerms(app.state, app.d);
+  if (!SIM.canBorrowOut(app.state)) {
+    // Three rescues is all there is. Past that the offer is only the exit.
+    showModal('The bank is done', 'They will not lend you any more.', [
+      `You are ${money(t.short)} overdrawn and the bank has already bailed you out `
+      + `${app.state.bank.rescues} times. There is no fourth.`,
+      'Sell everything you cannot run and trade your way back above zero, or put the site down '
+      + 'and start again with what you have learned.',
+    ], [
+      { label: 'Keep trying', onClick: () => { SIM.declineRescue(app.state); markDirty(); renderUI(); } },
+      { label: 'Put it down and start again', kind: 'danger', onClick: () => confirmRestart() },
+    ], { sticky: true });
+    return;
+  }
   const body = [
     `You are ${money(t.short)} overdrawn. Nothing can be bought, the hole grows `
     + `${Math.round(SIM.OVERDRAFT_RATE * 100)}% a day, and your name is going with it.`,
@@ -227,8 +240,10 @@ function onRescue(pending) {
       + '. Each one is worse than the last.'));
   }
 
-  showModal('The bank is on the phone', 'There are two ways out of this.', body, [
-    {
+  const lendable = SIM.canBorrowOut(app.state);
+  const buttons = [];
+  if (lendable) {
+    buttons.push({
       label: 'Take the terms',
       kind: 'primary',
       onClick: () => {
@@ -237,7 +252,13 @@ function onRescue(pending) {
         app.d = derive(app.state);
         markDirty(); renderUI();
       },
-    },
+    });
+  }
+  showModal(
+    lendable ? 'The bank is on the phone' : 'The bank is done',
+    lendable ? 'There are two ways out of this.' : 'They will not lend you any more.',
+    body, [
+    ...buttons,
     {
       label: 'Put it down and start again',
       kind: 'danger',
