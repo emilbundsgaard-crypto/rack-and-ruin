@@ -173,14 +173,26 @@ function speaker(on) { return SPK + (on ? WAVE : MUTE) + '</svg>'; }
  * measured on the viewer's machine. The readouts duplicated inside the panels
  * are dropped, widest first, until the row fits.
  */
-let fitSig = '';
+let fitSig = -1;
 export function fitTopBar(force) {
   const bar = document.getElementById('topbar');
   if (!bar || bar.offsetParent === null) return;
-  const sig = bar.clientWidth + ':' + (topBuilt ? topBuilt.v_cash.big.textContent
-    + topBuilt.v_compute.big.textContent : '');
-  if (!force && sig === fitSig) return;
-  fitSig = sig;
+  // Only the window width can change the answer. The readouts have fixed
+  // widths, so a rolling number cannot.
+  //
+  // This used to include the cash and compute text in its signature, which
+  // meant it re-ran on every frame the counters ticked — and every run took
+  // the blocks out, measured, and put them back. That is what made the
+  // temperature and uptime readouts flash in and out while you played.
+  const width = bar.clientWidth;
+  // Re-measure when the window changed, or when the bar is overflowing right
+  // now — the latter catches content that grew after the first measurement,
+  // for instance because a webfont finished loading. Reading scrollWidth is
+  // cheap; it is the remove-and-re-add below that must not run every frame.
+  const spilling = bar.scrollWidth > bar.clientWidth + 1
+    && !bar.classList.contains('hide-meters');
+  if (!force && width === fitSig && !spilling) return;
+  fitSig = width;
   bar.classList.remove('hide-minis', 'hide-meters');
   if (bar.scrollWidth > bar.clientWidth + 1) bar.classList.add('hide-minis');
   if (bar.scrollWidth > bar.clientWidth + 1) bar.classList.add('hide-meters');
@@ -1706,7 +1718,13 @@ export function renderEvents(state) {
   }
   eventSig = sig;
   if (!list.length) { box.replaceChildren(); return; }
-  fill(box, list.map((ev) => {
+  // Four "Rescue terms" chips in a row is a wall, not information. Show the
+  // few that are ending soonest and count the rest.
+  const MAX = 3;
+  const sorted = [...list].sort((a, b) => a.until - b.until);
+  const shown = sorted.slice(0, MAX);
+  const extra = sorted.length - shown.length;
+  fill(box, shown.map((ev) => {
     const def = EVENTS_BY_ID[ev.id];
     const tone = ev.tone || def?.tone || 'neutral';
     const name = ev.label || def?.name || ev.id;
@@ -1717,6 +1735,15 @@ export function renderEvents(state) {
       + '\n' + describeMods(ev.mods || def?.mods || {});
     return chip;
   }));
+  if (extra > 0) {
+    const more = el('div', 'ev more', '+' + extra + ' more');
+    more.dataset.tip = 'Also running|' + sorted.slice(MAX).map((ev) => {
+      const def = EVENTS_BY_ID[ev.id];
+      return (ev.label || def?.name || ev.id)
+        + ' — ' + Math.max(0, ev.until - state.day).toFixed(1) + 'd left';
+    }).join('\n');
+    box.append(more);
+  }
 }
 
 const MOD_NAMES = {

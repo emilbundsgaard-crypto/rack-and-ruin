@@ -685,6 +685,113 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------- a wall of events never breaks the row above the floor
+{
+  const bad = [];
+  for (const [w, h] of [[2000, 1000], [1600, 950], [1440, 900], [1280, 800], [1100, 760],
+                        [900, 700], [390, 844]]) {
+    const page = await newPage(w, h);
+    await page.click('text=Start in the cupboard');
+    // Six running events at once, which is what several bank rescues plus
+    // weather looks like, and a cash figure with a lot of digits.
+    await page.evaluate(async () => {
+      const app = window.__rr;
+      const sim = await import('/src/sim.js');
+      const s = app.state;
+      s.tutorial.skipped = true; s.money = 1.79e10; s.settings.speed = 0;
+      ['Rescue terms', 'Rescue terms', 'Rescue terms', 'Investor revenue share',
+       'Recalled boards in service', 'Drought restrictions'].forEach((label, i) => {
+        s.events.active.push({ id: 'x' + i, label, tone: i < 3 ? 'bad' : 'neutral',
+          until: s.day + 7 + i * 3, started: s.day, mods: {} });
+      });
+      app.d = sim.derive(s);
+    });
+    await page.waitForTimeout(600);
+    const m = await page.evaluate(() => {
+      const fh = document.getElementById('floorhead');
+      const ft = document.getElementById('floortools');
+      const rows = (sel) => new Set([...document.querySelectorAll(sel)]
+        .map((n) => Math.round(n.getBoundingClientRect().top))).size;
+      // On a phone the row scrolls sideways on purpose, so "reachable" is the
+      // question, not "on screen at rest".
+      if (getComputedStyle(fh).overflowX === 'auto') fh.scrollLeft = fh.scrollWidth;
+      const r = ft.getBoundingClientRect();
+      return {
+        pageOverflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
+        headH: Math.round(fh.getBoundingClientRect().height),
+        toolRows: rows('#floortools .tool'),
+        evRows: rows('#events .ev'),
+        toolsReachable: r.right <= window.innerWidth + 2,
+      };
+    });
+    // The row has one line of buttons and one line of chips, always, and the
+    // page itself never scrolls sideways.
+    if (m.pageOverflowX || m.toolRows > 1 || m.evRows > 1 || !m.toolsReachable
+        || m.headH < 30) {
+      bad.push(`${w}px: ${JSON.stringify(m)}`);
+    }
+    await page.close();
+  }
+  if (!bad.length) pass('a wall of events never breaks the row above the floor', '7 widths');
+  else fail('a wall of events never breaks the row above the floor', bad[0]);
+}
+
+// --------------------------------- the top bar readouts do not flicker in play
+{
+  const page = await newPage(1440, 950);
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(async () => {
+    const app = window.__rr;
+    const sim = await import('/src/sim.js');
+    const A = await import('/src/actions.js');
+    const R = await import('/src/data/research.js');
+    const s = app.state;
+    s.tutorial.skipped = true; s.gridPower = 200; s.money = 41500;
+    for (const r of R.RESEARCH.slice(0, 10)) s.research.done.push(r.id);
+    let d = sim.derive(s);
+    A.place(s, d, 2, 2, 'pdu', null); d = sim.derive(s);
+    A.place(s, d, 3, 2, 'rack', null); d = sim.derive(s);
+    A.place(s, d, 2, 3, 'fan', null); d = sim.derive(s);
+    A.fillAll(s, d, 'desktop', null);
+    app.d = sim.derive(s);
+    s.settings.speed = 10;
+  });
+  // Let the first fit settle, then watch. One toggle at load is the bar
+  // deciding what fits; a toggle after that is the flicker.
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => {
+    window.__toggles = 0;
+    new MutationObserver(() => { window.__toggles++; })
+      .observe(document.getElementById('topbar'), { attributes: true, attributeFilter: ['class'] });
+  });
+  await page.waitForTimeout(4000);
+  const r = await page.evaluate(() => ({
+    toggles: window.__toggles,
+    minis: document.querySelector('.minis').offsetParent !== null,
+    // And the money must never be cut off inside its fixed-width box.
+    clipped: (() => {
+      const big = document.querySelector('#v_cash .big');
+      const probe = document.createElement('span');
+      probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;';
+      probe.style.font = getComputedStyle(big).font;
+      probe.textContent = '$1.23QaDc';
+      document.body.append(probe);
+      const need = probe.getBoundingClientRect().width;
+      probe.remove();
+      return need > big.clientWidth + 1;
+    })(),
+  }));
+  // The readouts have fixed widths, so nothing about a rolling counter can
+  // change whether they fit. Any toggle here is the fit being recomputed on a
+  // number tick, which is what made them flash in and out.
+  if (r.toggles === 0 && !r.clipped) {
+    pass('the top bar readouts stay put while the numbers roll');
+  } else {
+    fail('the top bar readouts stay put while the numbers roll', JSON.stringify(r));
+  }
+  await page.close();
+}
+
 // ------------------------------------------ the top bar never overlaps itself
 {
   // The bar never wraps, so anything that does not fit prints on top of its
