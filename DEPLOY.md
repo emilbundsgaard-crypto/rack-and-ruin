@@ -1,67 +1,122 @@
-# Putting ClouterX on your Simply.com server — from a MacBook
+# Sådan lægger du ClouterX på din Simply-server
 
-The game is static files: HTML, CSS and ES modules. No build step, no Node, no
-database. 20 files, 396 KB.
+Du skifter frem og tilbage mellem to steder. Hvert trin herunder siger tydeligt
+hvor du er:
 
-Everything below uses Terminal, which is already on your Mac. Open it with
-**⌘ + Space**, type `terminal`, press Return.
+- 🌐 **I BROWSEREN** — Simply's kontrolpanel på simply.com
+- ⌨️ **I TERMINAL** — programmet Terminal på din Mac
+
+Åbn Terminal sådan her: tryk **⌘ + Mellemrum**, skriv `terminal`, tryk **Retur**.
+Der kommer et vindue med noget tekst og en blinkende markør. Det er alt.
+
+Fem ting det er rart at vide om Terminal, før du går i gang:
+
+1. Du skriver én linje og trykker **Retur**. Så sker der noget.
+2. **Når du skriver en adgangskode, kan du ikke se den.** Der sker ingenting på
+   skærmen — ingen prikker, ingenting. Det er med vilje. Skriv den alligevel og
+   tryk Retur.
+3. Du kan copy-paste ind i Terminal med **⌘V**, ligesom alle andre steder.
+4. Er markøren tilbage og klar, er kommandoen færdig.
+5. Går noget galt, kan du altid lukke vinduet og starte forfra. Du kan ikke
+   ødelægge din Mac med det her.
 
 ---
 
-## 1. Find your SFTP details
+# DEL 1 🌐 I BROWSEREN — find tre oplysninger
 
-Log in at [simply.com](https://www.simply.com) → your domain → **SFTP/FTP**.
-Note down:
+Gå ind på **simply.com** og log ind. Klik ind på dit domæne. Find menupunktet
+**SFTP/FTP**.
 
-- **Host** — something like `ssh.simply.com`
-- **Username** — usually your customer number, e.g. `s123456`
-- **Password**
+Skriv de her tre ting ned på et stykke papir:
 
-Also note the **web root**: the folder whose contents appear when you visit
-your domain. On Simply that is normally `public_html`. If ClouterX is an addon
-domain it may be `public_html/clouterx.dk`.
+| | Ser typisk sådan ud |
+|---|---|
+| **Host** | `ssh.simply.com` |
+| **Brugernavn** | `s123456` (dit kundenummer) |
+| **Adgangskode** | den du selv har sat |
+
+Find også ud af hvad din **webrod** hedder. Det er den mappe, hvis indhold
+vises når nogen besøger dit domæne. Hos Simply hedder den næsten altid
+`public_html`.
+
+> Herfra bruger jeg **BRUGERNAVN** i alle kommandoer. Hver gang du ser det,
+> skal du skrive dit eget i stedet — altså fx `s123456`.
 
 ---
 
-## 2. Back up what is on there now
+# DEL 2 ⌨️ I TERMINAL — tag en sikkerhedskopi
 
-You are about to delete it, and that cannot be undone. This copies the whole
-web root to your Desktop first:
+Du sletter alt på serveren om lidt, og det kan ikke fortrydes. Så vi henter en
+kopi ned på dit skrivebord først.
+
+**Kopier de her tre linjer ind i Terminal, én ad gangen, med Retur imellem:**
 
 ```bash
 cd ~/Desktop
 mkdir clouterx-backup
 cd clouterx-backup
-sftp USERNAME@ssh.simply.com
 ```
 
-It will ask for your password. Then, at the `sftp>` prompt:
+Der sker ikke noget synligt. Det er rigtigt. Nu skriver du:
+
+```bash
+sftp BRUGERNAVN@ssh.simply.com
+```
+
+Første gang spørger den måske `Are you sure you want to continue connecting?`
+— skriv `yes` og tryk Retur.
+
+Så spørger den om din adgangskode. **Husk: du kan ikke se den mens du skriver.**
+Skriv den, tryk Retur.
+
+Nu ser markøren anderledes ud. Der står:
+
+```
+sftp>
+```
+
+**Det betyder at du nu står inde på serveren.** Kommandoerne her er andre end
+før. Skriv:
 
 ```
 get -r public_html
+```
+
+Nu henter den hele siden ned. Det tager et øjeblik, og der løber filnavne over
+skærmen. Vent til `sftp>` kommer tilbage. Så skriver du:
+
+```
 bye
 ```
 
-You now have `~/Desktop/clouterx-backup/public_html` with the old site in it.
-Check it is there before going on.
+Det lukker forbindelsen, og du er tilbage i almindelig Terminal.
+
+**Tjek at det virkede:** åbn Finder, gå til Skrivebord → `clouterx-backup`.
+Der skal ligge en mappe `public_html` med dit gamle site i. Ligger den der ikke,
+så gå ikke videre — skriv til mig i stedet.
 
 ---
 
-## 3. Empty the web root
+# DEL 3 🌐 I BROWSEREN — slet alt på serveren
 
-Do this in the browser, not Terminal — SFTP has no "delete a folder and
-everything in it", and in the File Manager you can see exactly what is going.
+Det her gør vi i browseren og ikke i Terminal, fordi du skal kunne **se** hvad
+der forsvinder.
 
-1. Simply control panel → your domain → **Filhåndtering** (File Manager)
-2. Open `public_html`
-3. Select everything inside it — ⌘A, or the "select all" checkbox
-4. Delete
+1. Gå tilbage til Simply's kontrolpanel
+2. Klik på dit domæne
+3. Find **Filhåndtering** (den hedder måske "File Manager")
+4. Dobbeltklik ind i mappen **`public_html`**
+5. Markér alt der ligger derinde
+6. Klik **Slet**
 
-Leave the `public_html` folder itself. You want it empty, not gone.
+⚠️ **Vigtigt:** du skal slette *indholdet* i `public_html`, ikke mappen selv.
+Mappen skal blive liggende — bare tom.
 
 ---
 
-## 4. Get the game onto your Mac
+# DEL 4 ⌨️ I TERMINAL — hent spillet og læg det op
+
+Tilbage i Terminal. Først henter vi spillet ned på din Mac:
 
 ```bash
 cd ~/Desktop
@@ -69,87 +124,93 @@ git clone https://github.com/emilbundsgaard-crypto/rack-and-ruin.git clouterx
 cd clouterx
 ```
 
-If Terminal says `git: command not found`, macOS will offer to install the
-developer tools — accept, wait, and run the clone again.
+> Siger den `git: command not found`? Så popper macOS et vindue op og tilbyder
+> at installere nogle udviklerværktøjer. Klik **Installer**, vent til den er
+> færdig (et par minutter), og kør så de tre linjer igen.
 
----
-
-## 5. Upload
-
-One command. Replace `USERNAME` with yours:
+Nu ligger spillet i en mappe der hedder `clouterx` på dit skrivebord.
+Så lægger vi det op:
 
 ```bash
-./tools/deploy.sh USERNAME@ssh.simply.com public_html
+./tools/deploy.sh BRUGERNAVN@ssh.simply.com public_html
 ```
 
-It asks for your password once, then uploads the 20 files the site needs into
-the right folders. It never deletes anything — that was step 3.
+Den spørger om din adgangskode igen (som stadig er usynlig). Så kører den, og
+du ser filnavne løbe over skærmen. Når der står **`Done.`** er den færdig.
 
-If your web root is an addon-domain folder, say so:
+Scriptet lægger de 20 filer op som siden har brug for, og laver selv de mapper
+der skal være. Det sletter aldrig noget — det klarede du i Del 3.
+
+---
+
+# DEL 5 🌐 I BROWSEREN — se om det virker
+
+Skriv dit domæne i adresselinjen. Du skulle gerne se ClouterX-titelskærmen.
+
+**Ser du stadig det gamle site?** Det er din browsers cache. Tryk **⇧⌘R** for
+en hård genindlæsning, eller åbn siden i et privat vindue.
+
+---
+
+# Hvis noget går galt
+
+**Siden er helt blank.**
+Næsten altid fordi serveren sender spillets filer med den forkerte type.
+Uploadscriptet lægger allerede en rettelse op automatisk. Er den stadig blank,
+så skriv til mig hvad der står i browserens konsol (⌥⌘I).
+
+**`Permission denied` da du prøvede at uploade.**
+Forkert brugernavn eller adgangskode. Prøv at logge ind alene med
+`sftp BRUGERNAVN@ssh.simply.com` og se om det overhovedet lykkes.
+
+**`No such file or directory` med `public_html`.**
+Din webrod hedder noget andet. Log ind med `sftp BRUGERNAVN@ssh.simply.com`,
+skriv `ls`, og se hvad mapperne rent faktisk hedder. Brug det navn i stedet.
+
+**Du er faret vild i Terminal.**
+Skriv `cd ~/Desktop/clouterx` og tryk Retur. Så står du det rigtige sted igen.
+
+---
+
+# Bagefter: slå HTTPS til
+
+I Simply's kontrolpanel under dit domæne er der et punkt der hedder **SSL**.
+Slå det gratis Let's Encrypt-certifikat til. Spillet virker uden, men browsere
+er efterhånden sure på almindelig HTTP, og lyden kræver det i nogle af dem.
+
+---
+
+# Når du senere vil opdatere spillet
+
+To linjer i Terminal:
 
 ```bash
-./tools/deploy.sh USERNAME@ssh.simply.com public_html/clouterx.dk
+cd ~/Desktop/clouterx && git pull
+./tools/deploy.sh BRUGERNAVN@ssh.simply.com public_html
 ```
 
----
-
-## 6. Open your domain
-
-It should load straight away.
+Du skal ikke slette noget først — den skriver bare hen over. Og spillernes
+gemte spil ligger i deres egen browser, så en opdatering rører dem aldrig.
 
 ---
 
-## If something is wrong
+# Helt uden Terminal
 
-**Blank page.** Almost always the server is sending `.js` as `text/plain`, and
-browsers refuse to run modules that are not `text/javascript`. The upload
-script already puts a `.htaccess` next to `index.html` that fixes this. If the
-page is still blank, open the browser console (⌥⌘I in Safari or Chrome) — the
-error will name the file it refused.
+Vil du hellere slippe for Terminal:
 
-**404s for `src/main.js`.** The folder structure was flattened. Re-run step 5;
-the script recreates `src/`, `src/data/` and `styles/` for you.
+1. Gå til [repoet på GitHub](https://github.com/emilbundsgaard-crypto/rack-and-ruin)
+2. Klik den grønne **Code**-knap → **Download ZIP**
+3. Dobbeltklik ZIP-filen så den pakkes ud
+4. I Simply's **Filhåndtering**: upload `index.html`, mappen `src` og mappen
+   `styles` ind i `public_html`
 
-**`Permission denied` when uploading.** Wrong username or password, or the web
-root path is wrong. Log in with plain `sftp USERNAME@ssh.simply.com` and run
-`ls` to see what is actually there.
+Mapperne `docs` og `tools` skal ikke med — de bruges ikke af siden.
 
-**The old site still shows.** Your browser cached it. Hard-reload with
-**⇧⌘R**, or open the site in a private window.
-
----
-
-## Turning on HTTPS
-
-Simply control panel → your domain → **SSL** → enable the free Let's Encrypt
-certificate. The game works without it, but browsers are increasingly
-unfriendly to plain HTTP, and sound needs a secure context in some of them.
-
----
-
-## Updating later
-
-```bash
-cd ~/Desktop/clouterx
-git pull
-./tools/deploy.sh USERNAME@ssh.simply.com public_html
-```
-
-No need to empty anything — it overwrites in place. Saves live in each
-player's own browser (`localStorage`), so an update never touches anybody's
-progress; the save format is versioned and migrates itself.
-
----
-
-## Doing it without Terminal
-
-If you would rather not use Terminal at all: download the repository as a ZIP
-from GitHub (green **Code** button → **Download ZIP**), unzip it, and in the
-File Manager upload `index.html`, the `src` folder and the `styles` folder
-into `public_html`. Delete nothing else from the ZIP — `docs/` and `tools/` are
-just not needed. You will also want to create a file called `.htaccess` in
-`public_html` containing one line:
+Lav til sidst en fil i `public_html` der hedder `.htaccess` med præcis denne
+ene linje i:
 
 ```apache
 AddType text/javascript .js
 ```
+
+Uden den er der en risiko for at siden bare er blank.
