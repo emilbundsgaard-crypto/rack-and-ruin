@@ -121,7 +121,14 @@ export function syncTool() {
     : t ? (ALL_BUILDINGS.find((x) => x.id === t)?.name || 'machine') : null;
   if (b._name !== name) {
     b._name = name;
-    if (name) fill(b, el('span', 'x', '\u2715'), document.createTextNode(name));
+    if (name) {
+      b.textContent = '\u2715';
+      // The name lives in the label and the tooltip rather than on the button,
+      // which only has to be findable — the list row already says "selected".
+      b.setAttribute('aria-label', 'Put down ' + name.toLowerCase());
+      b.dataset.tip = 'Put down ' + name.toLowerCase()
+        + '|Stops placing, so clicking the floor does nothing. Escape works too.';
+    }
   }
   if (b.hidden === !!name) b.hidden = !name;
 }

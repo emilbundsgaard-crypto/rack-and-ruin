@@ -793,7 +793,8 @@ async function clickTile(page, gx, gy) {
   await page.waitForTimeout(400);
   const drop = () => page.evaluate(() => {
     const b = document.querySelector('.dropbtn');
-    return { hidden: b.hidden, label: b.textContent.trim() };
+    return { hidden: b.hidden, label: b.textContent.trim(),
+      tip: b.getAttribute('aria-label') || '' };
   });
   const idle = await drop();
   await page.click('[data-build="pdu"]');
@@ -811,8 +812,9 @@ async function clickTile(page, gx, gy) {
   await page.waitForTimeout(400);
   const after = await drop();
   const tool = await page.evaluate(() => window.__rr.view.tool);
-  if (idle.hidden && !held.hidden && /power strip/i.test(held.label) && after.hidden && !tool
-      && fit.h <= 34 && fit.w <= 200 && fit.inside) {
+  // Small enough to stay out of the way, big enough to hit with a thumb.
+  if (idle.hidden && !held.hidden && /power strip/i.test(held.tip) && after.hidden && !tool
+      && fit.h <= 40 && fit.w <= 40 && fit.h >= 26 && fit.inside) {
     pass('a held machine can always be put down', fit.w + '×' + fit.h);
   } else {
     fail('a held machine can always be put down', JSON.stringify({ idle, held, after, tool, fit }));

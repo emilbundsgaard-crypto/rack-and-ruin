@@ -180,21 +180,18 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .tool { border-radius: 3px; padding: 5px 11px; font-size: 11.5px; color: var(--dim); }
 .tool:hover { background: #201a14; color: var(--fg); }
 .tool.on { background: var(--acc-dim); color: #ffdca0; box-shadow: inset 0 0 0 1px #8a6224; }
-/* Only on screen while a machine is held. Small, and out of the way in the
-   top right, where it never covers the floor you are aiming at. */
+/* Only on screen while a machine is held. Just the cross: which machine you
+   are holding is already on the row that is marked "selected", so the button
+   only has to be findable, not explanatory. */
 .dropbtn {
   position: absolute; right: 10px; top: 10px; z-index: 21;
-  display: flex; align-items: center; gap: 6px;
-  background: #1d1710e8; color: var(--acc); font-weight: 600; white-space: nowrap;
-  border: 1px solid #6b4d1e; border-radius: 999px; padding: 4px 10px 4px 8px;
-  font-size: 11px; box-shadow: 0 4px 14px #0008;
+  display: grid; place-items: center; width: 30px; height: 30px; padding: 0;
+  background: #1d1710e8; color: var(--acc);
+  border: 1px solid #6b4d1e; border-radius: 50%;
+  font-size: 13px; line-height: 1; box-shadow: 0 4px 14px #0008;
 }
-.dropbtn .x {
-  display: grid; place-items: center; width: 14px; height: 14px; flex: none;
-  border-radius: 50%; background: var(--acc); color: #17120a; font-size: 11px; line-height: 1;
-}
-.dropbtn:hover { background: #2a2116; color: #ffc258; }
-.dropbtn:active { background: #17120a; }
+.dropbtn:hover { background: var(--acc); color: #17120a; border-color: var(--acc); }
+.dropbtn:active { background: #e09428; color: #17120a; }
 
 #canvaswrap { position: relative; overflow: hidden; min-height: 220px;
   background: radial-gradient(900px 640px at 46% 14%, #191510, #0b0908 74%); }
@@ -674,10 +671,10 @@ button:focus:not(:focus-visible) { outline: none; }
   .btn.small { padding: 9px 11px; }
   .sheet { width: min(94vw, 460px); padding: 20px 18px; }
   /* The guide card spans the top of a phone screen, so the button goes to the
-     bottom corner instead, with the toasts stacked above it. */
-  .dropbtn { right: 8px; top: auto; bottom: 8px; padding: 6px 11px 6px 9px; font-size: 11.5px; }
-  .dropbtn .x { width: 16px; height: 16px; font-size: 12px; }
-  #toasts { max-width: 74%; right: 8px; bottom: 48px; }
+     bottom corner instead, with the toasts stacked above it. A shade bigger
+     than on a desktop, because it is hit with a thumb. */
+  .dropbtn { right: 8px; top: auto; bottom: 8px; width: 36px; height: 36px; font-size: 15px; }
+  #toasts { max-width: 74%; right: 8px; bottom: 52px; }
   #ghost { display: none; }
 }
 
