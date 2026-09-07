@@ -14,6 +14,9 @@ python3 -m http.server 8000
 # then open http://localhost:8000
 ```
 
+To put it on your own domain, see **[DEPLOY.md](DEPLOY.md)** — it is 424 KB of
+static files and needs nothing but a web server.
+
 ![The title screen: a server hall receding into the dark](docs/screenshot-title.png)
 
 It is built for a desktop or tablet screen — the floor plan wants room — but it
