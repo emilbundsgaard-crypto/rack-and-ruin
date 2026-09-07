@@ -270,6 +270,7 @@ export class FloorView {
       this.dragging = true;
       this.panned = false;
       this.button = e.button;
+      this.touch = e.pointerType === 'touch';
       // Remember where the drag began. A drag paints the tiles it moves over,
       // so without this the tile the pointer went down on is never touched and
       // dragging across a row always leaves its first tile behind.
@@ -294,10 +295,16 @@ export class FloorView {
       this.hover = this.pick(p.x, p.y);
       if (this.dragging && last) {
         const dx = p.x - last.x, dy = p.y - last.y;
-        if (Math.abs(dx) + Math.abs(dy) > 3) this.panned = true;
-        if (this.button === 1 || this.button === 2 || !this.tool) {
+        // A finger needs more slack than a mouse before a tap counts as a drag.
+        if (Math.abs(dx) + Math.abs(dy) > (this.touch ? 9 : 3)) this.panned = true;
+        // With a machine held, dragging paints a row on a mouse. On a touch
+        // screen dragging has to move the camera instead — it is the only way
+        // to get around, and painting a row by accident while trying to scroll
+        // the floor is the easiest mistake on a phone. There, you tap to place.
+        const paintDrag = this.tool && !this.touch;
+        if (this.button === 1 || this.button === 2 || !paintDrag) {
           this.ox += dx; this.oy += dy;
-        } else if (this.tool && this.panned) {
+        } else if (this.panned) {
           if (!this.paintedDown && this.downTile) {
             this.paintedDown = true;
             this.cb.onPaint?.(this.downTile.x, this.downTile.y);

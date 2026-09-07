@@ -536,10 +536,8 @@ function bindKeys() {
     if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') return;
     if (e.key === 'Escape') {
       if (!document.getElementById('modal').hidden) return;
-      app.view.tool = null;
       app.view.sel = null;
-      app.sellBtn?.classList.remove('on');
-      markDirty(); renderUI();
+      app.clearTool();
     } else if (e.key === ' ') {
       e.preventDefault();
       const st = app.state.settings;
@@ -710,6 +708,15 @@ function showHelp() {
     ]),
   ], [{ label: 'Got it', kind: 'primary' }]);
 }
+
+/** Put down whatever is held, from anywhere: the button, Escape, or a tab. */
+app.clearTool = () => {
+  if (!app.view) return;
+  app.view.tool = null;
+  app.sellBtn?.classList.remove('on');
+  updateGhost(null);
+  markDirty(); renderUI();
+};
 
 app.toggleSound = () => {
   const on = !(app.state.settings.sound !== false);

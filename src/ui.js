@@ -97,8 +97,31 @@ export function initUI(a) {
   const centreBtn = el('button', 'tool', 'Recentre');
   centreBtn.dataset.tip = 'Recentre|Fit the whole floor back on screen.';
   centreBtn.onclick = () => app.view.centre(app.state);
+  // Holding a machine is a mode, and a mode you cannot see is a mode you put
+  // down by accident. This floats over the floor rather than living in the
+  // toolbar, because the toolbar scrolls sideways on a phone and a button you
+  // have to go looking for is no use. Escape does the same on a keyboard.
+  const dropBtn = el('button', 'dropbtn', '');
+  dropBtn.hidden = true;
+  dropBtn.dataset.tip = 'Put it down|Stops placing, so clicking the floor does nothing. Escape works too.';
+  dropBtn.onclick = () => app.clearTool();
+  document.getElementById('canvaswrap').append(dropBtn);
+
   fill(tools, [...overlayBtns, sellBtn, turnBtn, centreBtn]);
   app.sellBtn = sellBtn;
+  app.dropBtn = dropBtn;
+}
+
+/** Keep the "put it down" button in step with whatever is held. */
+export function syncTool() {
+  const b = app.dropBtn;
+  if (!b) return;
+  const t = app.view?.tool;
+  const name = t === 'sell' ? 'Demolish'
+    : t ? (ALL_BUILDINGS.find((x) => x.id === t)?.name || 'machine') : null;
+  const want = name ? '\u2715  Put down ' + name.toLowerCase() : '';
+  if (b.textContent !== want) b.textContent = want;
+  if (b.hidden === !!name) b.hidden = !name;
 }
 
 function syncTabs() {
@@ -382,6 +405,7 @@ let liveClock = 0;
 export function refreshLive(state, d, dt) {
   renderTop(state, d);
   fitTopBar(false);
+  syncTool();
   renderEvents(state);
   renderObjective(state, d);
   renderInspector(state, d);
@@ -533,8 +557,20 @@ function panelBuild(state, d) {
     catRow.append(b);
   }
 
+  // Sort so the top of the list is what you can act on. Before this, a player
+  // with $2,000 opened Build and read three screens of billion-pound machines
+  // they could not research, let alone buy.
+  const rank = (unlocked, afford) => (unlocked && afford ? 0 : unlocked ? 1 : 2);
+  const inCat = BUILDINGS.filter((x) => x.cat === buildCat)
+    .map((b) => {
+      const unlocked = !b.req || state.research.done.includes(b.req);
+      const cost = A.buildCost(b, d);
+      return { b, unlocked, cost, band: rank(unlocked, state.money >= cost) };
+    })
+    .sort((x, y) => x.band - y.band || y.cost - x.cost);
+
   const list = [];
-  for (const b of BUILDINGS.filter((x) => x.cat === buildCat)) {
+  for (const { b } of inCat) {
     const unlocked = !b.req || state.research.done.includes(b.req);
     const cost = A.buildCost(b, d);
     const afford = state.money >= cost;
@@ -591,8 +627,9 @@ function panelBuild(state, d) {
   // Say it in the verbs of the device in front of them.
   const touch = matchMedia('(hover: none)').matches;
   const help = el('div', 'hint', touch
-    ? 'Tap a machine below, then tap the floor to put it down. Drag to lay a whole row. '
-      + 'Drag empty floor to move around, pinch to zoom, and use Turn above the floor to rotate it.'
+    ? 'Tap a machine below, then tap the floor to put it down. Drag anywhere to move the floor '
+      + 'around, pinch to zoom, and use Turn above it to rotate. The ✕ button above the floor '
+      + 'puts the machine down again.'
     : 'Click a machine below, then click the floor to put it down. Hold and drag to lay a whole row. '
       + 'Drag empty floor to move around, scroll to zoom, and press R to turn the room.');
   return [sec(null, catRow), sec(null, help), sec(null, list)];
@@ -620,8 +657,18 @@ function panelRacks(state, d) {
   summary.append(barWrap);
   out.push(sec('Fleet', summary));
 
+  // Same rule as the build list: what you can install now, first.
+  const hwRank = (unlocked, afford) => (unlocked && afford ? 0 : unlocked ? 1 : 2);
+  const hwSorted = HARDWARE
+    .map((hw) => {
+      const unlocked = !hw.req || state.research.done.includes(hw.req);
+      const cost = A.hwCost(hw, d);
+      return { hw, cost, band: hwRank(unlocked, state.money >= cost) };
+    })
+    .sort((x, y) => x.band - y.band || y.cost - x.cost);
+
   const cards = [];
-  for (const hw of [...HARDWARE].reverse()) {
+  for (const { hw } of hwSorted) {
     const unlocked = !hw.req || state.research.done.includes(hw.req);
     const cost = A.hwCost(hw, d);
     const owned = d.units[hw.id] || 0;

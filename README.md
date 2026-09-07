@@ -262,7 +262,7 @@ src/tutorial.js     the ten-step guided opening
 tools/
   balance.mjs       headless economy probe
   bot.mjs           an automated player, used to check pacing over a long run
-  browser-check.mjs twenty-nine end-to-end checks in a real browser
+  browser-check.mjs thirty-two end-to-end checks in a real browser
   shots.mjs         regenerates every screenshot in docs/
 ```
 

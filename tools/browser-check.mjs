@@ -785,6 +785,89 @@ async function clickTile(page, gx, gy) {
   }
 }
 
+// ------------------------------- holding a machine is visible, and undoable
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; window.__rr.state.money = 5e5; });
+  await page.waitForTimeout(400);
+  const drop = () => page.evaluate(() => {
+    const b = document.querySelector('.dropbtn');
+    return { hidden: b.hidden, label: b.textContent.trim() };
+  });
+  const idle = await drop();
+  await page.click('[data-build="pdu"]');
+  await page.waitForTimeout(400);
+  const held = await drop();
+  await page.click('.dropbtn');
+  await page.waitForTimeout(400);
+  const after = await drop();
+  const tool = await page.evaluate(() => window.__rr.view.tool);
+  if (idle.hidden && !held.hidden && /power strip/i.test(held.label) && after.hidden && !tool) {
+    pass('a held machine can always be put down', held.label);
+  } else {
+    fail('a held machine can always be put down', JSON.stringify({ idle, held, after, tool }));
+  }
+  await page.close();
+}
+
+// ------------------------------------- a finger moves the floor, a mouse paints
+{
+  // With a machine held, dragging lays a row on a mouse and moves the camera on
+  // a touch screen. Getting this backwards on a phone means every attempt to
+  // look around builds something by accident.
+  const page = await newPage(390, 844);
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; window.__rr.state.money = 5e5; });
+  await page.waitForTimeout(400);
+  await page.click('[data-build="pdu"]');
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(async () => {
+    const v = window.__rr.view;
+    const el = document.getElementById('view');
+    const c = document.getElementById('canvaswrap').getBoundingClientRect();
+    const sx = c.left + c.width / 2, sy = c.top + c.height / 2;
+    const before = { ox: v.ox, n: Object.keys(window.__rr.state.tiles).length };
+    const send = (type, x, y) => el.dispatchEvent(new PointerEvent(type, {
+      pointerId: 1, pointerType: 'touch', clientX: x, clientY: y, bubbles: true, isPrimary: true }));
+    send('pointerdown', sx, sy);
+    for (let i = 1; i <= 12; i++) {
+      send('pointermove', sx - i * 10, sy + i * 4);
+      await new Promise((z) => setTimeout(z, 10));
+    }
+    send('pointerup', sx - 120, sy + 48);
+    return { moved: v.ox !== before.ox, placed: Object.keys(window.__rr.state.tiles).length - before.n };
+  });
+  if (r.moved && r.placed === 0) pass('a finger drag moves the floor, it does not build');
+  else fail('a finger drag moves the floor, it does not build', JSON.stringify(r));
+  await page.close();
+}
+
+// -------------------------------------- what you can buy is at the top of a list
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; window.__rr.state.money = 2370; });
+  await page.waitForTimeout(400);
+  const firstRows = async (n) => page.evaluate((k) =>
+    [...document.querySelectorAll('#tabbody .row')].slice(0, k).map((r) => ({
+      name: r.querySelector('b')?.textContent || '',
+      locked: r.classList.contains('locked'),
+    })), n);
+  await page.click('#tabbody .btn:has-text("Cooling")');
+  await page.waitForTimeout(300);
+  const build = await firstRows(3);
+  await page.click('#tabs >> text=Machines');
+  await page.waitForTimeout(400);
+  const machines = await firstRows(3);
+  // A player with $2,370 should not open a tab to three screens of locked
+  // billion-pound machines before the thing they can actually afford.
+  const ok = build.length && !build[0].locked && machines.length && !machines[0].locked;
+  if (ok) pass('what you can buy sorts to the top', build[0].name + ' / ' + machines[0].name);
+  else fail('what you can buy sorts to the top', JSON.stringify({ build, machines }));
+  await page.close();
+}
+
 // ------------------------------------------------------------- narrow screen
 for (const [w, h] of [[1024, 720], [520, 900]]) {
   const page = await newPage(w, h);
