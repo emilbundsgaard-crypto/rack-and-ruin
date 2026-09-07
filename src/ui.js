@@ -119,8 +119,10 @@ export function syncTool() {
   const t = app.view?.tool;
   const name = t === 'sell' ? 'Demolish'
     : t ? (ALL_BUILDINGS.find((x) => x.id === t)?.name || 'machine') : null;
-  const want = name ? '\u2715  Put down ' + name.toLowerCase() : '';
-  if (b.textContent !== want) b.textContent = want;
+  if (b._name !== name) {
+    b._name = name;
+    if (name) fill(b, el('span', 'x', '\u2715'), document.createTextNode(name));
+  }
   if (b.hidden === !!name) b.hidden = !name;
 }
 
@@ -628,10 +630,11 @@ function panelBuild(state, d) {
   const touch = matchMedia('(hover: none)').matches;
   const help = el('div', 'hint', touch
     ? 'Tap a machine below, then tap the floor to put it down. Drag anywhere to move the floor '
-      + 'around, pinch to zoom, and use Turn above it to rotate. The ✕ button above the floor '
-      + 'puts the machine down again.'
+      + 'around, pinch to zoom, and use Turn above it to rotate. The ✕ button in the corner of '
+      + 'the floor puts the machine down again.'
     : 'Click a machine below, then click the floor to put it down. Hold and drag to lay a whole row. '
-      + 'Drag empty floor to move around, scroll to zoom, and press R to turn the room.');
+      + 'Drag empty floor to move around, scroll to zoom, and press R to turn the room. '
+      + 'Escape, or the ✕ in the corner of the floor, puts the machine down again.');
   return [sec(null, catRow), sec(null, help), sec(null, list)];
 }
 

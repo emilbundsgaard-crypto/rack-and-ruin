@@ -803,10 +803,19 @@ async function clickTile(page, gx, gy) {
   await page.waitForTimeout(400);
   const after = await drop();
   const tool = await page.evaluate(() => window.__rr.view.tool);
-  if (idle.hidden && !held.hidden && /power strip/i.test(held.label) && after.hidden && !tool) {
-    pass('a held machine can always be put down', held.label);
+  // Small, in a corner, and never sitting on top of the guide card.
+  const fit = await page.evaluate(() => {
+    const b = document.querySelector('.dropbtn');
+    const c = document.getElementById('canvaswrap').getBoundingClientRect();
+    const r = b.getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height),
+      inside: r.right <= c.right + 1 && r.bottom <= c.bottom + 1 };
+  });
+  if (idle.hidden && !held.hidden && /power strip/i.test(held.label) && after.hidden && !tool
+      && fit.h <= 34 && fit.w <= 200 && fit.inside) {
+    pass('a held machine can always be put down', fit.w + '×' + fit.h);
   } else {
-    fail('a held machine can always be put down', JSON.stringify({ idle, held, after, tool }));
+    fail('a held machine can always be put down', JSON.stringify({ idle, held, after, tool, fit }));
   }
   await page.close();
 }
