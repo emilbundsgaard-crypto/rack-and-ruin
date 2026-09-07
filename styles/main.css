@@ -72,6 +72,9 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 #bootbody { display: grid; gap: 14px; }
 #bootbody .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 #bootbody .note { color: var(--dimmer); font-size: 12px; }
+/* Small enough to ignore, there when you need to know what is deployed. */
+.bootcard .build { color: var(--dimmer); font-size: 10.5px; font-family: var(--mono);
+  margin-top: 22px; letter-spacing: .06em; }
 
 /* ------------------------------------------------------------------- app */
 

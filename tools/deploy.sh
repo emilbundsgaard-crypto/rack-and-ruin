@@ -35,19 +35,8 @@ cp src/*.js "$STAGE/src/"
 cp src/data/*.js "$STAGE/src/data/"
 cp styles/main.css "$STAGE/styles/"
 
-# Servers that hand .js to the browser as text/plain break ES modules, and the
-# page comes up blank. This costs nothing on servers that already get it right.
-cat > "$STAGE/.htaccess" <<'HTACCESS'
-AddType text/javascript .js
-<IfModule mod_headers.c>
-  <FilesMatch "\.(js|css)$">
-    Header set Cache-Control "max-age=86400"
-  </FilesMatch>
-  <FilesMatch "index\.html$">
-    Header set Cache-Control "no-cache"
-  </FilesMatch>
-</IfModule>
-HTACCESS
+# Ships the MIME-type fix and the no-cache rules. See tools/htaccess.txt.
+cp tools/htaccess.txt "$STAGE/.htaccess"
 
 COUNT=$(find "$STAGE" -type f | wc -l | tr -d ' ')
 SIZE=$(du -sh "$STAGE" | cut -f1)

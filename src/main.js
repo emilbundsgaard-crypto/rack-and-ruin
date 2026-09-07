@@ -1,7 +1,7 @@
 // Boot, the game loop, and everything that glues the simulation to the UI.
 
 import { el, fill, fmt, fmtTime, money } from './util.js';
-import { newGame, load, save, wipe, exportSave, importSave, tileAt, roomOf, DAY_SECONDS } from './state.js';
+import { newGame, load, save, wipe, exportSave, importSave, tileAt, roomOf, DAY_SECONDS, BUILD } from './state.js';
 import { derive, tick, resolveDecision, fireEvent, legacyGain, rescueTerms } from './sim.js';
 import * as SIM from './sim.js';
 import { EVENTS_BY_ID } from './data/events.js';
@@ -150,6 +150,9 @@ app.openMenu = () => {
   box.placeholder = 'Paste a save here to import it, or press Export to fill this box.';
   body.push(el('div', 'hint', 'Save data lives in this browser only. Export it if you care about it.'));
   body.push(box);
+
+  body.push(el('div', 'hint', 'Build ' + BUILD + ' · if this is not the newest build, your '
+    + 'browser is showing a cached copy — reload with Shift held, or in a private window.'));
 
   showModal('Menu', 'ClouterX — Rack & Ruin', body, [
     { label: 'Save now', kind: 'primary', onClick: () => { save(state); toast('Saved.'); } },
@@ -569,6 +572,9 @@ function bindKeys() {
 }
 
 function boot() {
+  const stamp = document.querySelector('.bootcard .build');
+  if (stamp) stamp.textContent = 'Build ' + BUILD;
+
   const sky = document.getElementById('bootsky');
   if (sky) {
     try {

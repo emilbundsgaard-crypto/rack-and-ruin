@@ -167,6 +167,12 @@ Forkert brugernavn eller adgangskode. Prøv at logge ind alene med
 Din webrod hedder noget andet. Log ind med `sftp BRUGERNAVN@ssh.simply.com`,
 skriv `ls`, og se hvad mapperne rent faktisk hedder. Brug det navn i stedet.
 
+**Du har uploadet, men ser stadig den gamle version.**
+Din browser gemmer filerne. Åbn Menu i spillet: nederst står `Build ...`. Er
+det ikke den nyeste, holder browseren på en gammel kopi — genindlæs med
+⇧⌘R, eller åbn siden i et privat vindue. Nyere versioner beder selv browseren
+om ikke at gemme filerne, så det her rammer kun én gang.
+
 **Du er faret vild i Terminal.**
 Skriv `cd ~/Desktop/clouterx` og tryk Retur. Så står du det rigtige sted igen.
 

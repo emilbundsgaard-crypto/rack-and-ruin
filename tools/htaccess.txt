@@ -1,0 +1,20 @@
+# --- ClouterX -----------------------------------------------------------
+#
+# 1. Some servers hand .js to the browser as plain text. Browsers refuse to
+#    run modules that are not text/javascript, and the page comes up blank.
+AddType text/javascript .js
+
+# 2. Do not cache the game files.
+#
+#    An earlier version of this file cached them for a day, which meant that
+#    uploading a fix changed nothing for anybody who had already opened the
+#    site: their browser kept serving the old code for the next 24 hours.
+#
+#    The whole game is under 400 KB and the browser revalidates with a
+#    conditional request, so it still only re-downloads what actually
+#    changed. Correctness beats a saved kilobyte here.
+<IfModule mod_headers.c>
+  <FilesMatch "\.(js|css|html)$">
+    Header set Cache-Control "no-cache, must-revalidate"
+  </FilesMatch>
+</IfModule>
