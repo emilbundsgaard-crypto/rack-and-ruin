@@ -63,7 +63,12 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .bootcard h1 { font-size: 58px; letter-spacing: -2px; font-weight: 700; }
 .bootcard h1 { text-shadow: 0 2px 30px rgba(0,0,0,.85); }
 .bootcard h1 span { color: var(--acc); text-shadow: 0 0 26px rgba(242,168,60,.45); }
-.bootcard .tag { color: var(--dim); margin: 10px 0 32px; font-size: 15px; }
+/* The game's own name sits under the product name, smaller. */
+.bootcard .sub {
+  font-family: var(--mono); font-size: 13px; letter-spacing: .34em; text-transform: uppercase;
+  color: var(--dim); margin: 8px 0 0; text-indent: .34em;
+}
+.bootcard .tag { color: var(--dim); margin: 14px 0 32px; font-size: 15px; }
 #bootbody { display: grid; gap: 14px; }
 #bootbody .row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 #bootbody .note { color: var(--dimmer); font-size: 12px; }
@@ -97,9 +102,10 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .vital.jump:hover { background: #1e1913; }
 .vital.jump .sub::after { content: ' \2192'; }
 
-.meters { display: grid; grid-template-columns: repeat(2, minmax(140px, 1fr));
-  gap: 5px 18px; align-content: center; min-width: 0; }
-.meter { display: grid; grid-template-columns: 34px 1fr 82px; align-items: center; gap: 9px; }
+.meters { display: grid; grid-template-columns: repeat(2, auto);
+  gap: 5px 18px; align-content: center; flex: none; }
+.meter { display: grid; grid-template-columns: auto 46px auto; align-items: center; gap: 9px; }
+.meter .mk, .meter .mv { white-space: nowrap; }
 .meter .mbar { height: 6px; background: #0c0a08; box-shadow: inset 0 0 0 1px #2a2419; overflow: hidden; }
 .meter .mbar > i { display: block; height: 100%; background: var(--cold); transition: width .25s; }
 .meter .mv { font-family: var(--mono); font-size: 10.5px; color: var(--dim); text-align: right;
@@ -115,11 +121,11 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 
 .minis { display: grid; grid-template-columns: repeat(3, auto); gap: 4px 18px;
   grid-auto-flow: column; grid-template-rows: repeat(2, auto);
-  align-content: center; min-width: 0; flex: none; }
+  align-content: center; flex: none; }
 .mini { display: flex; gap: 8px; align-items: baseline; }
-.mini .mk { min-width: 46px; }
+.mini .mk { white-space: nowrap; }
 .mini .mv { font-family: var(--mono); font-size: 12px; font-variant-numeric: tabular-nums;
-  min-width: 52px; white-space: nowrap; }
+  margin-left: auto; white-space: nowrap; }
 .mini.warn .mv { color: var(--warn); }
 .mini.bad .mv { color: var(--bad); }
 .mini.acc .mv { color: var(--acc); }
@@ -203,7 +209,7 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 
 #inspector {
   border-top: 1px solid var(--line); background: #120f0c;
-  padding: 11px 16px; height: 27vh; min-height: 150px; max-height: 262px; overflow: auto;
+  padding: 9px 16px; height: 19vh; min-height: 118px; max-height: 190px; overflow: auto;
 }
 #inspector .empty { color: var(--dimmer); font-size: 12px; }
 #inspector .kv { max-width: 440px; }
@@ -495,20 +501,20 @@ input[type=text], textarea {
 }
 @media (prefers-reduced-motion: reduce) { #banner .inner { animation: none; } }
 
-#toasts { position: absolute; right: 14px; bottom: 14px; z-index: 20; display: grid; gap: 5px;
-  justify-items: end; pointer-events: none; max-width: min(330px, 64%); }
+#toasts { position: absolute; right: 12px; bottom: 12px; z-index: 20; display: grid; gap: 4px;
+  justify-items: end; pointer-events: none; max-width: min(250px, 52%); }
 .toast {
-  display: flex; align-items: center; gap: 9px;
+  display: flex; align-items: center; gap: 7px;
   background: linear-gradient(90deg, #1b160fe0, #14110ce8);
   border: 1px solid #2e2620; border-left: 2px solid var(--acc); border-radius: 4px;
-  padding: 7px 13px 7px 12px; font-size: 11.5px; color: #cec2b2;
-  box-shadow: 0 10px 26px #000a, inset 0 1px 0 #ffffff08;
+  padding: 5px 10px 5px 9px; font-size: 10.5px; line-height: 1.35; color: #cec2b2;
+  box-shadow: 0 8px 20px #0009, inset 0 1px 0 #ffffff08;
   backdrop-filter: blur(3px);
   animation: toastin .34s cubic-bezier(.2,.8,.25,1) both;
 }
 /* A dot in the accent of the tone, so the kind of news reads before the text. */
 .toast::before {
-  content: ''; flex: none; width: 5px; height: 5px; border-radius: 50%;
+  content: ''; flex: none; width: 4px; height: 4px; border-radius: 50%;
   background: var(--acc); box-shadow: 0 0 8px currentColor;
 }
 .toast.bad { color: #f2bcb5; border-left-color: var(--bad); }
@@ -537,22 +543,18 @@ button:focus:not(:focus-visible) { outline: none; }
 
 /* ------------------------------------------------------------ responsive */
 
-/* The bar never wraps and never changes height, so as the window narrows the
-   parts that are duplicated inside the panels are dropped, widest first. The
-   cash and compute readouts and the speed controls always survive.
-   Breakpoints come from the measured widths: vitals 300, meters 298,
-   minis 354, controls 491, plus gaps. */
+/* Which readouts survive a narrow window is decided by measuring the bar on
+   the viewer's own machine (see fitTopBar) rather than by pixel breakpoints,
+   because the widths depend on their fonts. These two classes are what that
+   measurement toggles. */
+#topbar.hide-minis .minis,
+#topbar.hide-meters .meters { display: none; }
+
 @media (max-width: 1560px) {
   #topbar { gap: 15px; }
 }
-@media (max-width: 1330px) {
-  .minis { display: none; }
-}
 @media (max-width: 1180px) {
   #main { grid-template-columns: 1fr 356px; }
-}
-@media (max-width: 1000px) {
-  .meters { display: none; }
 }
 /* Phone and small-tablet widths: everything still reachable, just tighter.
    Guide and Menu keep their first letters as labels rather than disappearing,
@@ -586,10 +588,72 @@ button:focus:not(:focus-visible) { outline: none; }
   .topbtn { padding: 7px 7px; font-size: 11px; }
 }
 @media (max-width: 900px) {
-  #main { grid-template-columns: 1fr; grid-template-rows: minmax(300px, 1fr) 44vh; }
+  #main { grid-template-columns: 1fr; grid-template-rows: minmax(280px, 1fr) 44vh; }
   #panel { border-left: 0; border-top: 1px solid var(--line); }
-  #inspector { height: 21vh; min-height: 120px; }
+  #inspector { height: 21vh; min-height: 118px; }
   #logbar { grid-template-columns: 1fr; }
   #logfeed { display: none; }
   .divider { display: none; }
+}
+
+/* ------------------------------------------------------------------ phone
+
+   A phone has no room for the desktop's four stacked bands. The floor is what
+   the game is, so it gets the space: the inspector goes (everything in it is
+   in the panels a tap away), the footer goes (the objective moves into the
+   bar), and the panel becomes a sheet under the floor with its tabs pinned.  */
+@media (max-width: 700px) {
+  #app { grid-template-rows: auto 1fr; }
+  #logbar { display: none; }
+  #inspector { display: none; }
+
+  #main { grid-template-rows: minmax(38vh, 1fr) 44vh; }
+  #floor { grid-template-rows: auto 1fr; }
+
+  #topbar { height: 54px; gap: 8px; padding: 5px 8px; }
+  .vital { min-width: 0; }
+  .vital .lbl { display: none; }
+  .vital .big { font-size: 17px; letter-spacing: -.4px; }
+  .vital .sub { font-size: 9.5px; }
+  #v_compute { display: none; }
+  .sp { min-width: 25px; padding: 6px 4px; font-size: 10.5px; }
+  .speed { gap: 1px; }
+  /* Guide and Menu keep a letter rather than vanishing: they are the only way
+     into the rules and the save. */
+  /* Guide and Menu become their glyphs rather than disappearing: they are the
+     only way into the rules and the save. */
+  .topbtn { padding: 7px 9px; font-size: 10.5px; }
+  .topbtn[data-short] { font-size: 0; min-width: 30px; }
+  .topbtn[data-short]::after { content: attr(data-short); font-size: 15px; line-height: 1; }
+
+  /* The overlay row scrolls sideways instead of wrapping into two lines. */
+  #floorhead { padding: 5px 8px; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  #floorhead::-webkit-scrollbar { display: none; }
+  #floortools { flex: none; }
+  #facilityname { display: none; }
+
+  #tabs { position: sticky; top: 0; z-index: 5; flex-wrap: nowrap; overflow-x: auto;
+    scrollbar-width: none; }
+  #tabs::-webkit-scrollbar { display: none; }
+  .tab { padding: 11px 9px 10px; font-size: 12px; }
+  #tabbody { padding: 10px 10px 26px; }
+
+  /* Touch targets, and rows that do not try to be three columns wide. */
+  .row { padding: 11px 4px; }
+  .btn.small { padding: 9px 11px; }
+  .sheet { width: min(94vw, 460px); padding: 20px 18px; }
+  #toasts { max-width: 74%; right: 8px; bottom: 8px; }
+  #ghost { display: none; }
+}
+
+/* Landscape phone: height is the scarce thing, so go back to side by side. */
+@media (max-height: 500px) and (orientation: landscape) {
+  #app { grid-template-rows: auto 1fr; }
+  #logbar, #inspector { display: none; }
+  #main { grid-template-columns: 1fr minmax(240px, 34%); grid-template-rows: 1fr; }
+  #panel { border-left: 1px solid var(--line); border-top: 0; }
+  #topbar { height: 48px; }
+  .vital .lbl { display: none; }
+  .vital .big { font-size: 16px; }
+  #floorhead { padding: 4px 8px; }
 }

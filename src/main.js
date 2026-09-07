@@ -9,7 +9,7 @@ import { OBJECTIVES } from './data/progression.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import * as A from './actions.js';
 import { FloorView } from './render.js';
-import { initUI, renderUI, refreshLive, markDirty, pushLog, goTab, TABS, renderTutorial, tickNumbers } from './ui.js';
+import { initUI, renderUI, refreshLive, markDirty, pushLog, goTab, TABS, renderTutorial, tickNumbers, fitTopBar } from './ui.js';
 import { initTips, hide as hideTip } from './tip.js';
 import { startAudio, setEnabled as setSound, isEnabled as soundOn, ambience, sfx } from './audio.js';
 import { advance as tutAdvance, active as tutActive, FINISH } from './tutorial.js';
@@ -29,8 +29,15 @@ const app = {
 
 // ------------------------------------------------------------------- toasts
 
+let lastToast = { text: '', at: 0 };
 function toast(text, tone) {
   const box = document.getElementById('toasts');
+  const now = performance.now();
+  // Never say the same thing twice in a row, and never more than one every
+  // second and a half — a burst of them is noise, not information.
+  if (text === lastToast.text && now - lastToast.at < 8000) return;
+  if (now - lastToast.at < 1500 && box.children.length >= 2) return;
+  lastToast = { text, at: now };
   const tones = { bad: 'bad', warn: 'warn', good: 'good' };
   const t = el('div', 'toast ' + (tones[tone] || ''), text);
   box.append(t);
@@ -41,7 +48,7 @@ function toast(text, tone) {
     t.style.transform = 'translateX(14px)';
     setTimeout(() => t.remove(), 400);
   }, 4200);
-  while (box.children.length > 3) box.firstChild.remove();
+  while (box.children.length > 2) box.firstChild.remove();
 }
 
 let bannerTimer = 0;
@@ -66,11 +73,15 @@ function showBanner(kicker, title, note) {
   bannerTimer = setTimeout(() => { box.hidden = true; fill(box); }, 3300);
 }
 
-function logLine(text, tone) {
+function logLine(text, tone, opts) {
   app.log.push({ text, tone, day: app.state ? Math.floor(app.state.day) : 0 });
   if (app.log.length > 200) app.log.shift();
   pushLog(app.log);
-  if (tone === 'good' || tone === 'bad') toast(text, tone);
+  // Most of what happens is already visible: events have a chip with a
+  // countdown, deals have a tab, objectives have a panel, and everything lands
+  // in the log along the bottom. A toast is for the handful of things that
+  // need you to stop and look.
+  if (opts?.toast !== false && (tone === 'good' || tone === 'bad')) toast(text, tone);
   if (tone === 'bad') sfx.alarm();
   else if (tone === 'good') sfx.good();
 }
@@ -140,7 +151,7 @@ app.openMenu = () => {
   body.push(el('div', 'hint', 'Save data lives in this browser only. Export it if you care about it.'));
   body.push(box);
 
-  showModal('Menu', 'Rack & Ruin', body, [
+  showModal('Menu', 'ClouterX — Rack & Ruin', body, [
     { label: 'Save now', kind: 'primary', onClick: () => { save(state); toast('Saved.'); } },
     { label: 'Export', onClick: () => {
       const text = exportSave(state);
@@ -443,6 +454,10 @@ function startGame(state, fresh) {
       onHover: (t) => updateGhost(t),
     });
     initUI(app);
+    // Re-measure the bar whenever the window changes, so it sheds readouts
+    // rather than printing them on top of each other.
+    fitTopBar(true);
+    new ResizeObserver(() => fitTopBar(true)).observe(document.getElementById('topbar'));
     window.addEventListener('resize', () => app.view.resize());
     app.view.resize();
     app.view.observe();
@@ -491,7 +506,11 @@ function handleClick(x, y, shift, painting) {
 function updateGhost(t) {
   const g = document.getElementById('ghost');
   const state = app.state;
-  if (!t || !state) { g.textContent = 'Wheel to zoom, drag to pan.'; return; }
+  if (!t || !state) {
+    g.textContent = matchMedia('(hover: none)').matches
+      ? 'Pinch to zoom, drag to pan.' : 'Wheel to zoom, drag to pan.';
+    return;
+  }
   const tile = tileAt(state, t.x, t.y);
   const view = app.view;
   if (view.tool && view.tool !== 'sell') {

@@ -2,6 +2,11 @@
 // and the state mutations that follow from it.
 
 import { clamp, sum, noise, weightedPick, fmt as fmtShort, money } from './util.js';
+
+// Log it, but do not pop a toast for it: these are all already on screen
+// somewhere the player is looking — the event strip, the Deals tab, the
+// objective panel, or the running log along the bottom.
+const QUIET = { toast: false };
 import { HARDWARE_BY_ID } from './data/hardware.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import { RESEARCH_BY_ID, RESEARCH } from './data/research.js';
@@ -748,7 +753,7 @@ export function signContract(state, d, offer, hooks) {
   state.contracts.offers = state.contracts.offers.filter((o) => o.cid !== offer.cid);
   const c = { ...offer, startDay: state.day, endDay: state.day + offer.days, breached: false, delivered: 1, effUptime: 1 };
   state.contracts.active.push(c);
-  hooks?.log(`Signed ${c.name} with ${c.client} — ${c.days} days.`, 'good');
+  hooks?.log(`Signed ${c.name} with ${c.client} — ${c.days} days.`, 'good', QUIET);
   return null;
 }
 
@@ -763,7 +768,7 @@ function contractsTick(state, d, days, hooks) {
       if (!c.breached) {
         c.breached = true;
         state.stats.breaches++;
-        hooks?.log(`You are under-delivering on ${c.name}. ${c.client} is not pleased.`, 'bad');
+        hooks?.log(`You are under-delivering on ${c.name}. ${c.client} is not pleased.`, 'bad', QUIET);
       }
     } else if (c.breached && c.effUptime > c.uptimeReq + 0.01) {
       c.breached = false;
@@ -790,9 +795,9 @@ function contractsTick(state, d, days, hooks) {
       const bonus = (c.livePay || c.pay) * DAY_SECONDS * 1.5;
       state.money += bonus;
       state.lifetimeEarnings += bonus;
-      hooks?.log(`${c.name} completed cleanly. +${Math.round(gain * 10) / 10} reputation and a completion bonus.`, 'good');
+      hooks?.log(`${c.name} completed cleanly. +${Math.round(gain * 10) / 10} reputation and a completion bonus.`, 'good', QUIET);
     } else {
-      hooks?.log(`${c.name} ended with the SLA broken. Reputation barely moved.`, 'bad');
+      hooks?.log(`${c.name} ended with the SLA broken. Reputation barely moved.`, 'bad', QUIET);
     }
   }
   if (finished.length) {
@@ -876,7 +881,8 @@ function eventsTick(state, d, dt, hooks) {
 
 export function fireEvent(state, ev, hooks) {
   state.events.active.push({ id: ev.id, until: state.day + (ev.days || 2), started: state.day });
-  hooks?.log(`${ev.name}: ${ev.text}`, ev.tone === 'good' ? 'good' : ev.tone === 'bad' ? 'bad' : 'info');
+  // The event strip above the floor already shows this, with a countdown.
+  hooks?.log(`${ev.name}: ${ev.text}`, ev.tone === 'good' ? 'good' : ev.tone === 'bad' ? 'bad' : 'info', QUIET);
 }
 
 /** Resolve a decision event. Returns a description of what happened. */
@@ -1154,7 +1160,7 @@ export function checkObjectives(state, d, hooks) {
       const cash = objectiveReward(o, d, i);
       if (cash > 0) { state.money += cash; state.lifetimeEarnings += cash; }
       if (o.reward?.rp) state.rp += o.reward.rp;
-      hooks?.log(`Objective complete — ${o.name}.`, 'good');
+      hooks?.log(`Objective complete — ${o.name}.`, 'good', QUIET);
       hooks?.onObjective?.(o);
     }
   }
@@ -1164,7 +1170,7 @@ export function checkObjectives(state, d, hooks) {
     try { ok = a.check(d, total, OBJECTIVES.length); } catch (err) { ok = false; }
     if (!ok) continue;
     state.achievements.push(a.id);
-    hooks?.log(`Achievement unlocked — ${a.name}.`, 'good');
+    hooks?.log(`Achievement unlocked — ${a.name}.`, 'good', QUIET);
     hooks?.onAchievement?.(a);
   }
 }

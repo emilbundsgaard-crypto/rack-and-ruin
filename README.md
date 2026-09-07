@@ -1,4 +1,6 @@
-# Rack &amp; Ruin
+# ClouterX
+
+*Rack &amp; Ruin*
 
 An incremental datacentre simulator that runs entirely in a browser. You start
 in a broom cupboard with one wall socket and a salvaged desktop. If you get it
@@ -14,8 +16,10 @@ python3 -m http.server 8000
 
 ![The title screen: a server hall receding into the dark](docs/screenshot-title.png)
 
-It is built for a desktop or tablet screen — the floor plan wants room. It
-runs on a phone, but you will spend a lot of time panning.
+It is built for a desktop or tablet screen — the floor plan wants room — but it
+has a proper phone layout too: the inspector and the footer fold away, the
+floor takes the top half, and the panel becomes a sheet under it with its tabs
+pinned.
 
 (A plain `file://` open will not work — the game is written as ES modules, and
 browsers refuse to load modules from the filesystem. Any static server does.)
@@ -255,7 +259,7 @@ src/tutorial.js     the ten-step guided opening
 tools/
   balance.mjs       headless economy probe
   bot.mjs           an automated player, used to check pacing over a long run
-  browser-check.mjs twenty-four end-to-end checks in a real browser
+  browser-check.mjs twenty-seven end-to-end checks in a real browser
   shots.mjs         regenerates every screenshot in docs/
 ```
 

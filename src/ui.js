@@ -131,6 +131,29 @@ const MUTE = '<path class="x" d="M12.4 5.4l4.4 5.2M16.8 5.4l-4.4 5.2"/>';
 /** Line-art speaker, on or muted. */
 function speaker(on) { return SPK + (on ? WAVE : MUTE) + '</svg>'; }
 
+/**
+ * Fit the top bar by measuring it, not by guessing breakpoints in pixels.
+ *
+ * The bar never wraps and never changes height, so anything that does not fit
+ * spills over its neighbour — which is how TEMP ended up printed on top of
+ * COOL on a machine whose system font is wider than the one the breakpoints
+ * were tuned against. Widths depend on the viewer's fonts, so they have to be
+ * measured on the viewer's machine. The readouts duplicated inside the panels
+ * are dropped, widest first, until the row fits.
+ */
+let fitSig = '';
+export function fitTopBar(force) {
+  const bar = document.getElementById('topbar');
+  if (!bar || bar.offsetParent === null) return;
+  const sig = bar.clientWidth + ':' + (topBuilt ? topBuilt.v_cash.big.textContent
+    + topBuilt.v_compute.big.textContent : '');
+  if (!force && sig === fitSig) return;
+  fitSig = sig;
+  bar.classList.remove('hide-minis', 'hide-meters');
+  if (bar.scrollWidth > bar.clientWidth + 1) bar.classList.add('hide-minis');
+  if (bar.scrollWidth > bar.clientWidth + 1) bar.classList.add('hide-meters');
+}
+
 export function renderTop(state, d) {
   const bar = document.getElementById('topbar');
   if (!topBuilt) {
@@ -192,9 +215,11 @@ export function renderTop(state, d) {
     soundBtn.onclick = () => { app.toggleSound(); renderTop(app.state, app.d); };
     mk._sound = { n: soundBtn };
     const guide = el('button', 'topbtn', 'Guide');
+    guide.dataset.short = '?';
     guide.dataset.tip = 'Guide|How the site works, and what everything on screen means.';
     guide.onclick = () => app.openGuide();
     const menu = el('button', 'topbtn', 'Menu');
+    menu.dataset.short = '\u2630';
     menu.dataset.tip = 'Menu|Save, export, import, restart the guide, or wipe and start over.';
     menu.onclick = () => app.openMenu();
 
@@ -356,6 +381,7 @@ let liveClock = 0;
 
 export function refreshLive(state, d, dt) {
   renderTop(state, d);
+  fitTopBar(false);
   renderEvents(state);
   renderObjective(state, d);
   renderInspector(state, d);
@@ -562,9 +588,13 @@ function panelBuild(state, d) {
     }));
   }
 
-  const help = el('div', 'hint',
-    'Click a machine below, then click the floor to put it down. Hold and drag to lay a whole row. '
-    + 'Drag empty floor to move around, scroll to zoom, and press R to turn the room.');
+  // Say it in the verbs of the device in front of them.
+  const touch = matchMedia('(hover: none)').matches;
+  const help = el('div', 'hint', touch
+    ? 'Tap a machine below, then tap the floor to put it down. Drag to lay a whole row. '
+      + 'Drag empty floor to move around, pinch to zoom, and use Turn above the floor to rotate it.'
+    : 'Click a machine below, then click the floor to put it down. Hold and drag to lay a whole row. '
+      + 'Drag empty floor to move around, scroll to zoom, and press R to turn the room.');
   return [sec(null, catRow), sec(null, help), sec(null, list)];
 }
 

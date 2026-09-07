@@ -685,6 +685,81 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------------------------ the top bar never overlaps itself
+{
+  // The bar never wraps, so anything that does not fit prints on top of its
+  // neighbour. Widths depend on the viewer's fonts, so this sweeps a range of
+  // window sizes with the text deliberately stretched — which is what a
+  // different system font does — and asks that the blocks stay disjoint.
+  const bad = [];
+  for (const stretch of [0, 1.4, 2.6]) {
+    for (const w of [1920, 1600, 1440, 1380, 1340, 1200, 1050, 900, 700]) {
+      const page = await newPage(w, 900);
+      await page.addStyleTag({ content:
+        `#topbar, #topbar * { letter-spacing: ${stretch}px !important; }` });
+      await page.click('text=Start in the cupboard');
+      await page.evaluate(() => {
+        const s = window.__rr.state;
+        s.tutorial.skipped = true; s.money = 1.234e21; s.rp = 987654; s.reputation = 4321;
+      });
+      await page.waitForTimeout(320);
+      const r = await page.evaluate(() => {
+        const boxes = [...document.querySelectorAll('.vital,.meters,.minis,.topright')]
+          .filter((e) => e.offsetParent !== null)
+          .map((e) => ({ cls: e.className, r: e.getBoundingClientRect() }));
+        let hit = null;
+        for (let i = 0; i < boxes.length - 1; i++) {
+          if (boxes[i + 1].r.left < boxes[i].r.right - 1) hit = boxes[i].cls + ' / ' + boxes[i + 1].cls;
+        }
+        const tb = document.getElementById('topbar');
+        const scrolls = getComputedStyle(tb).overflowX === 'auto';
+        return { hit, clipped: tb.scrollWidth > tb.clientWidth + 2 && !scrolls };
+      });
+      if (r.hit || r.clipped) bad.push(`${w}px/ls${stretch}: ` + (r.hit || 'clipped'));
+      await page.close();
+    }
+  }
+  if (!bad.length) pass('the top bar never overlaps itself', '27 widths × font widths');
+  else fail('the top bar never overlaps itself', bad.slice(0, 3).join(' | '));
+}
+
+// --------------------------------------------------- a phone gets a real layout
+{
+  for (const [name, w, h] of [['portrait', 390, 844], ['small', 375, 667]]) {
+    const page = await newPage(w, h);
+    await page.click('text=Start in the cupboard');
+    await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+    await page.waitForTimeout(400);
+    const m = await page.evaluate(() => {
+      const box = (id) => {
+        const e = document.getElementById(id);
+        if (!e || e.offsetParent === null) return 0;
+        return Math.round(e.getBoundingClientRect().height);
+      };
+      const tb = document.getElementById('topbar');
+      const btns = [...document.querySelectorAll('.topbtn')];
+      const last = btns[btns.length - 1];
+      if (getComputedStyle(tb).overflowX === 'auto') tb.scrollLeft = tb.scrollWidth;
+      const lr = last ? last.getBoundingClientRect() : null;
+      return {
+        overflowX: document.documentElement.scrollWidth > window.innerWidth + 1,
+        canvas: box('canvaswrap'),
+        // The two desktop bands that have nowhere to go on a phone.
+        inspector: box('inspector'),
+        log: box('logbar'),
+        menuReachable: !!lr && lr.right <= window.innerWidth + 2 && lr.width > 0,
+        speed: !!document.querySelector('.sp'),
+      };
+    });
+    // The floor is the game: it has to be the biggest thing on the screen.
+    const ok = !m.overflowX && m.canvas >= h * 0.3 && m.inspector === 0 && m.log === 0
+      && m.menuReachable && m.speed;
+    if (ok) pass(`a phone gets a real layout (${name})`, m.canvas + 'px of floor');
+    else fail(`a phone gets a real layout (${name})`, JSON.stringify(m));
+    await page.close();
+  }
+}
+
 // ------------------------------------------------------------- narrow screen
 for (const [w, h] of [[1024, 720], [520, 900]]) {
   const page = await newPage(w, h);
