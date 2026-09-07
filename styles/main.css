@@ -638,6 +638,21 @@ button:focus:not(:focus-visible) { outline: none; }
   .tab { padding: 11px 9px 10px; font-size: 12px; }
   #tabbody { padding: 10px 10px 26px; }
 
+  /* The guide card is 62% wide on desktop, which on a phone is a narrow
+     column that turns four lines of text into twelve and swallows the floor.
+     Here it is a wide, short bar across the top instead. */
+  #tutorial {
+    left: 8px; right: 8px; top: 8px; width: auto;
+    padding: 9px 11px 8px; border-left-width: 3px; border-radius: 6px;
+  }
+  #tutorial .tk { font-size: 9.5px; letter-spacing: .1em; }
+  #tutorial .tt { font-size: 14px; margin: 2px 0 3px; }
+  #tutorial .tb { font-size: 12px; line-height: 1.4; }
+  #tutorial .tn { font-size: 11px; margin-top: 4px; }
+  #tutorial .tfoot { margin-top: 7px; gap: 8px; }
+  #tutorial .tdots i { width: 11px; height: 2px; }
+  #tutorial .tskip { white-space: nowrap; font-size: 11px; }
+
   /* Touch targets, and rows that do not try to be three columns wide. */
   .row { padding: 11px 4px; }
   .btn.small { padding: 9px 11px; }

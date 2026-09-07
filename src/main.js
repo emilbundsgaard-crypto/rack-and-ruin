@@ -12,7 +12,7 @@ import { FloorView } from './render.js';
 import { initUI, renderUI, refreshLive, markDirty, pushLog, goTab, TABS, renderTutorial, tickNumbers, fitTopBar } from './ui.js';
 import { initTips, hide as hideTip } from './tip.js';
 import { startAudio, setEnabled as setSound, isEnabled as soundOn, ambience, sfx } from './audio.js';
-import { advance as tutAdvance, active as tutActive, FINISH } from './tutorial.js';
+import { advance as tutAdvance, active as tutActive, FINISH, STEPS } from './tutorial.js';
 import { BootArt } from './bootart.js';
 
 const TICK = 0.2;          // seconds of simulated time per fixed step
@@ -411,7 +411,7 @@ function step(now) {
         markDirty();
         renderTutorial(state);
         if (!tutActive(state)) {
-          showModal(FINISH.title, 'Five steps in, and you have already run the whole loop once.',
+          showModal(FINISH.title, `${STEPS.length} steps in, and you have run the whole loop once.`,
             [FINISH.body,
              `The Site tab keeps a chain of ${OBJECTIVES.length} objectives if you want somewhere to aim. `
              + 'The overlay buttons above the floor are the fastest way to see what is wrong.'],

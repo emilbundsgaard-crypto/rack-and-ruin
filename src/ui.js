@@ -1698,6 +1698,18 @@ function applyAim(state, step) {
   }
 }
 
+/**
+ * The guide is written in mouse verbs. On a touch screen there is no clicking,
+ * so swap the handful of words rather than keeping two copies of every step.
+ */
+function forTouch(text) {
+  if (!text || !matchMedia('(hover: none)').matches) return text;
+  return text
+    .replace(/\bClick\b/g, 'Tap')
+    .replace(/\bclick\b/g, 'tap')
+    .replace(/\bclicking\b/g, 'tapping');
+}
+
 export function renderTutorial(state) {
   const box = document.getElementById('tutorial');
   const step = tutStep(state);
@@ -1719,8 +1731,8 @@ export function renderTutorial(state) {
     const kids = [];
     kids.push(el('div', 'tk', 'Getting started · step ' + (idx + 1) + ' of ' + STEPS.length));
     kids.push(el('div', 'tt', step.title));
-    kids.push(el('div', 'tb', step.body));
-    if (step.note) kids.push(el('div', 'tn', step.note));
+    kids.push(el('div', 'tb', forTouch(step.body)));
+    if (step.note) kids.push(el('div', 'tn', forTouch(step.note)));
     const dots = el('div', 'tdots');
     for (let i = 0; i < STEPS.length; i++) dots.append(el('i', i < idx ? 'on' : i === idx ? 'now' : ''));
     const skipBtn = el('button', 'tskip', 'Skip the guide');

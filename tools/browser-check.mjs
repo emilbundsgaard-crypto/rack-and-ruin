@@ -726,6 +726,31 @@ async function clickTile(page, gx, gy) {
 // --------------------------------------------------- a phone gets a real layout
 {
   for (const [name, w, h] of [['portrait', 390, 844], ['small', 375, 667]]) {
+    // First: the guide card must not swallow the floor. At desktop widths it is
+    // 62% wide, which on a phone is a narrow column that turns four lines of
+    // text into twelve and leaves nothing to look at.
+    {
+      const page = await newPage(w, h);
+      await page.click('text=Start in the cupboard');
+      await page.waitForTimeout(600);
+      const g = await page.evaluate(() => {
+        const t = document.getElementById('tutorial');
+        const c = document.getElementById('canvaswrap');
+        if (!t || t.hidden) return null;
+        return {
+          card: Math.round(t.getBoundingClientRect().height),
+          floor: Math.round(c.getBoundingClientRect().height),
+        };
+      });
+      const share = g ? g.card / g.floor : 1;
+      if (g && share <= 0.55) {
+        pass(`the guide leaves room for the floor (${name})`, Math.round(share * 100) + '% of it');
+      } else {
+        fail(`the guide leaves room for the floor (${name})`, JSON.stringify(g));
+      }
+      await page.close();
+    }
+
     const page = await newPage(w, h);
     await page.click('text=Start in the cupboard');
     await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
