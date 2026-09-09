@@ -162,6 +162,16 @@ app.openMenu = () => {
   body.push(el('div', 'hint', 'Build ' + BUILD + ' · if this is not the newest build, your '
     + 'browser is showing a cached copy — reload with Shift held, or in a private window.'));
 
+  // Required by the visitor counter: people are entitled to be told what is
+  // recorded about them, and where to ask for it back.
+  const priv = el('div', 'hint');
+  const link = el('a', null, 'Privacy');
+  link.href = 'privatliv.html';
+  link.target = '_blank';
+  link.rel = 'noopener';
+  priv.append(link, document.createTextNode(' · no cookies; visitor counts only, deleted after 30 days.'));
+  body.push(priv);
+
   showModal('Menu', 'ClouterX — Rack & Ruin', body, [
     { label: 'Save now', kind: 'primary', onClick: () => { save(state); toast('Saved.'); } },
     // On a narrow phone the top bar has to drop the speaker to fit, so the

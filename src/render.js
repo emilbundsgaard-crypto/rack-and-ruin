@@ -9,6 +9,7 @@ import { clamp } from './util.js';
 import { BUILDINGS_BY_ID } from './data/buildings.js';
 import { roomOf, tileAt } from './state.js';
 import { daylight } from './sim.js';
+import { drawSkyline } from './town.js';
 
 export const TW = 68;            // tile width on screen
 export const TH = 34;            // tile height on screen (2:1 isometric)
@@ -372,6 +373,12 @@ export class FloorView {
     this.night = 1 - this.sun;
     if (!this.centred && this.w) this.centre(state);
     ctx.clearRect(0, 0, this.w, this.h);
+
+    // Ashbrook, on the horizon, before anything else and behind everything
+    // else. Drawn in screen space: it is scenery at distance, so it does not
+    // ride the camera's zoom, and only drifts a fraction of its pan.
+    drawSkyline(ctx, this.w, this.h, state.town?.damage || 0, this.t, this.sun, this.ox);
+
     ctx.save();
     ctx.translate(this.ox, this.oy);
     ctx.scale(this.zoom, this.zoom);

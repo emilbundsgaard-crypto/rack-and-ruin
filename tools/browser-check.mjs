@@ -736,6 +736,67 @@ async function clickTile(page, gx, gy) {
   else fail('a wall of events never breaks the row above the floor', bad[0]);
 }
 
+// --------------------------------------- the town is on screen, and it decays
+{
+  // The best writing in the game used to be behind a tab you might never open.
+  // It is now drawn on the horizon behind the floor, so this checks two things
+  // a screenshot cannot: that something is actually painted up there, and that
+  // wrecking the place visibly changes it.
+  //
+  // The comparison is a downsampled strip of the band rather than a single
+  // average. An average passed once while the detail it claimed to be watching
+  // had not moved a pixel.
+  const page = await newPage(1280, 800);
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(500);
+
+  const strip = (dmg) => page.evaluate(async (dmg) => {
+    const app = window.__rr;
+    app.state.town.damage = dmg;
+    app.state.day = 3.3;
+    app.state.settings.speed = 0;
+    await new Promise((r) => setTimeout(r, 700));
+    const c = document.getElementById('view');
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const dpr = c.width / c.getBoundingClientRect().width;
+    const h = Math.round(120 * dpr);
+    const px = g.getImageData(0, 0, c.width, h).data;
+    // 240 columns of mean luminance: enough to see a roofline come and go.
+    const cols = 240, out = new Array(cols).fill(0);
+    const cw = Math.floor(c.width / cols);
+    let any = 0;
+    for (let x = 0; x < cols; x++) {
+      let sum = 0, n = 0;
+      for (let ix = x * cw; ix < (x + 1) * cw; ix += 2) {
+        for (let iy = 0; iy < h; iy += 2) {
+          const i = (iy * c.width + ix) * 4;
+          sum += (px[i] * 0.3 + px[i + 1] * 0.6 + px[i + 2] * 0.1) * (px[i + 3] / 255);
+          n++;
+        }
+      }
+      out[x] = n ? sum / n : 0;
+      if (out[x] > 4) any++;
+    }
+    return { out, any };
+  }, dmg);
+
+  const clean = await strip(0);
+  const ruined = await strip(0.95);
+  let moved = 0;
+  for (let i = 0; i < clean.out.length; i++) {
+    if (Math.abs(clean.out[i] - ruined.out[i]) > 1.2) moved++;
+  }
+  const drawn = clean.any > 120;                 // the band is not simply empty
+  if (!drawn) fail('the town is on screen, and it decays',
+    `only ${clean.any}/240 columns have anything in them`);
+  else if (moved < 60) fail('the town is on screen, and it decays',
+    `wrecking it changed only ${moved}/240 columns`);
+  else pass('the town is on screen, and it decays',
+    `${moved}/240 columns of horizon changed`);
+  await page.close();
+}
+
 // ------------------------------------- the tab row stays on a single line
 {
   // "Running" used to wrap the row onto two lines between roughly 950 and

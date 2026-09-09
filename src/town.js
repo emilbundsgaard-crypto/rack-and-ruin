@@ -267,3 +267,197 @@ export function drawTown(ctx, w, h, dmg, t) {
   ctx.fillStyle = vig;
   ctx.fillRect(0, 0, w, h);
 }
+
+// -------------------------------------------------- the town on the horizon
+
+/**
+ * Ashbrook, seen from the site, behind everything you build.
+ *
+ * The panel version above is a storybook elevation in daylight. This is the
+ * same town at distance, in the game's own dark palette, drawn across the top
+ * of the floor view so the place you are wrecking is on screen the whole time
+ * instead of behind a tab. It is scenery and nothing else: it reads no input
+ * and changes no state.
+ *
+ * The silhouette only changes when the damage or the light does, so it is
+ * cached and blitted; the smoke is the only thing redrawn every frame.
+ */
+const skyCache = { key: '', canvas: null, w: 0, h: 0 };
+
+const OVERHANG = 90;   // drawn wider than the view, so parallax has somewhere to go
+
+function paintSkyline(g, w, h, dmg, sun) {
+  const dead = dmg;
+  const night = 1 - sun;
+  const base = Math.round(h * 0.78);    // horizon, with ground below it to fade out on
+
+  // Air, brightest at the horizon and fading upward — sky glow over a town,
+  // which is the only way a dark silhouette reads against a dark game. The
+  // first attempt ran the gradient the other way and put dark roofs on a dark
+  // background, where they were invisible.
+  //
+  // Blue-grey at night, dusty by day, and browner the worse it gets.
+  const air = g.createLinearGradient(0, 0, 0, h);
+  const gr = lerp(lerp(56, 104, sun), lerp(104, 150, sun), dead);
+  const gg = lerp(lerp(62, 108, sun), lerp(84, 116, sun), dead);
+  const gb = lerp(lerp(84, 124, sun), lerp(66, 78, sun), dead);
+  air.addColorStop(0, 'rgba(14,12,10,0)');
+  air.addColorStop(0.55, `rgba(${(gr * 0.42) | 0},${(gg * 0.42) | 0},${(gb * 0.46) | 0},0.55)`);
+  air.addColorStop(1, `rgba(${gr | 0},${gg | 0},${gb | 0},0.92)`);
+  g.fillStyle = air;
+  g.fillRect(0, 0, w, base);
+
+  // Sun or moon, low and hazy.
+  const discY = h * 0.26;
+  const discX = w * 0.72;
+  g.globalAlpha = (sun > 0.25 ? 0.30 : 0.22) * (1 - dead * 0.5);
+  g.fillStyle = sun > 0.25
+    ? rgb(255, lerp(226, 168, dead), lerp(178, 104, dead))
+    : rgb(196, 202, 214);
+  g.beginPath();
+  g.arc(discX, discY, sun > 0.25 ? 13 : 9, 0, 6.283);
+  g.fill();
+  g.globalAlpha = 1;
+
+  // The ridge behind the town.
+  g.fillStyle = `rgba(${lerp(28, 46, dead) | 0},${lerp(34, 40, dead) | 0},${lerp(40, 32, dead) | 0},0.7)`;
+  g.beginPath();
+  g.moveTo(0, base);
+  g.lineTo(0, base - 24);
+  g.quadraticCurveTo(w * 0.26, base - 46, w * 0.52, base - 20);
+  g.quadraticCurveTo(w * 0.78, base - 40, w, base - 16);
+  g.lineTo(w, base);
+  g.closePath();
+  g.fill();
+
+  // The town itself: a run of roofs left to right, each with its own hour.
+  // Roofs go, then the walls, in the same order the panel tells it.
+  const roofs = Math.max(10, Math.round(w / 46));
+  const span = w * 0.66;
+  const x0 = w * 0.05;
+  const dark = `rgba(${lerp(13, 24, dead) | 0},${lerp(14, 20, dead) | 0},${lerp(18, 16, dead) | 0},0.96)`;
+  for (let i = 0; i < roofs; i++) {
+    const r = rand(i * 3 + 1);
+    const x = x0 + (i / roofs) * span + r * 6;
+    const bw = 16 + rand(i + 11) * 20;
+    // A few tall ones among the terraces — a mill, a chapel, a block of flats —
+    // otherwise the roofline is a fence.
+    const tall = rand(i + 47) > 0.82;
+    const bh = (tall ? 30 : 9) + rand(i + 5) * (tall ? 18 : 15);
+    const doom = 0.20 + (i / roofs) * 0.70;
+    if (dmg > doom) {
+      // Left standing: a broken stub, so the skyline goes gap-toothed rather
+      // than simply emptying.
+      if (rand(i + 31) > 0.45) {
+        g.fillStyle = dark;
+        g.fillRect(x, base - bh * 0.32, bw * 0.7, bh * 0.32);
+      }
+      continue;
+    }
+    g.fillStyle = dark;
+    g.fillRect(x, base - bh, bw, bh);
+    if (dmg < doom - 0.10) {                       // still roofed
+      g.beginPath();
+      g.moveTo(x - 2, base - bh);
+      g.lineTo(x + bw / 2, base - bh - 7 - rand(i + 2) * 4);
+      g.lineTo(x + bw + 2, base - bh);
+      g.closePath();
+      g.fill();
+    }
+    // A lit window means somebody is still in there. They go out early, and
+    // they only show at dusk.
+    const lived = dmg < doom - 0.18;
+    if (lived && night > 0.35 && rand(i + 17) > 0.35) {
+      g.fillStyle = `rgba(247,206,124,${0.5 * Math.min(1, (night - 0.35) / 0.4)})`;
+      g.fillRect(x + 4 + rand(i + 23) * (bw - 12), base - bh + 4 + rand(i + 29) * 5, 3, 3);
+    }
+  }
+
+  // The church, still there when nothing else is.
+  if (dmg < 0.97) {
+    const cx = x0 + span + 22;
+    g.fillStyle = dark;
+    g.fillRect(cx, base - 20, 13, 20);
+    g.beginPath();
+    g.moveTo(cx + 1, base - 20);
+    g.lineTo(cx + 6.5, base - 42);
+    g.lineTo(cx + 12, base - 20);
+    g.closePath();
+    g.fill();
+  }
+
+  // Ground below the horizon, fading down into the floor's own background.
+  // Without it the band ends on a ruled line straight across the screen.
+  const soil = g.createLinearGradient(0, base, 0, h);
+  soil.addColorStop(0, `rgba(${lerp(26, 40, dead) | 0},${lerp(24, 32, dead) | 0},${lerp(22, 22, dead) | 0},0.85)`);
+  soil.addColorStop(1, 'rgba(14,12,10,0)');
+  g.fillStyle = soil;
+  g.fillRect(0, base, w, h - base);
+
+  // Your own site, creeping in from the right and out-topping everything.
+  const site = clamp(dmg * 1.2, 0, 1);
+  const sw = w * 0.26 * site;
+  if (sw > 8) {
+    g.fillStyle = `rgba(20,24,30,0.95)`;
+    g.fillRect(w - sw - 2, base - 16 - 26 * site, sw, 16 + 26 * site);
+    // Hazard lights on the tall corner.
+    if (night > 0.3) {
+      g.fillStyle = `rgba(229,97,79,${0.55 * night})`;
+      g.fillRect(w - sw - 1, base - 18 - 26 * site, 3, 3);
+    }
+  }
+}
+
+/**
+ * Blit the cached skyline, then the smoke, which is the only moving part.
+ * `pan` slides it a fraction of the camera so it sits at a distance.
+ */
+export function drawSkyline(ctx, w, h, dmg, t, sun, pan) {
+  if (w <= 0 || h <= 0) return;
+  const band = Math.round(Math.min(150, Math.max(78, h * 0.27)));
+  const cw = Math.round(w) + OVERHANG * 2;
+  // Coarse buckets: the picture only needs to change when it would visibly
+  // differ, not on every thousandth of a damage point.
+  const key = `${cw}|${band}|${Math.round(dmg * 40)}|${Math.round(sun * 12)}`;
+  if (skyCache.key !== key) {
+    const c = skyCache.canvas || (skyCache.canvas = document.createElement('canvas'));
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    c.width = Math.ceil(cw * dpr);
+    c.height = Math.ceil(band * dpr);
+    const g = c.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, cw, band);
+    paintSkyline(g, cw, band, dmg, sun);
+    skyCache.key = key;
+    skyCache.w = cw;
+    skyCache.h = band;
+  }
+
+  const shift = Math.max(-OVERHANG, Math.min(OVERHANG, (pan || 0) * 0.06));
+  ctx.save();
+  ctx.drawImage(skyCache.canvas, -OVERHANG + shift, 0, skyCache.w, skyCache.h);
+
+  // Plumes from the site: the one thing that moves, and the one thing that
+  // gets worse without ever getting better.
+  const site = clamp(dmg * 1.2, 0, 1);
+  if (site > 0.08) {
+    const baseY = band * 0.78;                  // the horizon, same as the paint
+    // One soft dome of exhaust rather than drawn plumes. A hundred pixels of
+    // sky is not enough for smoke to have a shape: columns read as stripes and
+    // fanned columns read as a starburst, both of which were tried. A haze
+    // that breathes says the same thing and stays out of the way.
+    const cx = w - w * 0.13 * site - 6 + shift;
+    const breath = 1 + Math.sin(t * 0.21) * 0.07;
+    const r = baseY * (0.55 + 0.35 * site) * breath;
+    const haze = ctx.createRadialGradient(cx, baseY, 0, cx, baseY, r);
+    haze.addColorStop(0, `rgba(178,166,146,${0.11 * site})`);
+    haze.addColorStop(0.5, `rgba(168,158,140,${0.05 * site})`);
+    haze.addColorStop(1, 'rgba(160,150,134,0)');
+    ctx.fillStyle = haze;
+    ctx.beginPath();
+    // A half-dome: the sky above the horizon only.
+    ctx.ellipse(cx, baseY, r, r * 0.92, 0, Math.PI, 0);
+    ctx.fill();
+  }
+  ctx.restore();
+}
