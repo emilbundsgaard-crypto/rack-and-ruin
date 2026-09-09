@@ -4,8 +4,15 @@
 //
 //   node tools/trailer.mjs <url> <outdir>
 //
+// Needs Node, Playwright with Chromium, ffmpeg, and the game being served at
+// <url>. Writes clouterx-trailer.mp4 into <outdir> and cleans up after itself.
+//
 // The setup is done behind a black cover so it can be trimmed off precisely
 // afterwards: ffmpeg's blackdetect finds the exact frame the cover lifts.
+import { execFileSync } from 'node:child_process';
+import { rmSync, mkdirSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+
 const { chromium } = await import(process.env.RR_PLAYWRIGHT || 'playwright');
 const URL = process.argv[2] || 'http://127.0.0.1:8099/index.html';
 const OUT = process.argv[3] || '.';
@@ -209,9 +216,55 @@ const shown = await page.evaluate(async () => {
            damage: +s.town.damage.toFixed(2), facility: St.roomOf(s).name };
 });
 
-const path = await page.video().path();
-await ctx.close();
+const raw = await page.video().path();
+await ctx.close();                               // the recording is written here
 await browser.close();
+
 console.log('on screen at the end: ' + JSON.stringify(shown));
-console.log(errors.length ? 'PAGE ERRORS: ' + errors.join(' | ') : 'no page errors');
-console.log('raw: ' + path);
+if (errors.length) {
+  console.error('PAGE ERRORS: ' + errors.join(' | '));
+  process.exit(1);
+}
+
+// ---------------------------------------------------------------- cut it up
+//
+// Recording starts when the page is created, so the take opens with however
+// long the setup took. That stretch was deliberately held black, which gives
+// ffmpeg an exact frame to cut from rather than a number guessed by hand.
+const ff = (args) => execFileSync('ffmpeg', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+const probe = (args) => execFileSync('ffprobe', args, { encoding: 'utf8' }).trim();
+
+let detect = '';
+try {
+  execFileSync('ffmpeg', ['-v', 'info', '-i', raw, '-vf', 'blackdetect=d=0.15:pix_th=0.06',
+    '-f', 'null', '-'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+} catch (e) { detect = String(e.stderr || ''); }
+if (!detect) {
+  try { detect = execFileSync('sh', ['-c',
+    `ffmpeg -v info -i ${JSON.stringify(raw)} -vf blackdetect=d=0.15:pix_th=0.06 -f null - 2>&1`],
+    { encoding: 'utf8' }); } catch { detect = ''; }
+}
+const m = detect.match(/black_end:([0-9.]+)/);
+const start = m ? parseFloat(m[1]) : 0;
+const total = parseFloat(probe(['-v', 'error', '-show_entries', 'format=duration',
+  '-of', 'csv=p=0', raw]));
+const length = +(total - start).toFixed(2);
+if (!(length > 3)) {
+  console.error(`the take is only ${length}s after trimming — something went wrong`);
+  process.exit(1);
+}
+
+// H.264 High in yuv420p with a silent AAC track: what X, and every other
+// player worth worrying about, will accept without re-encoding it themselves.
+const out = join(OUT, 'clouterx-trailer.mp4');
+ff(['-v', 'error', '-y', '-ss', String(start), '-i', raw,
+  '-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+  '-vf', 'fps=30,format=yuv420p',
+  '-c:v', 'libx264', '-profile:v', 'high', '-level', '4.0', '-preset', 'slow', '-crf', '20',
+  '-c:a', 'aac', '-b:a', '96k', '-shortest', '-movflags', '+faststart',
+  '-t', String(length), out]);
+rmSync(raw, { force: true });
+
+const size = (+probe(['-v', 'error', '-show_entries', 'format=size', '-of', 'csv=p=0', out]) / 1e6).toFixed(1);
+console.log(`\ntrailer: ${out}`);
+console.log(`         ${length}s, ${size} MB, 1280x720, H.264 + silent audio`);
