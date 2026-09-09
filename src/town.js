@@ -298,12 +298,12 @@ function paintSkyline(g, w, h, dmg, sun) {
   //
   // Blue-grey at night, dusty by day, and browner the worse it gets.
   const air = g.createLinearGradient(0, 0, 0, h);
-  const gr = lerp(lerp(56, 104, sun), lerp(104, 150, sun), dead);
-  const gg = lerp(lerp(62, 108, sun), lerp(84, 116, sun), dead);
-  const gb = lerp(lerp(84, 124, sun), lerp(66, 78, sun), dead);
+  const gr = lerp(lerp(72, 126, sun), lerp(128, 176, sun), dead);
+  const gg = lerp(lerp(80, 130, sun), lerp(102, 136, sun), dead);
+  const gb = lerp(lerp(106, 148, sun), lerp(80, 92, sun), dead);
   air.addColorStop(0, 'rgba(14,12,10,0)');
-  air.addColorStop(0.55, `rgba(${(gr * 0.42) | 0},${(gg * 0.42) | 0},${(gb * 0.46) | 0},0.55)`);
-  air.addColorStop(1, `rgba(${gr | 0},${gg | 0},${gb | 0},0.92)`);
+  air.addColorStop(0.52, `rgba(${(gr * 0.40) | 0},${(gg * 0.40) | 0},${(gb * 0.44) | 0},0.62)`);
+  air.addColorStop(1, `rgba(${gr | 0},${gg | 0},${gb | 0},0.98)`);
   g.fillStyle = air;
   g.fillRect(0, 0, w, base);
 
@@ -368,8 +368,8 @@ function paintSkyline(g, w, h, dmg, sun) {
     // they only show at dusk.
     const lived = dmg < doom - 0.18;
     if (lived && night > 0.35 && rand(i + 17) > 0.35) {
-      g.fillStyle = `rgba(247,206,124,${0.5 * Math.min(1, (night - 0.35) / 0.4)})`;
-      g.fillRect(x + 4 + rand(i + 23) * (bw - 12), base - bh + 4 + rand(i + 29) * 5, 3, 3);
+      g.fillStyle = `rgba(250,212,132,${0.8 * Math.min(1, (night - 0.35) / 0.4)})`;
+      g.fillRect(x + 4 + rand(i + 23) * (bw - 12), base - bh + 4 + rand(i + 29) * 5, 3.5, 3.5);
     }
   }
 

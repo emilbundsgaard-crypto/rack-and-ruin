@@ -18,3 +18,20 @@ AddType text/javascript .js
     Header set Cache-Control "no-cache, must-revalidate"
   </FilesMatch>
 </IfModule>
+
+# 3. Never hand out the files behind the visitor counter.
+#
+#    track.php and stats.php are meant to be requested. config.php and lib.php
+#    are not: PHP pulls them in from disk, which never goes through the web
+#    server at all. Denying them costs nothing and means that if PHP is ever
+#    off — a moved host, a broken upgrade — the server cannot serve the stats
+#    password to whoever asks for it as plain text.
+<FilesMatch "^(config|config\.example|lib)\.php$">
+  Require all denied
+  <IfModule !mod_authz_core.c>
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# 4. And never the visitor data itself.
+RedirectMatch 404 ^/api/data/
