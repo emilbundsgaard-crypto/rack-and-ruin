@@ -1,3 +1,5 @@
 node_modules/
-*.log
-.DS_Store
+api/data/
+
+# Holds the real stats password. Ships in the zip, never in the repo.
+api/config.php

@@ -37,7 +37,7 @@ function baseMods() {
   m.offerSize = 1;
   // Room for one person on the payroll before any office exists. Without this
   // you cannot hire your first technician until an office is researched and
-  // built, which leaves broken machines with nobody to fix them through the
+  // built, which leaves broken servers with nobody to fix them through the
   // whole opening — and made the guide ask for something impossible.
   m.staffCap = 1;
   m.offlineHours = 2;
@@ -346,7 +346,7 @@ export function derive(state) {
   let bottleneck = null;
   const worstCover = racks.length ? Math.min(...racks.map((r) => (r.used > 0 ? r.cover : 1))) : 1;
   const worstPdu = racks.length ? Math.min(...racks.map((r) => (r.used > 0 ? r.pduFactor : 1))) : 1;
-  if (unitsTotal === 0) bottleneck = 'no machines installed';
+  if (unitsTotal === 0) bottleneck = 'no servers installed';
   else if (rawPowerFactor < 0.98) bottleneck = 'not enough electricity';
   else if (worstPdu < 0.95) bottleneck = 'a rack has no power nearby';
   else if (netFactor < 0.98) bottleneck = 'not enough network';
@@ -362,7 +362,7 @@ export function derive(state) {
     problems.push({
       tone: 'bad', tab: 'site',
       text: `You are overdrawn by ${money(-state.money)}. Nothing can be bought until you are back `
-        + 'above zero. Sell machines you cannot run and let staff go until the site earns more '
+        + 'above zero. Sell servers you cannot run and let staff go until the site earns more '
         + `than it spends — the ${Math.round(OVERDRAFT_RATE * 100)}% a day stops the moment it does.`,
     });
   } else if (debt > 0 && revenue < costs) {
@@ -416,7 +416,7 @@ export function derive(state) {
     problems.push({
       tone: 'bad', tab: 'build', cat: 'cooling', overlay: 'heat',
       focus: worst && { x: worst.x, y: worst.y },
-      text: `Your hottest rack is ${maxTemp.toFixed(0)} °C. Over 40 °C the machines break quickly.`,
+      text: `Your hottest rack is ${maxTemp.toFixed(0)} °C. Over 40 °C the servers break quickly.`,
     });
   }
   if (waterFactor < 0.95) {
@@ -430,7 +430,7 @@ export function derive(state) {
     problems.push({
       tone: brokenTotal > unitsTotal * 0.05 ? 'bad' : 'warn',
       tab: 'ops',
-      text: brokenTotal + ' broken machine' + (brokenTotal > 1 ? 's' : '')
+      text: brokenTotal + ' broken server' + (brokenTotal > 1 ? 's' : '')
         + (state.staff.tech < 1 ? '. Hire a technician to get them fixed.'
           : '. Your technicians are falling behind — hire another.'),
     });
@@ -438,7 +438,7 @@ export function derive(state) {
   if (netFactor < 0.98) {
     problems.push({
       tone: 'warn', tab: 'build', cat: 'support',
-      text: `Your network only reaches ${Math.round(netFactor * 100)}% of your machines. The rest sit idle.`,
+      text: `Your network only reaches ${Math.round(netFactor * 100)}% of your servers. The rest sit idle.`,
     });
   }
   const freeCompute = computeSellable - contractDemand;
@@ -458,7 +458,7 @@ export function derive(state) {
   if (freeSlots > 0 && unitsTotal > 0) {
     problems.push({
       tone: 'info', tab: 'racks',
-      text: `${freeSlots} empty slot${freeSlots > 1 ? 's' : ''} in your racks. Put machines in them.`,
+      text: `${freeSlots} empty slot${freeSlots > 1 ? 's' : ''} in your racks. Put servers in them.`,
     });
   }
   const affordableRnD = RESEARCH.filter((r) => !state.research.done.includes(r.id)
@@ -482,7 +482,7 @@ export function derive(state) {
   if (nextFac && state.money >= nextFac.cost && state.reputation >= (nextFac.rep || 0)) {
     problems.push({
       tone: 'good', tab: 'site',
-      text: `You can afford to move into the ${nextFac.name}. More floor, more machines.`,
+      text: `You can afford to move into the ${nextFac.name}. More floor, more servers.`,
     });
   }
 
@@ -837,7 +837,7 @@ function contractsTick(state, d, days, hooks) {
     state.contracts.nextOffer = (keen ? 0.7 : 1.9) + Math.random() * 1.2;
   }
 
-  // Optional hands-off signing, for when placing machines is the fun part.
+  // Optional hands-off signing, for when placing servers is the fun part.
   if (state.settings.autoSign) {
     let free = d.computeSellable - sum(state.contracts.active, (c) => c.demand);
     for (let guard = 0; guard < 8; guard++) {

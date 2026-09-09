@@ -111,7 +111,7 @@ await shot('floor', async (page) => {
 await shot('endgame', async (page) => {
   await page.click('text=Start in the cupboard');
   await fastForward(page, BIG);
-  await page.click('#tabs >> text=Machines');
+  await page.click('#tabs >> text=Servers');
   await page.waitForTimeout(700);
 });
 

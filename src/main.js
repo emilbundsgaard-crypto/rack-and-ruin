@@ -14,6 +14,7 @@ import { initTips, hide as hideTip } from './tip.js';
 import { startAudio, setEnabled as setSound, isEnabled as soundOn, ambience, sfx } from './audio.js';
 import { advance as tutAdvance, active as tutActive, FINISH, STEPS } from './tutorial.js';
 import { BootArt } from './bootart.js';
+import { initPresence } from './presence.js';
 
 const TICK = 0.2;          // seconds of simulated time per fixed step
 const MAX_CATCHUP = 0.5;   // seconds of simulation per frame at 1x
@@ -104,7 +105,14 @@ function showModal(title, sub, body, buttons, opts) {
   const row = el('div', 'btnrow');
   for (const b of buttons) {
     const btn = el('button', 'btn ' + (b.kind || ''), b.label);
-    btn.onclick = () => { closeModal(); b.onClick?.(); };
+    // Most buttons finish the conversation. A keepOpen one is a switch you
+    // might flip twice, so it stays put and relabels itself from whatever its
+    // handler returns.
+    btn.onclick = () => {
+      if (!b.keepOpen) { closeModal(); b.onClick?.(); return; }
+      const label = b.onClick?.();
+      if (typeof label === 'string') btn.textContent = label;
+    };
     row.append(btn);
   }
   sheet.append(row);
@@ -156,6 +164,13 @@ app.openMenu = () => {
 
   showModal('Menu', 'ClouterX — Rack & Ruin', body, [
     { label: 'Save now', kind: 'primary', onClick: () => { save(state); toast('Saved.'); } },
+    // On a narrow phone the top bar has to drop the speaker to fit, so the
+    // only way to the sound is from here. It lives here on every screen so it
+    // is in the same place whatever you are holding.
+    { label: soundOn() ? 'Sound: on' : 'Sound: off', keepOpen: true, onClick: () => {
+      app.toggleSound();
+      return soundOn() ? 'Sound: on' : 'Sound: off';
+    } },
     { label: 'Export', onClick: () => {
       const text = exportSave(state);
       navigator.clipboard?.writeText(text).catch(() => {});
@@ -461,6 +476,7 @@ function startGame(state, fresh) {
     // rather than printing them on top of each other.
     fitTopBar(true);
     new ResizeObserver(() => fitTopBar(true)).observe(document.getElementById('topbar'));
+    initPresence();
     window.addEventListener('resize', () => app.view.resize());
     app.view.resize();
     app.view.observe();
@@ -649,7 +665,7 @@ function showHelp() {
     el('p', null, 'You buy compute. Compute earns nothing until it is under contract. '
       + 'Running it needs power, cooling, water, switching and maintenance — and every one of '
       + 'those is a thing you place on the floor, inside a radius, out of a budget.'),
-    el('p', null, 'That is the whole game. The machines get bigger; the five problems do not change.'),
+    el('p', null, 'That is the whole game. The hardware gets bigger; the five problems do not change.'),
   );
 
   const legend = el('div', 'glegend');
@@ -679,7 +695,7 @@ function showHelp() {
     ]),
     guideSection('The floor', [
       ['Space', 'Buy extra rows and columns on the Site tab, or move to a bigger facility.'],
-      ['Turning', 'R turns the room a quarter, so tall machines stop hiding what is behind them.'],
+      ['Turning', 'R turns the room a quarter, so tall buildings stop hiding what is behind them.'],
     ]),
     guideSection('Money', [
       ['Contracts', 'The only income. Offers arrive a couple a day and go stale after about a week.'],
@@ -687,7 +703,7 @@ function showHelp() {
       ['SLA', 'Fall below the promised uptime and penalties start and reputation drops.'],
       ['Reputation', 'Earned by finishing contracts cleanly. Unlocks bigger sites and better customers.'],
       ['R&D', 'The slider on the R&D tab trades sellable compute for research points.'],
-      ['What you sell', 'Compute, not machines. The Contracts tab breaks your output into '
+      ['What you sell', 'Compute, not servers. The Contracts tab breaks your output into '
         + 'sold, unsold and diverted to research.'],
     ]),
     guideSection('Starting again', [
@@ -704,8 +720,8 @@ function showHelp() {
     legend,
     guideSection('Controls', [
       ['To-do list', 'With no tile selected, the strip under the floor lists what needs attention. Click a row to jump to the fix.'],
-      ['Overlays', 'The buttons above the floor. Power and Cooling shade what each machine reaches.'],
-      ['Placing', 'Pick a machine, click a tile. Drag with one held to lay a whole row.'],
+      ['Overlays', 'The buttons above the floor. Power and Cooling shade what each building reaches.'],
+      ['Placing', 'Pick a building, click a tile. Drag with one held to lay a whole row.'],
       ['Moving about', 'Wheel zooms, dragging empty space pans, R turns the room a quarter.'],
       ['Speed', 'The 1× to 10× control in the top bar, or +/− on the keyboard.'],
       ['Sound', 'A room tone that follows the site, and a cue for the things worth hearing. '

@@ -29,7 +29,7 @@ let dirty = true;
 
 /** Which tab actually fixes each bottleneck the simulation can report. */
 const FIX_TAB = {
-  'no machines installed': 'racks',
+  'no servers installed': 'racks',
   'not enough electricity': 'ops',
   'a rack has no power nearby': 'build',
   'not enough network': 'build',
@@ -41,10 +41,10 @@ const FIX_TAB = {
 
 export const TABS = [
   { id: 'build', name: 'Build' },
-  { id: 'racks', name: 'Machines' },
+  { id: 'racks', name: 'Servers' },
   { id: 'deals', name: 'Deals' },
   { id: 'upgrade', name: 'Upgrade' },
-  { id: 'ops', name: 'Running' },
+  { id: 'ops', name: 'Utilities' },
   { id: 'site', name: 'Site' },
   { id: 'town', name: 'Town' },
 ];
@@ -84,7 +84,7 @@ export function initUI(a) {
     return b;
   });
   const sellBtn = el('button', 'tool', 'Demolish');
-  sellBtn.dataset.tip = 'Demolish|Click machines to remove them. You get half the money back. Drag to clear a row.';
+  sellBtn.dataset.tip = 'Demolish|Click anything on the floor to remove it. You get half the money back. Drag to clear a row.';
   sellBtn.onclick = () => {
     app.view.tool = app.view.tool === 'sell' ? null : 'sell';
     sellBtn.classList.toggle('on', app.view.tool === 'sell');
@@ -92,7 +92,7 @@ export function initUI(a) {
   };
   const turnBtn = el('button', 'tool', '\u21BB Turn');
   turnBtn.dataset.tip = 'Turn the room|A quarter turn anticlockwise, so you can see behind the '
-    + 'tall machines. R does the same.';
+    + 'tall buildings. R does the same.';
   turnBtn.onclick = () => { app.view.turn(1); };
   const centreBtn = el('button', 'tool', 'Recentre');
   centreBtn.dataset.tip = 'Recentre|Fit the whole floor back on screen.';
@@ -118,7 +118,7 @@ export function syncTool() {
   if (!b) return;
   const t = app.view?.tool;
   const name = t === 'sell' ? 'Demolish'
-    : t ? (ALL_BUILDINGS.find((x) => x.id === t)?.name || 'machine') : null;
+    : t ? (ALL_BUILDINGS.find((x) => x.id === t)?.name || 'building') : null;
   if (b._name !== name) {
     b._name = name;
     if (name) {
@@ -173,6 +173,12 @@ function speaker(on) { return SPK + (on ? WAVE : MUTE) + '</svg>'; }
  * measured on the viewer's machine. The readouts duplicated inside the panels
  * are dropped, widest first, until the row fits.
  */
+/**
+ * What the bar sheds, in the order it sheds it. Each level is only reached if
+ * the one before it was not enough.
+ */
+const FIT_LEVELS = ['hide-minis', 'hide-meters', 'tight'];
+
 let fitSig = -1;
 export function fitTopBar(force) {
   const bar = document.getElementById('topbar');
@@ -189,13 +195,21 @@ export function fitTopBar(force) {
   // now — the latter catches content that grew after the first measurement,
   // for instance because a webfont finished loading. Reading scrollWidth is
   // cheap; it is the remove-and-re-add below that must not run every frame.
+  //
+  // The guard stops at the last level rather than the first: once everything
+  // has been shed there is nothing further to do, and re-measuring forever
+  // would be the flicker all over again. Until then, content that grows after
+  // the fit settled — a live count arriving from the server, say — still gets
+  // a fresh measurement.
   const spilling = bar.scrollWidth > bar.clientWidth + 1
-    && !bar.classList.contains('hide-meters');
+    && !bar.classList.contains(FIT_LEVELS[FIT_LEVELS.length - 1]);
   if (!force && width === fitSig && !spilling) return;
   fitSig = width;
-  bar.classList.remove('hide-minis', 'hide-meters');
-  if (bar.scrollWidth > bar.clientWidth + 1) bar.classList.add('hide-minis');
-  if (bar.scrollWidth > bar.clientWidth + 1) bar.classList.add('hide-meters');
+  bar.classList.remove(...FIT_LEVELS);
+  for (const level of FIT_LEVELS) {
+    if (bar.scrollWidth <= bar.clientWidth + 1) break;
+    bar.classList.add(level);
+  }
 }
 
 export function renderTop(state, d) {
@@ -267,8 +281,16 @@ export function renderTop(state, d) {
     menu.dataset.tip = 'Menu|Save, export, import, restart the guide, or wipe and start over.';
     menu.onclick = () => app.openMenu();
 
+    // Filled in by src/presence.js, and hidden until the server answers. It
+    // is built here so the bar is measured with it in place.
+    const live = el('div', 'livecount');
+    live.id = 'livecount';
+    live.hidden = true;
+    live.dataset.tip = 'Playing now|How many people have been on ClouterX in the '
+      + 'last three minutes. Counted on the server; nothing is stored on your device.';
+
     const right = el('div', 'topright');
-    right.append(speed, soundBtn, guide, menu);
+    right.append(live, speed, soundBtn, guide, menu);
     fill(bar,
       vital('v_cash', 'Cash'),
       vital('v_compute', 'Compute'),
@@ -390,7 +412,7 @@ export function renderUI() {
   else if (tab === 'racks') fill(body, panelRacks(state, d));
   else if (tab === 'deals') fill(body, panelContracts(state, d));
   else if (tab === 'upgrade') fill(body, [...panelResearch(state, d), ...panelUpgrades(state, d)]);
-  else if (tab === 'ops') fill(body, [...panelStaff(state, d), ...panelUtilities(state, d)]);
+  else if (tab === 'ops') fill(body, [...panelUtilities(state, d), ...panelStaff(state, d)]);
   else if (tab === 'site') fill(body, [...panelSite(state, d), ...panelLegacy(state, d)]);
   else if (tab === 'town') fill(body, panelTown(state, d));
   body.scrollTop = scroll;
@@ -579,7 +601,7 @@ function panelBuild(state, d) {
   }
 
   // Sort so the top of the list is what you can act on. Before this, a player
-  // with $2,000 opened Build and read three screens of billion-pound machines
+  // with $2,000 opened Build and read three screens of billion-pound buildings
   // they could not research, let alone buy.
   const rank = (unlocked, afford) => (unlocked && afford ? 0 : unlocked ? 1 : 2);
   const inCat = BUILDINGS.filter((x) => x.cat === buildCat)
@@ -597,7 +619,7 @@ function panelBuild(state, d) {
     const afford = state.money >= cost;
     // Headline facts on the row; everything else waits in the tooltip.
     const meta = [];
-    if (b.slots) meta.push(['holds', rackCapacity(b, d.mods) + ' machines']);
+    if (b.slots) meta.push(['holds', rackCapacity(b, d.mods) + ' servers']);
     if (b.powerCap) meta.push(['powers', fmt(b.powerCap) + ' kW']);
     if (b.coolCap) meta.push(['cools', fmt(b.coolCap * d.mods.coolMult) + ' kW']);
     if (b.supplyKW) meta.push(['makes', fmt(b.supplyKW) + ' kW']);
@@ -648,12 +670,12 @@ function panelBuild(state, d) {
   // Say it in the verbs of the device in front of them.
   const touch = matchMedia('(hover: none)').matches;
   const help = el('div', 'hint', touch
-    ? 'Tap a machine below, then tap the floor to put it down. Drag anywhere to move the floor '
+    ? 'Tap a building below, then tap the floor to put it down. Drag anywhere to move the floor '
       + 'around, pinch to zoom, and use Turn above it to rotate. The ✕ button in the corner of '
-      + 'the floor puts the machine down again.'
-    : 'Click a machine below, then click the floor to put it down. Hold and drag to lay a whole row. '
+      + 'the floor puts it down again.'
+    : 'Click a building below, then click the floor to put it down. Hold and drag to lay a whole row. '
       + 'Drag empty floor to move around, scroll to zoom, and press R to turn the room. '
-      + 'Escape, or the ✕ in the corner of the floor, puts the machine down again.');
+      + 'Escape, or the ✕ in the corner of the floor, puts it down again.');
   return [sec(null, catRow), sec(null, help), sec(null, list)];
 }
 
@@ -771,7 +793,7 @@ function panelRacks(state, d) {
 function panelContracts(state, d) {
   const out = [];
 
-  // What you actually sell. Contracts buy capacity, not machines.
+  // What you actually sell. Contracts buy capacity, not servers.
   const booked = d.contractDemand;
   const unsold = Math.max(0, d.computeSellable - booked);
   const total = Math.max(1e-9, d.computeTotal);
@@ -804,7 +826,7 @@ function panelContracts(state, d) {
   );
   flow.append(legend);
   flow.append(el('div', 'desc',
-    'Contracts buy compute, not racks. The machines stay on your floor; what you sell is the '
+    'Contracts buy compute, not racks. The servers stay on your floor; what you sell is the '
     + 'capacity they produce. Promise more than you can deliver and you start paying a fine.'));
   out.push(sec(null, flow));
 
@@ -821,7 +843,7 @@ function panelContracts(state, d) {
   const auto = el('button', 'btn small' + (state.settings.autoSign ? ' primary' : ''),
     state.settings.autoSign ? 'Auto-sign: on' : 'Auto-sign: off');
   auto.dataset.tip = 'Auto-sign|Takes the best offer that fits in your spare capacity, '
-    + 'whenever a slot is free. Turn it on when placing machines is the part you enjoy.';
+    + 'whenever a slot is free. Turn it on when placing servers is the part you enjoy.';
   auto.onclick = () => { state.settings.autoSign = !state.settings.autoSign; markDirty(); renderUI(); };
   const autoRow = el('div', 'btnrow'); autoRow.append(auto); head.append(autoRow);
   out.push(sec('Book', head));
@@ -1190,7 +1212,7 @@ function bankCard(state, d) {
     warn.append(el('div', 'odbig', money(state.money)));
     warn.append(el('div', 'desc',
       'Nothing can be bought while the balance is below zero. The hole grows '
-      + Math.round(SIM.OVERDRAFT_RATE * 100) + '% a day and your name goes with it. Sell machines '
+      + Math.round(SIM.OVERDRAFT_RATE * 100) + '% a day and your name goes with it. Sell servers '
       + 'you cannot run, or let go of staff you cannot pay.'));
     // Borrowing is not buying, so it stays open — and taking a loan now at 5%
     // is far cheaper than what the bank will want if you let it get worse.
@@ -1415,7 +1437,7 @@ function panelSite(state, d) {
     ['Lifetime revenue', money(state.lifetimeEarnings)],
     ['Peak compute', fmt(state.stats.peakCompute)],
     ['Peak net income', rate(state.stats.peakIncome)],
-    ['Machines built', fmtInt(state.stats.built)],
+    ['Buildings placed', fmtInt(state.stats.built)],
     ['Units installed', fmtInt(state.stats.installed)],
     ['Units failed', fmtInt(state.stats.failed)],
     ['Units repaired', fmtInt(state.stats.repaired)],

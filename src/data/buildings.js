@@ -232,7 +232,7 @@ export const BUILDINGS = [
 export const BUILDINGS_BY_ID = Object.fromEntries(BUILDINGS.map((b) => [b.id, b]));
 
 export const CATEGORIES = [
-  { id: 'compute', name: 'Compute' },
+  { id: 'compute', name: 'Racks' },
   { id: 'power', name: 'Power' },
   { id: 'cooling', name: 'Cooling' },
   { id: 'water', name: 'Water' },

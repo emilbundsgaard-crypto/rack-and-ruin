@@ -20,7 +20,7 @@ export const STEPS = [
     id: 't2',
     title: 'Somewhere to put them',
     body: 'Put an Open frame rack next to the power strip. It has to be within two tiles or it gets no power.',
-    note: 'A rack is just shelves. The machines inside are what earn.',
+    note: 'A rack is just shelves. The servers inside are what earn.',
     tab: 'build', cat: 'compute',
     aim: (state, view) => (view.tool === 'rack' ? ['#canvaswrap'] : ['[data-build="rack"]']),
     done: (d) => (d.counts.rackAll || 0) > 0,
@@ -36,7 +36,7 @@ export const STEPS = [
   },
   {
     id: 't4',
-    title: 'Put machines in it',
+    title: 'Put servers in it',
     body: 'On the Machines tab, press "Fill all racks" under Salvaged desktop. It buys as many as your money and your power allow.',
     note: 'It will not buy more than you can power. Watch the Temp number as they switch on.',
     tab: 'racks',
@@ -46,7 +46,7 @@ export const STEPS = [
   {
     id: 't5',
     title: 'Now get paid',
-    body: 'Your machines make compute, and compute earns nothing until somebody buys it. Open Deals and sign one that fits.',
+    body: 'Your servers make compute, and compute earns nothing until somebody buys it. Open Deals and sign one that fits.',
     note: 'Promise more than you can make and you start paying a fine.',
     tab: 'deals',
     aim: () => ['[data-sign]'],
@@ -57,7 +57,7 @@ export const STEPS = [
     title: 'Buy more electricity',
     body: 'One socket will not run a datacentre. On the Running tab, buy more from the utility — '
       + 'it is the cheapest power there is, and everything you build needs it.',
-    note: 'When you run out, machines throttle and deals start slipping.',
+    note: 'When you run out, servers throttle and deals start slipping.',
     tab: 'ops',
     aim: () => ['[data-grid]'],
     done: (d) => d.state.gridPower > 6.001,
@@ -75,7 +75,7 @@ export const STEPS = [
   {
     id: 't8',
     title: 'Unlock something',
-    body: 'Spend those points. Every machine, cooler and cabinet in the game sits behind a node '
+    body: 'Spend those points. Every server, cooler and cabinet in the game sits behind a node '
       + 'here — if something is greyed out on the Build tab, this is why.',
     note: 'Cheapest first is a perfectly good strategy.',
     tab: 'upgrade',
@@ -86,7 +86,7 @@ export const STEPS = [
     id: 't9',
     title: 'Hire a technician',
     body: 'Machines wear out and break. A technician repairs them while you get on with something '
-      + 'else — without one, a broken machine stays broken.',
+      + 'else — without one, a broken server stays broken.',
     note: 'Wages come out every day, whether the site is earning or not.',
     tab: 'ops',
     aim: () => ['[data-hire="tech"]'],

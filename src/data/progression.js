@@ -113,7 +113,7 @@ export const OBJECTIVES = [
     check: (s) => s.counts.anyPdu > 0, reward: { money: 2400 } },
   { id: 'o2', name: 'Somewhere to put it', hint: 'Place an open frame rack.',
     check: (s) => s.counts.rackAll > 0, reward: { money: 3600 } },
-  { id: 'o3', name: 'First iron', hint: 'Put three machines into a rack.',
+  { id: 'o3', name: 'First iron', hint: 'Put three servers into a rack.',
     check: (s) => s.unitsTotal >= 3, reward: { money: 5400 } },
   { id: 'o4', name: 'Move the air', hint: 'Place a box fan, or any cooler, near your rack.',
     check: (s) => s.counts.anyCooling > 0, reward: { money: 4200 } },

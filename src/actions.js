@@ -22,7 +22,7 @@ function frozen(state) {
   // nothing at all. Selling and demolishing stay open — they are the way back.
   return state.money < 0
     ? 'You are overdrawn. Nothing can be bought until you are back above zero — '
-      + 'sell machines you cannot run, or let staff go.'
+      + 'sell servers you cannot run, or let staff go.'
     : null;
 }
 
@@ -157,7 +157,7 @@ export function fillAll(state, d, hardwareId, hooks) {
   } else if (placed) {
     msg = `Installed ${placed} × ${hw.name} across the floor.`;
   } else if (allowed <= 0) {
-    msg = `No electricity left for another machine.${where}`;
+    msg = `No electricity left for another server.${where}`;
   } else if (Math.floor(state.money / unit) < 1) {
     msg = `Not enough money — ${hw.name} costs ${money(unit)} each.`;
   } else {
@@ -171,8 +171,8 @@ export function fillAll(state, d, hardwareId, hooks) {
     const dark = d.racks.filter((r) => r.used > 0 && r.pduFactor < 0.05).length;
     if (dark > 0) {
       hooks?.log(dark === 1
-        ? 'One rack has no power reaching it — the machines in it are doing nothing. Put a power strip within reach.'
-        : `${dark} racks have no power reaching them — the machines in them are doing nothing. `
+        ? 'One rack has no power reaching it — the servers in it are doing nothing. Put a power strip within reach.'
+        : `${dark} racks have no power reaching them — the servers in them are doing nothing. `
           + 'Put power strips within reach.', 'bad');
     }
   }

@@ -137,7 +137,7 @@ async function clickTile(page, gx, gy) {
   await page.waitForTimeout(300);
   await page.click('#tabs .tab >> nth=0');
   await page.waitForTimeout(250);
-  await page.click('#tabbody .btn:has-text("Compute")');
+  await page.click('#tabbody .btn:has-text("Racks")');
   await page.waitForTimeout(250);
   await page.click('[data-build="rack"]');
   const a = await tileAt(page, 1, 1);
@@ -736,6 +736,89 @@ async function clickTile(page, gx, gy) {
   else fail('a wall of events never breaks the row above the floor', bad[0]);
 }
 
+// ------------------------------------- the tab row stays on a single line
+{
+  // "Running" used to wrap the row onto two lines between roughly 950 and
+  // 1150px, which is an ordinary laptop window. The names are the only thing
+  // that decides this, so it is worth holding them to it.
+  const bad = [];
+  for (const w of [1500, 1280, 1150, 1100, 1024, 950, 900, 700, 520, 390]) {
+    const page = await newPage(w, 900);
+    await page.click('text=Start in the cupboard');
+    await page.waitForTimeout(500);
+    const m = await page.evaluate(() => {
+      const t = document.getElementById('tabs');
+      const tabs = [...t.querySelectorAll('.tab')];
+      const rows = new Set(tabs.map((n) => Math.round(n.getBoundingClientRect().top))).size;
+      // On a phone the row is allowed to scroll; what matters is that every
+      // tab can be reached, not that all of them are on screen at once.
+      const scrolls = t.scrollWidth > t.clientWidth + 1;
+      const canScroll = ['auto', 'scroll'].includes(getComputedStyle(t).overflowX);
+      return { rows, reachable: !scrolls || canScroll, n: tabs.length };
+    });
+    if (m.rows > 1) bad.push(`${w}px: the tabs wrapped onto ${m.rows} lines`);
+    else if (!m.reachable) bad.push(`${w}px: tabs overflow with no way to reach them`);
+    await page.close();
+  }
+  if (!bad.length) pass('the tab row stays on a single line', '10 widths');
+  else fail('the tab row stays on a single line', bad[0]);
+}
+
+// -------------------------------------------- the live counter fails politely
+{
+  // This suite runs against a static server, which is exactly the case the
+  // counter has to survive: it asks for api/track.php, gets the script back as
+  // plain text or a 404, and must remove itself rather than print a made-up
+  // number or throw.
+  const page = await newPage(1500, 940);
+  await page.click('text=Start in the cupboard');
+  await page.waitForTimeout(2400);
+  const st = await page.evaluate(() => {
+    const n = document.getElementById('livecount');
+    return { built: !!n, showing: n ? (!n.hidden && getComputedStyle(n).display !== 'none') : false };
+  });
+  if (!st.built) fail('the live counter fails politely', 'the chip was never built');
+  else if (st.showing) fail('the live counter fails politely', 'it showed a count with no server');
+  else pass('the live counter fails politely', 'hidden, no server');
+  await page.close();
+}
+
+// ------------------------------- a big live count does not break the top bar
+{
+  const bad = [];
+  for (const [w, h] of [[1500, 940], [1280, 800], [1100, 760], [900, 700], [390, 844]]) {
+    const page = await newPage(w, h);
+    await page.click('text=Start in the cupboard');
+    // The server is not here to say 4 digits, so say it by hand: this is the
+    // layout question, not the network one.
+    await page.evaluate(() => {
+      const n = document.getElementById('livecount');
+      n.innerHTML = '<i></i><b>1997</b><span>playing</span>';
+      n.hidden = false;
+      window.__rr.state.money = 1.79e10;
+    });
+    await page.waitForTimeout(500);
+    const m = await page.evaluate(() => {
+      const bar = document.getElementById('topbar');
+      const chip = document.getElementById('livecount');
+      const cash = document.querySelector('#v_cash .big');
+      return {
+        page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        barSpill: bar.scrollWidth - bar.clientWidth,
+        chipVisible: getComputedStyle(chip).display !== 'none' && chip.getBoundingClientRect().width > 8,
+        overlap: chip.getBoundingClientRect().left < cash.getBoundingClientRect().right,
+      };
+    });
+    if (m.page > 1) bad.push(`${w}px: the page scrolls sideways by ${m.page}px`);
+    else if (m.barSpill > 1) bad.push(`${w}px: the bar overflows by ${m.barSpill}px`);
+    else if (!m.chipVisible) bad.push(`${w}px: the counter vanished`);
+    else if (m.overlap) bad.push(`${w}px: the counter sits on top of the cash figure`);
+    await page.close();
+  }
+  if (!bad.length) pass('a big live count does not break the top bar', '5 widths, 4 digits');
+  else fail('a big live count does not break the top bar', bad[0]);
+}
+
 // --------------------------------- the top bar readouts do not flicker in play
 {
   const page = await newPage(1440, 950);
@@ -975,7 +1058,7 @@ async function clickTile(page, gx, gy) {
   await page.click('#tabbody .btn:has-text("Cooling")');
   await page.waitForTimeout(300);
   const build = await firstRows(3);
-  await page.click('#tabs >> text=Machines');
+  await page.click('#tabs >> text=Servers');
   await page.waitForTimeout(400);
   const machines = await firstRows(3);
   // A player with $2,370 should not open a tab to three screens of locked
