@@ -1624,7 +1624,13 @@ export function renderInspector(state, d) {
   const sel = app.view.sel;
   if (!sel) {
     // With nothing selected, this space is worth more as a to-do list.
-    const sig = d.problems.map((p) => p.text).join('|');
+    //
+    // The signature is prefixed so it can never collide with the value the
+    // other two branches leave behind. It used to be the bare problem list,
+    // which on a site with nothing wrong is the empty string — the same empty
+    // string tile mode wrote — so deselecting left the tile panel on screen
+    // and the phone's close button did nothing at all.
+    const sig = 'todo:' + d.problems.map((p) => p.text).join('|');
     if (box.dataset.sig === sig) return;
     box.dataset.sig = sig;
     box.dataset.mode = 'todo';
@@ -1652,7 +1658,7 @@ export function renderInspector(state, d) {
     fill(box, kids);
     return;
   }
-  box.dataset.sig = '';
+  box.dataset.sig = 'sel:' + sel.x + ',' + sel.y;
   const tile = tileAt(state, sel.x, sel.y);
   if (!tile) {
     box.dataset.mode = 'blank';
@@ -1663,8 +1669,21 @@ export function renderInspector(state, d) {
   box.dataset.mode = 'tile';
   const b = BUILDINGS_BY_ID[tile.b];
   const kids = [];
+
   const head = el('div', 'title');
   head.append(el('b', null, b.name), el('span', 'pill', sel.x + ',' + sel.y));
+
+  // On a phone this panel is a sheet laid over the floor, so it needs a way
+  // out. It sits in the title row rather than floating above the panel: an
+  // absolutely positioned one overlapped the first value on the right, and
+  // would have gone on finding new things to sit on as the contents changed.
+  // On a desktop the panel is a fixed row that never covers anything, and CSS
+  // hides the button.
+  const close = el('button', 'inspclose', '\u2715');
+  close.type = 'button';
+  close.setAttribute('aria-label', 'Close');
+  close.onclick = () => { app.view.sel = null; markDirty(); renderUI(); };
+  head.append(close);
   const sellBtn = el('button', 'btn small danger', 'Demolish (50% back)');
   sellBtn.onclick = () => app.act(() => A.sell(state, d, sel.x, sel.y, app.hooks));
   kids.push(head);

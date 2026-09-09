@@ -736,6 +736,99 @@ async function clickTile(page, gx, gy) {
   else fail('a wall of events never breaks the row above the floor', bad[0]);
 }
 
+// ------------------------------------- a phone can tap a thing and read it
+{
+  // The inspector was switched off entirely on phones, so tapping a rack
+  // selected it and showed nothing — which is the only way to find out why
+  // something is warning at you. Both orientations, because landscape had its
+  // own rule doing the same thing.
+  const bad = [];
+  for (const [w, h, label] of [[390, 844, 'portrait'], [844, 390, 'landscape']]) {
+    const page = await browser.newPage({ viewport: { width: w, height: h },
+      isMobile: true, hasTouch: true, deviceScaleFactor: 2 });
+    page.on('pageerror', (e) => errors.push(e.message));
+    await page.goto(URL, { waitUntil: 'networkidle' });
+    await page.click('text=Start in the cupboard');
+    await page.evaluate(() => {
+      const s = window.__rr.state;
+      s.tutorial.skipped = true; s.money = 5e6; s.settings.speed = 0;
+    });
+    await page.waitForTimeout(400);
+    await page.evaluate(async () => {
+      const A = await import('/src/actions.js');
+      const sim = await import('/src/sim.js');
+      const app = window.__rr;
+      A.place(app.state, app.d, 2, 2, 'rack', app.hooks);
+      app.d = sim.derive(app.state);
+      app.view.sel = null;
+    });
+    await page.waitForTimeout(300);
+    const c = await page.evaluate(() => window.__rr.view.tileCentre(2, 2));
+    await page.touchscreen.tap(c.x, c.y);
+    await page.waitForTimeout(500);
+
+    const open = await page.evaluate(() => {
+      const ins = document.getElementById('inspector');
+      const box = ins.getBoundingClientRect();
+      const close = ins.querySelector('.inspclose');
+      const area = (a, b) => Math.max(0, Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top))
+                           * Math.max(0, Math.min(a.right, b.right) - Math.max(a.left, b.left));
+      const cb = close && close.getBoundingClientRect();
+      const collides = cb ? [...ins.querySelectorAll('.kv .v, .kv .k')]
+        .some((n) => area(n.getBoundingClientRect(), cb) > 0) : false;
+      return {
+        mode: ins.dataset.mode,
+        shown: getComputedStyle(ins).display !== 'none' && box.height > 40,
+        names: ins.innerText.includes('Open frame rack'),
+        onScreen: box.top >= 0 && box.bottom <= innerHeight + 1,
+        closeShown: close ? getComputedStyle(close).display !== 'none' : false,
+        collides,
+      };
+    });
+    if (!open.shown) bad.push(`${label}: tapping a rack showed nothing (mode ${open.mode})`);
+    else if (!open.names) bad.push(`${label}: the panel opened without naming the rack`);
+    else if (!open.onScreen) bad.push(`${label}: the panel is not fully on screen`);
+    else if (!open.closeShown) bad.push(`${label}: no way to close it`);
+    else if (open.collides) bad.push(`${label}: the close button sits on the readings`);
+    else {
+      // And it must close again.
+      await page.locator('.inspclose').tap();
+      await page.waitForTimeout(400);
+      const mode = await page.evaluate(() => document.getElementById('inspector').dataset.mode);
+      if (mode === 'tile') bad.push(`${label}: the close button did not close it`);
+    }
+    await page.close();
+  }
+  if (!bad.length) pass('a phone can tap a thing and read it', 'both orientations');
+  else fail('a phone can tap a thing and read it', bad[0]);
+}
+
+// --------------------------------------- nothing invites the browser to zoom
+{
+  // iOS has ignored user-scalable=no since iOS 10, so the viewport tag is not
+  // enough on its own: what stops a double tap zooming the interface is
+  // declaring what each area accepts. The panels must still scroll.
+  const page = await browser.newPage({ viewport: { width: 390, height: 844 },
+    isMobile: true, hasTouch: true });
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.goto(URL, { waitUntil: 'networkidle' });
+  await page.click('text=Start in the cupboard');
+  await page.waitForTimeout(500);
+  const t = await page.evaluate(() => {
+    const ta = (sel) => getComputedStyle(document.querySelector(sel)).touchAction;
+    return { body: ta('body'), view: ta('#view'), panel: ta('#panel'),
+             tabbody: ta('#tabbody'), head: ta('#floorhead') };
+  });
+  const zoomable = Object.entries(t).filter(([, v]) => v === 'auto' || v.includes('pinch-zoom'));
+  const scrolls = t.panel.startsWith('pan-y') && t.tabbody.startsWith('pan-y');
+  if (zoomable.length) fail('nothing invites the browser to zoom',
+    `${zoomable[0][0]} is touch-action: ${zoomable[0][1]}`);
+  else if (!scrolls) fail('nothing invites the browser to zoom',
+    `the panel would stop scrolling (${t.panel} / ${t.tabbody})`);
+  else pass('nothing invites the browser to zoom', 'floor none, panels pan-y');
+  await page.close();
+}
+
 // --------------------------------------- the town is on screen, and it decays
 {
   // The best writing in the game used to be behind a tab you might never open.

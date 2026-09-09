@@ -228,6 +228,17 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
   background: radial-gradient(900px 640px at 46% 14%, #191510, #0b0908 74%); }
 #view { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 
+/* No page zoom on a touch screen.
+   iOS Safari has ignored user-scalable=no since iOS 10, so the viewport tag
+   alone does not stop a double tap from zooming the whole interface. Declaring
+   what each area accepts does: nothing zooms, panels still scroll up and down,
+   the tool row still scrolls sideways, and the floor keeps its own pinch,
+   which is handled from pointer events in render.js and is the one zoom that
+   should work. */
+html, body { touch-action: none; }
+#panel, #tabbody, #inspector, #logfeed, #modal, .sheet { touch-action: pan-y; }
+#floorhead { touch-action: pan-x; }
+
 #ghost {
   position: absolute; left: 14px; bottom: 14px; pointer-events: none;
   background: #120f0cdd; border: 1px solid var(--line2); border-radius: 3px;
@@ -258,6 +269,8 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
   padding: 9px 16px; height: 19vh; min-height: 118px; max-height: 190px; overflow: auto;
 }
 #inspector .empty { color: var(--dimmer); font-size: 12px; }
+#inspector .title { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.inspclose { display: none; }
 #inspector .kv { max-width: 440px; }
 #inspector table.grid { max-width: 660px; }
 
@@ -670,7 +683,31 @@ button:focus:not(:focus-visible) { outline: none; }
 @media (max-width: 700px) {
   #app { grid-template-rows: auto 1fr; }
   #logbar { display: none; }
+  /* The inspector used to be switched off entirely here, which meant tapping a
+     rack on a phone selected it and then showed you nothing — so there was no
+     way to find out why something was warning at you. It is now a sheet over
+     the floor, and only in tile mode: tapping bare floor or the cross closes
+     it, and it never takes space when there is nothing to say. */
+  #floor { position: relative; }
   #inspector { display: none; }
+  #inspector[data-mode="tile"] {
+    display: block;
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 25;
+    height: auto; min-height: 0; max-height: 52%;
+    padding: 12px 14px 16px;
+    border-top: 1px solid var(--line2);
+    background: #14110e;
+    box-shadow: 0 -16px 34px rgba(0, 0, 0, .6);
+    overscroll-behavior: contain;
+  }
+  #inspector[data-mode="tile"] .kv { max-width: none; }
+  .inspclose {
+    display: grid; place-items: center;
+    margin-left: auto; flex: none;
+    width: 32px; height: 32px; padding: 0;
+    border: 1px solid var(--line2); border-radius: 50%;
+    background: var(--raise); color: var(--fg); font-size: 14px; line-height: 1;
+  }
 
   #main { grid-template-rows: minmax(38vh, 1fr) 44vh; }
   #floor { grid-template-rows: auto 1fr; }
@@ -733,7 +770,27 @@ button:focus:not(:focus-visible) { outline: none; }
 /* Landscape phone: height is the scarce thing, so go back to side by side. */
 @media (max-height: 500px) and (orientation: landscape) {
   #app { grid-template-rows: auto 1fr; }
-  #logbar, #inspector { display: none; }
+  #logbar { display: none; }
+  /* Same reasoning as portrait: hidden until you tap something, then a sheet.
+     Shallower here, because height is the scarce thing in landscape. */
+  #floor { position: relative; }
+  #inspector { display: none; }
+  #inspector[data-mode="tile"] {
+    display: block;
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 25;
+    height: auto; min-height: 0; max-height: 62%;
+    padding: 12px 14px 14px;
+    border-top: 1px solid var(--line2); background: #14110e;
+    box-shadow: 0 -16px 34px rgba(0, 0, 0, .6);
+    overscroll-behavior: contain;
+  }
+  .inspclose {
+    display: grid; place-items: center;
+    margin-left: auto; flex: none;
+    width: 30px; height: 30px; padding: 0;
+    border: 1px solid var(--line2); border-radius: 50%;
+    background: var(--raise); color: var(--fg); font-size: 13px; line-height: 1;
+  }
   #main { grid-template-columns: 1fr minmax(240px, 34%); grid-template-rows: 1fr; }
   #panel { border-left: 1px solid var(--line); border-top: 0; }
   #topbar { height: 48px; }

@@ -487,6 +487,13 @@ function startGame(state, fresh) {
     fitTopBar(true);
     new ResizeObserver(() => fitTopBar(true)).observe(document.getElementById('topbar'));
     initPresence();
+
+    // Safari's own pinch gesture sits outside touch-action and would zoom the
+    // whole interface out from under the game. The floor's pinch is built on
+    // pointer events, so refusing these does not cost it anything.
+    for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) {
+      document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
+    }
     window.addEventListener('resize', () => app.view.resize());
     app.view.resize();
     app.view.observe();
