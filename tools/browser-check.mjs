@@ -905,6 +905,81 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ---------------------------------------- auto-sign only takes what you allow
+{
+  // Auto-sign takes the best-paying offer that fits, and the best-paying
+  // offers are the ones demanding 99.5% uptime, so a hands-off site ends up
+  // committed to promises it cannot keep the first time the weather turns.
+  const page = await newPage(1400, 900);
+  await page.click('text=Start in the cupboard');
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const app = window.__rr, s = app.state;
+    s.tutorial.skipped = true;
+    s.settings.autoSign = true;
+    const board = [0.80, 0.90, 0.93, 0.97, 0.99, 0.995];
+    const reset = () => {
+      s.contracts.active = [];
+      s.contracts.offers = board.map((u, i) => ({
+        cid: 'o' + i, tid: 'c_backup', name: 'Deal ' + i, client: 'C' + i,
+        demand: 0, pay: 10 + i, uptimeReq: u, days: 10, expires: s.day + 50,
+      }));
+    };
+    const takenAt = (cap) => {
+      reset();
+      s.settings.autoSignUptime = cap;
+      app.d = sim.derive(s);
+      // Run the offer/auto-sign step the way the clock does.
+      sim.tick(s, 0.2, app.d, app.hooks);
+      return s.contracts.active.map((c) => c.uptimeReq);
+    };
+    return { any: takenAt(1), at93: takenAt(0.93), at85: takenAt(0.85) };
+  });
+  const worst = (a) => (a.length ? Math.max(...a) : 0);
+  if (!r.any.length) fail('auto-sign only takes what you allow', 'it signed nothing with the cap wide open');
+  else if (worst(r.at93) > 0.93 + 1e-6) fail('auto-sign only takes what you allow',
+    `capped at 93% it still took a ${(worst(r.at93) * 100).toFixed(1)}% deal`);
+  else if (worst(r.at85) > 0.85 + 1e-6) fail('auto-sign only takes what you allow',
+    `capped at 85% it still took a ${(worst(r.at85) * 100).toFixed(1)}% deal`);
+  else if (r.at85.length >= r.any.length) fail('auto-sign only takes what you allow',
+    'the cap did not turn anything away');
+  else pass('auto-sign only takes what you allow',
+    `${r.any.length} deals uncapped, ${r.at93.length} at 93%, ${r.at85.length} at 85%`);
+  await page.close();
+}
+
+// ------------------------------------------ weather arrives, it does not slap
+{
+  // Every event used to land at full strength in one tick. A 38% cut in
+  // cooling arriving between frames can take a rack past 40°C and start
+  // breaking hardware before the notification has been read.
+  const page = await newPage(1400, 900);
+  await page.click('text=Start in the cupboard');
+  await page.waitForTimeout(400);
+  const curve = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const s = window.__rr.state;
+    s.tutorial.skipped = true;
+    const start = s.day;
+    s.events.active = [{ id: 'heatwave', started: start, until: start + 3.5 }];
+    const at = (off) => { s.day = start + off; return sim.derive(s).mods.coolMult; };
+    return { onset: at(0), early: at(0.15), mid: at(1.5), late: at(3.42), full: at(0.5) };
+  });
+  const target = 0.7;
+  if (Math.abs(curve.mid - target) > 0.02) fail('weather arrives, it does not slap',
+    `it never reaches full strength (${curve.mid.toFixed(2)} at the middle)`);
+  else if (curve.onset < 0.99) fail('weather arrives, it does not slap',
+    `it lands at ${curve.onset.toFixed(2)} on the first tick`);
+  else if (curve.early <= curve.full + 0.01) fail('weather arrives, it does not slap',
+    'there is no ramp — it is at full strength almost immediately');
+  else if (curve.late < 0.85) fail('weather arrives, it does not slap',
+    `it does not ease off at the end (${curve.late.toFixed(2)})`);
+  else pass('weather arrives, it does not slap',
+    `1.00 \u2192 ${curve.early.toFixed(2)} \u2192 ${curve.mid.toFixed(2)} \u2192 ${curve.late.toFixed(2)}`);
+  await page.close();
+}
+
 // -------------------------------- a deal you cannot keep can always be dropped
 {
   // The active list was only ever added to. A site that promised more than it

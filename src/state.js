@@ -6,7 +6,7 @@ export const SAVE_VERSION = 1;
 // Bumped whenever the files change, and shown in the Menu. It exists so that
 // "is the server actually running the new code?" is a question you can answer
 // by looking, instead of by guessing from behaviour.
-export const BUILD = '2026-09-10b';
+export const BUILD = '2026-09-10c';
 
 /** Seconds of real time per in-game day. */
 export const DAY_SECONDS = 60;
@@ -79,7 +79,7 @@ export function newGame(legacy) {
       peakCompute: 0, peakIncome: 0, spentBuild: 0, spentHw: 0, powerBought: 0,
       waterTaken: 0, powerDrawn: 0,
     },
-    settings: { overlay: 'none', speed: 1, lastSpeed: 1, notify: true, autoSign: false, sound: true },
+    settings: { overlay: 'none', speed: 1, lastSpeed: 1, notify: true, autoSign: false, autoSignUptime: 1, sound: true },
     log: [],
   };
   return state;

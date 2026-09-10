@@ -83,9 +83,24 @@ export function modifiers(state) {
 
   // Events currently running.
   for (const ev of state.events.active) {
+    // Weather comes in and goes out; it does not switch.
+    //
+    // Every event used to land at full strength in a single tick and leave the
+    // same way. A 38% cut in cooling arriving between one frame and the next
+    // can take a rack past 40°C and start breaking hardware before you have
+    // seen the notification, which reads as being slapped rather than being
+    // tested. The strength now ramps over the first and last stretch of its
+    // life, so there is always time to answer it. Short events still reach
+    // full strength, because the ramp is capped at a third of their run.
+    const ramp = eventRamp(state, ev);
+    const apply = (target, k, raw, add) => {
+      if (add) target[k] += raw * ramp;
+      else target[k] *= 1 + (raw - 1) * ramp;
+    };
+
     // Outcomes of decision events carry their own modifiers under ids that are
     // not in the EVENTS table, so apply those before looking the event up.
-    if (ev.mods) for (const k in ev.mods) if (MULT_KEYS.includes(k)) m[k] *= ev.mods[k];
+    if (ev.mods) for (const k in ev.mods) if (MULT_KEYS.includes(k)) apply(m, k, ev.mods[k], false);
     const def = EVENTS_BY_ID[ev.id];
     if (!def) continue;
     const soften = 1 - Math.min(0.35, state.staff.ops * 0.025);
@@ -93,8 +108,8 @@ export function modifiers(state) {
       const raw = def.mods[k];
       // Operators soften the bad half of every modifier.
       const val = raw < 1 ? 1 - (1 - raw) * soften : raw;
-      if (MULT_KEYS.includes(k)) m[k] *= val;
-      else if (ADD_KEYS.includes(k)) m[k] += raw;
+      if (MULT_KEYS.includes(k)) apply(m, k, val, false);
+      else if (ADD_KEYS.includes(k)) apply(m, k, raw, true);
     }
   }
   return m;
@@ -121,6 +136,19 @@ export function outsideTemp(state) {
 }
 
 // ---------------------------------------------------------------- derive
+
+/** How far into its life an event is, as a 0..1 strength. */
+const EVENT_RAMP_DAYS = 0.5;
+
+function eventRamp(state, ev) {
+  const until = ev.until;
+  if (until === undefined) return 1;
+  const started = ev.started ?? (until - 2);
+  const life = Math.max(0.2, until - started);
+  const r = Math.min(EVENT_RAMP_DAYS, life / 3);
+  if (r <= 0) return 1;
+  return clamp(Math.min((state.day - started) / r, (until - state.day) / r), 0, 1);
+}
 
 export function derive(state) {
   const mods = modifiers(state);
@@ -892,11 +920,18 @@ function contractsTick(state, d, days, hooks) {
   }
 
   // Optional hands-off signing, for when placing servers is the fun part.
+  //
+  // It takes the best-paying offer that fits, and the best-paying offers are
+  // the ones demanding 99.5% uptime — which is how a hands-off site ends up
+  // committed to promises it cannot keep the first time the weather turns.
+  // The cap is the answer: leave it at 100% to take anything, or pull it down
+  // and let the punishing deals go past.
   if (state.settings.autoSign) {
+    const cap = state.settings.autoSignUptime ?? 1;
     let free = d.computeSellable - sum(state.contracts.active, (c) => c.demand);
     for (let guard = 0; guard < 8; guard++) {
       const fits = state.contracts.offers
-        .filter((o) => o.demand <= free)
+        .filter((o) => o.demand <= free && (o.uptimeReq ?? 1) <= cap + 1e-6)
         .sort((a, b) => b.pay - a.pay);
       if (!fits.length) break;
       free -= fits[0].demand;
@@ -957,13 +992,13 @@ export function resolveDecision(state, d, effect, hooks) {
       return 'You paid. The keys arrived. Nobody outside the room knows.';
     }
     case 'ransom_rebuild':
-      state.events.active.push({ id: 'ransom', label: 'Rebuilding from backup', tone: 'bad', until: state.day + 2, mods: { computeMult: 0.45 } });
+      state.events.active.push({ id: 'ransom', label: 'Rebuilding from backup', tone: 'bad', started: state.day, until: state.day + 2, mods: { computeMult: 0.45 } });
       state.reputation = Math.max(0, state.reputation - 6 * (1 - d.security));
       return 'Two days of restoring from cold backup, and an awkward customer call.';
     case 'vc_take': {
       const cash = Math.max(50_000, d.netIncome * DAY_SECONDS * 30);
       state.money += cash;
-      state.events.active.push({ id: 'vc', label: 'Investor revenue share', tone: 'neutral', until: state.day + 20, mods: { priceMult: 0.88 } });
+      state.events.active.push({ id: 'vc', label: 'Investor revenue share', tone: 'neutral', started: state.day, until: state.day + 20, mods: { priceMult: 0.88 } });
       return 'The money landed this morning. Revenue share starts immediately.';
     }
     case 'vc_decline':
@@ -998,19 +1033,19 @@ export function resolveDecision(state, d, effect, hooks) {
       return `Returned ${removed} units for a partial refund.`;
     }
     case 'recall_keep':
-      state.events.active.push({ id: 'recall', label: 'Recalled boards in service', tone: 'bad', until: state.day + 8, mods: { wearMult: 2 } });
+      state.events.active.push({ id: 'recall', label: 'Recalled boards in service', tone: 'bad', started: state.day, until: state.day + 8, mods: { wearMult: 2 } });
       return 'You kept them in production. Expect them to fail early.';
     case 'anchor_sign': {
       const cash = Math.max(200_000, d.netIncome * DAY_SECONDS * 90);
       state.money += cash;
-      state.events.active.push({ id: 'anchor', label: 'Anchor tenant discount', tone: 'neutral', until: state.day + 30, mods: { priceMult: 0.82 } });
+      state.events.active.push({ id: 'anchor', label: 'Anchor tenant discount', tone: 'neutral', started: state.day, until: state.day + 30, mods: { priceMult: 0.82 } });
       return 'A year of capacity, sold up front, at their price.';
     }
     case 'anchor_decline':
       state.reputation += 14;
       return 'You held the line on price. Word gets around.';
     case 'grant_take':
-      state.events.active.push({ id: 'grant', label: 'Research grant running', tone: 'good', until: state.day + 10, mods: { researchMult: 2.6, priceMult: 0.9 } });
+      state.events.active.push({ id: 'grant', label: 'Research grant running', tone: 'good', started: state.day, until: state.day + 10, mods: { researchMult: 2.6, priceMult: 0.9 } });
       return 'Their benchmark now runs on your floor. Research is flying.';
     case 'grant_decline':
       return 'You passed. The paperwork alone would have cost a week.';

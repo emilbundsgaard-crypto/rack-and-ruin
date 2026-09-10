@@ -961,3 +961,11 @@ button:focus:not(:focus-visible) { outline: none; }
   .ledger .lk { font-size: 12px; }
   .ledger .lv { font-size: 13px; }
 }
+
+/* -------------------------------------------------- the auto-sign uptime cap */
+
+.caprow { margin-top: 12px; padding-top: 11px; border-top: 1px solid var(--line); }
+.caplbl { font-size: 12.5px; color: var(--dim); margin-bottom: 7px; }
+.caplbl b { color: var(--fg); font-family: var(--mono); font-weight: 600; }
+.caprow input[type="range"] { width: 100%; accent-color: var(--acc); margin: 0; }
+.caphint { font-size: 11px; color: var(--dimmer); margin-top: 6px; }

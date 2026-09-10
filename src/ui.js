@@ -860,6 +860,38 @@ function panelContracts(state, d) {
     + 'whenever a slot is free. Turn it on when placing servers is the part you enjoy.';
   auto.onclick = () => { state.settings.autoSign = !state.settings.autoSign; markDirty(); renderUI(); };
   const autoRow = el('div', 'btnrow'); autoRow.append(auto); head.append(autoRow);
+
+  // The cap on what auto-sign will take on.
+  //
+  // Left to itself it takes the best-paying offer that fits, and the
+  // best-paying offers are the ones demanding 99.5% uptime — so a hands-off
+  // site ends up committed to promises it cannot keep the first time the
+  // weather turns. Pull this down and the punishing deals go past.
+  if (state.settings.autoSign) {
+    const cap = state.settings.autoSignUptime ?? 1;
+    const wrap = el('div', 'caprow');
+    const label = el('div', 'caplbl');
+    label.append(document.createTextNode('Only deals promising '),
+      el('b', null, cap >= 0.9995 ? 'any uptime' : '\u2264 ' + (cap * 100).toFixed(1) + '%'));
+    const slider = el('input');
+    slider.type = 'range';
+    slider.min = '0.80'; slider.max = '1'; slider.step = '0.005';
+    slider.value = String(cap);
+    slider.dataset.tip = 'Uptime cap|Auto-sign will not take an offer that demands more uptime '
+      + 'than this. The demanding deals pay best and fine hardest, so this is the dial between '
+      + 'income and risk. At 100% it takes anything.';
+    slider.oninput = () => {
+      state.settings.autoSignUptime = Number(slider.value);
+      label.lastChild.textContent = Number(slider.value) >= 0.9995
+        ? 'any uptime' : '\u2264 ' + (Number(slider.value) * 100).toFixed(1) + '%';
+    };
+    slider.onchange = () => { markDirty(); renderUI(); };
+    const taken = state.contracts.offers.filter((o) => (o.uptimeReq ?? 1) <= cap + 1e-6).length;
+    wrap.append(label, slider,
+      el('div', 'caphint', taken + ' of ' + state.contracts.offers.length + ' offers on the board qualify'));
+    head.append(wrap);
+  }
+
   out.push(sec('Book', head));
 
   const act = state.contracts.active.map((c) => {

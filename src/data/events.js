@@ -27,8 +27,8 @@ export const EVENTS = [
   {
     id: 'pricespike', name: 'Spot price spike', weight: 9, minTier: 0, days: 2.5, tone: 'bad',
     when: (s, d) => d.gridUsed > 0,
-    mods: { gridCostMult: 2.4 },
-    text: 'Wholesale electricity has gone vertical. Grid power costs 2.4× as much this week.',
+    mods: { gridCostMult: 1.85 },
+    text: 'Wholesale electricity has gone vertical. Grid power costs 1.85\u00d7 as much this week.',
   },
   {
     id: 'pricecrash', name: 'Negative spot prices', weight: 5, minTier: 2, days: 2, tone: 'good',
@@ -45,8 +45,8 @@ export const EVENTS = [
   {
     id: 'watermain', name: 'Water main break', weight: 5, minTier: 1, days: 1.5, tone: 'bad',
     when: (s, d) => d.waterDemand > 0,
-    mods: { waterSupplyMult: 0.2 },
-    text: 'A contractor put a digger through the feeder. Water is down to a trickle.',
+    mods: { waterSupplyMult: 0.42 },
+    text: 'A contractor put a digger through the feeder. Water is down to a trickle while they dig it back up.',
   },
   {
     id: 'demand', name: 'Compute crunch', weight: 8, minTier: 1, days: 4, tone: 'good',
