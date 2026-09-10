@@ -905,6 +905,63 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------------- an overlay is visible on a floor worth reading
+{
+  // The overlays were painted on the bare floor and then buried under the very
+  // machines they describe. On a floor with something on every tile — which is
+  // every floor anyone opens an overlay on — turning one on changed nothing you
+  // could see. This builds exactly that floor and compares the picture.
+  const page = await newPage(1200, 800);
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(async () => {
+    const A = await import('/src/actions.js');
+    const sim = await import('/src/sim.js');
+    const R = await import('/src/data/research.js');
+    const St = await import('/src/state.js');
+    const app = window.__rr, s = app.state;
+    s.tutorial.skipped = true; s.money = 1e14; s.reputation = 500;
+    s.research.done = R.RESEARCH.map((r) => r.id);
+    while (s.facility < 2 && !A.upgradeFacility(s, app.hooks)) {}
+    s.money = 1e14; app.d = sim.derive(s);
+    const f = St.roomOf(s);
+    for (let x = 0; x < f.w; x++) for (let y = 0; y < f.h; y++) {
+      A.place(s, app.d, x, y, (x + y) % 6 === 0 ? 'pdu3' : 'rack3', app.hooks);
+    }
+    app.d = sim.derive(s);
+    for (let i = 0; i < 4; i++) {
+      A.buyGrid(s, A.maxGrid(s), app.hooks); app.d = sim.derive(s);
+      A.fillAll(s, app.d, 'blade', app.hooks); app.d = sim.derive(s);
+    }
+    s.settings.speed = 0; app.view.centred = false;
+  });
+  await page.waitForTimeout(1000);
+
+  const strip = (overlay) => page.evaluate(async (o) => {
+    window.__rr.setOverlay(o);
+    await new Promise((r) => setTimeout(r, 500));
+    const c = document.getElementById('view');
+    const g = c.getContext('2d', { willReadFrequently: true });
+    const px = g.getImageData(0, 0, c.width, c.height).data;
+    // Mean colour over the whole floor view: an overlay that reaches the
+    // machines moves it, one hidden under them does not.
+    let r = 0, gr = 0, b = 0, n = 0;
+    for (let i = 0; i < px.length; i += 64) { r += px[i]; gr += px[i + 1]; b += px[i + 2]; n++; }
+    return [r / n, gr / n, b / n];
+  }, overlay);
+
+  const off = await strip('none');
+  const bad = [];
+  for (const o of ['power', 'cooling', 'heat', 'net']) {
+    const on = await strip(o);
+    const moved = Math.abs(on[0] - off[0]) + Math.abs(on[1] - off[1]) + Math.abs(on[2] - off[2]);
+    if (moved < 3) bad.push(`${o} changed the picture by ${moved.toFixed(1)}`);
+  }
+  await strip('none');
+  if (bad.length) fail('an overlay is visible on a floor worth reading', bad[0]);
+  else pass('an overlay is visible on a floor worth reading', '4 overlays, full floor');
+  await page.close();
+}
+
 // ------------------------------------------------ the lighting stays cheap
 {
   // Frame rate is a bad signal here: this browser has no GPU, so fps swings by

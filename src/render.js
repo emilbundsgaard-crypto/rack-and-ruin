@@ -425,6 +425,8 @@ export class FloorView {
       this.drawSolid(ctx, item.gx, item.gy, b, rack, d, false, lifted);
     }
 
+    if (this.overlay !== 'none') this.drawOverlayOver(ctx);
+
     // Outline whatever the cursor and the selection are actually on.
     if (this.sel && !selEmpty) this.outlineSolid(ctx, this.sel, '#fff6e6', 2, true);
     if (hoverTile) {
@@ -718,24 +720,30 @@ export class FloorView {
     ctx.setLineDash([]);
   }
 
-  drawOverlay(ctx, state, d, f) {
-    const paint = (gx, gy, style) => {
-      this.diamond(ctx, this.iso(gx, gy, f));
-      ctx.fillStyle = style;
-      ctx.fill();
-    };
+  /**
+   * Work out the overlay colour for every tile, once.
+   *
+   * Kept apart from the drawing because the answer is needed twice: on the bare
+   * floor before the machines go down, and again on the machines themselves
+   * afterwards.
+   */
+  overlayMap(state, d, f) {
+    const m = new Map();
+    const put = (x, y, style) => m.set(x + ',' + y, style);
+
     if (this.overlay === 'heat') {
       for (const r of d.racks) {
         const t = clamp((r.temp - 20) / 50, 0, 1);
-        paint(r.x, r.y, `hsla(${(1 - t) * 200}, 85%, 50%, ${0.2 + t * 0.5})`);
+        put(r.x, r.y, `hsla(${(1 - t) * 200}, 85%, 50%, ${0.22 + t * 0.5})`);
       }
-      return;
+      return m;
     }
     if (this.overlay === 'net') {
       const ok = d.netFactor > 0.99;
-      for (const r of d.racks) paint(r.x, r.y, ok ? 'rgba(143,111,216,.3)' : 'rgba(232,97,95,.34)');
-      return;
+      for (const r of d.racks) put(r.x, r.y, ok ? 'rgba(143,111,216,.32)' : 'rgba(232,97,95,.36)');
+      return m;
     }
+
     const src = this.overlay === 'power' ? d.pdus : d.coolers;
     const cover = new Map();
     for (const s of src) {
@@ -749,13 +757,51 @@ export class FloorView {
     }
     for (const [k, n] of cover) {
       const [x, y] = k.split(',').map(Number);
-      paint(x, y, this.overlay === 'power'
-        ? `rgba(216,161,58,${Math.min(0.4, 0.14 + n * 0.07)})`
-        : `rgba(79,220,168,${Math.min(0.4, 0.14 + n * 0.07)})`);
+      put(x, y, this.overlay === 'power'
+        ? `rgba(216,161,58,${Math.min(0.42, 0.15 + n * 0.07)})`
+        : `rgba(79,220,168,${Math.min(0.42, 0.15 + n * 0.07)})`);
     }
+    // A rack nothing reaches is the thing you opened the overlay to find.
     for (const r of d.racks) {
-      if (!cover.get(r.x + ',' + r.y) && r.used > 0) paint(r.x, r.y, 'rgba(232,97,95,.36)');
+      if (!cover.get(r.x + ',' + r.y) && r.used > 0) put(r.x, r.y, 'rgba(232,97,95,.42)');
     }
+    return m;
+  }
+
+  /** The overlay on bare floor, under everything. */
+  drawOverlay(ctx, state, d, f) {
+    this._ovl = this.overlayMap(state, d, f);
+    for (const [k, style] of this._ovl) {
+      const [x, y] = k.split(',').map(Number);
+      this.diamond(ctx, this.iso(x, y, f));
+      ctx.fillStyle = style;
+      ctx.fill();
+    }
+  }
+
+  /**
+   * And the same overlay again, over the machines.
+   *
+   * Without this the overlays were painted on the floor and then buried under
+   * the very machines they describe: on a floor with something on every tile —
+   * which is every floor worth reading an overlay on — turning one on changed
+   * nothing you could see. Reusing the silhouettes the solids already recorded
+   * for hit testing means the wash follows the shape of what is standing there.
+   */
+  drawOverlayOver(ctx) {
+    if (!this._ovl || !this._ovl.size || !this.hits.length) return;
+    ctx.save();
+    for (const hit of this.hits) {
+      const style = this._ovl.get(hit.gx + ',' + hit.gy);
+      if (!style) continue;
+      ctx.beginPath();
+      ctx.moveTo(hit.poly[0].x, hit.poly[0].y);
+      for (let i = 1; i < hit.poly.length; i++) ctx.lineTo(hit.poly[i].x, hit.poly[i].y);
+      ctx.closePath();
+      ctx.fillStyle = style;
+      ctx.fill();
+    }
+    ctx.restore();
   }
 
   drawRange(ctx, state, t, d) {
