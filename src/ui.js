@@ -18,6 +18,7 @@ import * as SIM from './sim.js';
 import { tileAt, DAY_SECONDS } from './state.js';
 import { iconFor } from './render.js';
 import { STAGES, stageOf, drawTown, townStrands, population } from './town.js';
+import { REGISTER, standing, gone, lastToGo, TOWN_POPULATION } from './data/ashbrook.js';
 import { roomOf, EXPAND_CAP } from './state.js';
 import { STEPS, current as tutStep, skip as tutSkip } from './tutorial.js';
 
@@ -1536,6 +1537,63 @@ function panelTown(state, d) {
     return row;
   });
   out.push(sec('How it went', list));
+
+  // ------------------------------------------------------------- the register
+  //
+  // The stage list above is the shape of it. This is the substance: every
+  // address, and what happened to it. Newest loss first, because that is the
+  // one you just caused; the ones still standing are at the bottom, greyed,
+  // so you can see exactly how much is left to take.
+  const away = gone(dmg);
+  const left = standing(dmg);
+  const reg = el('div', 'register');
+
+  const recent = lastToGo(dmg);
+  if (recent) {
+    const top = el('div', 'reglatest');
+    top.append(el('div', 'regk', 'Last to go'));
+    top.append(el('div', 'regaddr', recent.addr));
+    if (recent.who) top.append(el('div', 'regwho', recent.who));
+    top.append(el('div', 'regline', recent.line));
+    reg.append(top);
+  }
+
+  const tally = el('div', 'kv');
+  tally.append(el('div', 'k', 'Addresses gone'),
+    el('div', 'v' + (away.length ? ' bad' : ''), away.length + ' of ' + REGISTER.length));
+  tally.append(el('div', 'k', 'Still there'),
+    el('div', 'v', left.length ? left.length + ' addresses, ' + fmtInt(pop) + ' people' : 'Nobody'));
+  reg.append(tally);
+
+  for (const r of [...away].reverse()) {
+    const row = el('div', 'regrow');
+    const mark = el('div', 'regat');
+    mark.textContent = Math.round(r.at * 100) + '%';
+    const body = el('div', 'regbody');
+    const head = el('div', 'reghead');
+    head.append(el('b', null, r.addr));
+    if (r.who) head.append(el('span', 'regwho', r.who));
+    if (r.n > 0) head.append(el('span', 'regn', fmtInt(r.n)));
+    body.append(head, el('div', 'regline', r.line));
+    row.append(mark, body);
+    reg.append(row);
+  }
+
+  for (const r of left) {
+    const row = el('div', 'regrow standing');
+    const mark = el('div', 'regat');
+    mark.textContent = Math.round(r.at * 100) + '%';
+    const body = el('div', 'regbody');
+    const head = el('div', 'reghead');
+    head.append(el('b', null, r.addr));
+    if (r.who) head.append(el('span', 'regwho', r.who));
+    if (r.n > 0) head.append(el('span', 'regn', fmtInt(r.n)));
+    body.append(head);
+    row.append(mark, body);
+    reg.append(row);
+  }
+
+  out.push(sec('The register', reg));
   return out;
 }
 

@@ -517,8 +517,15 @@ input[type=text], textarea {
 #tip .tipb + .tipb { margin-top: 6px; }
 @keyframes tipin { from { opacity: 0; transform: translateY(3px); } }
 
+/* A plain scrim, not a blur.
+   backdrop-filter over a full screen was costing 24fps on a finished site —
+   measured at 36 down to 12 — and it did it for every dialogue in the game:
+   the Menu, an event decision, the bank's offer. The compositor re-filters the
+   whole page every frame regardless of whether the canvas underneath changed,
+   so there is no way to keep it cheaply. A darker scrim separates the sheet
+   just as well and costs nothing. */
 #modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center;
-  background: #06050488; backdrop-filter: blur(4px); padding: 20px; }
+  background: #060504d9; padding: 20px; }
 .sheet { width: min(600px, 96vw); max-height: 86vh; overflow: auto; background: var(--panel);
   border: 1px solid var(--line2); border-top: 3px solid var(--acc); border-radius: var(--r);
   padding: 22px 24px; box-shadow: 0 30px 90px #000d; }
@@ -797,4 +804,87 @@ button:focus:not(:focus-visible) { outline: none; }
   .vital .lbl { display: none; }
   .vital .big { font-size: 16px; }
   #floorhead { padding: 4px 8px; }
+}
+
+/* ------------------------------------------------------------- the register */
+
+/* Every address in Ashbrook and what happened to it. Deliberately plain: a
+   ledger, not a feed. The ones still standing are dimmed rather than hidden,
+   so the length of what is left to take is visible at a glance. */
+.register { display: flex; flex-direction: column; gap: 0; }
+
+.reglatest {
+  background: #1a1310; border: 1px solid #3a2a20; border-left: 3px solid var(--bad);
+  border-radius: var(--r); padding: 11px 13px; margin-bottom: 12px;
+}
+.reglatest .regk {
+  font: 600 10px var(--mono); letter-spacing: .8px; text-transform: uppercase;
+  color: var(--dimmer); margin-bottom: 5px;
+}
+.reglatest .regaddr { font-size: 15px; font-weight: 600; color: var(--fg); }
+.reglatest .regwho { font-size: 12px; color: var(--dim); margin-top: 1px; }
+.reglatest .regline { font-size: 12.5px; line-height: 1.5; color: var(--dim); margin-top: 7px; }
+
+.register .kv { margin-bottom: 14px; }
+
+.regrow {
+  display: grid; grid-template-columns: 38px 1fr; gap: 10px;
+  padding: 9px 0; border-top: 1px solid #1e1a15;
+}
+.regrow:first-of-type { border-top: 0; }
+.regat {
+  font: 600 10px var(--mono); color: var(--bad); padding-top: 2px; text-align: right;
+}
+.reghead { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.reghead b { font-size: 13px; color: var(--fg); }
+.regwho { font-size: 11.5px; color: var(--dim); }
+.regn {
+  font: 600 10px var(--mono); color: var(--dimmer); margin-left: auto;
+  border: 1px solid var(--line2); border-radius: 100px; padding: 1px 6px;
+}
+.regline { font-size: 12px; line-height: 1.5; color: var(--dim); margin-top: 3px; }
+
+.regrow.standing { opacity: .42; }
+.regrow.standing .regat { color: var(--dimmer); }
+.regrow.standing .reghead b { color: var(--dim); font-weight: 500; }
+
+/* -------------------------------------------------------- closing statement */
+
+/* The one ending the game has. Quieter and wider than every other dialogue:
+   no amber, no buttons shouting, just a set of figures and the last thing
+   anybody in Ashbrook said. */
+.sheet.closing { max-width: 560px; }
+.sheet.closing h2 {
+  font-size: 30px; letter-spacing: -.5px; margin-bottom: 2px;
+}
+.sheet.closing .sub {
+  font: 600 11px var(--mono); letter-spacing: 1.4px; text-transform: uppercase;
+  color: var(--dimmer); margin-bottom: 20px;
+}
+.ledger {
+  display: grid; grid-template-columns: 1fr auto; gap: 9px 18px;
+  align-items: baseline; margin-bottom: 20px;
+}
+.ledger .lk { font-size: 13px; color: var(--dim); }
+.ledger .lv { font: 600 14px var(--mono); color: var(--fg); text-align: right; }
+.ledger .lv.bad { color: var(--bad); }
+.ledger .lrule { border-top: 1px solid var(--line); height: 0; margin: 3px 0; }
+
+.closinglast {
+  border-left: 2px solid var(--bad); padding: 2px 0 2px 14px;
+}
+.closinglast .ck {
+  font: 600 10px var(--mono); letter-spacing: .9px; text-transform: uppercase;
+  color: var(--dimmer); margin-bottom: 5px;
+}
+.closinglast .caddr { font-size: 15px; font-weight: 600; color: var(--fg); }
+.closinglast .cline {
+  font-size: 13px; line-height: 1.6; color: var(--dim); margin-top: 6px;
+}
+
+@media (max-width: 700px) {
+  .sheet.closing h2 { font-size: 24px; }
+  .ledger { gap: 7px 12px; }
+  .ledger .lk { font-size: 12px; }
+  .ledger .lv { font-size: 13px; }
 }

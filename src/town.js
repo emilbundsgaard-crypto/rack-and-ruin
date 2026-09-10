@@ -7,6 +7,7 @@
 // data/events.js, which only appear once you have taken enough to be noticed.
 
 import { clamp, sum } from './util.js';
+import { REGISTER, standing, gone } from './data/ashbrook.js';
 
 export const STAGES = [
   { at: 0.00, title: 'Ashbrook, population 940',
@@ -59,15 +60,43 @@ export function townTarget(state, d) {
 }
 
 /** Ashbrook started at 940 people. It does not go back up. */
+/**
+ * Who is left, counted off the register rather than off a curve.
+ *
+ * This used to be 940 * (1 - damage) ** 1.4 — a number that looked right and
+ * answered to nothing. Now it is the sum of the households still standing, so
+ * the figure in the panel and the names beneath it can never disagree: when it
+ * drops by four, four people have an address and a reason.
+ */
 export function population(damage) {
-  return Math.max(0, Math.round(940 * (1 - damage) ** 1.4));
+  return sum(standing(damage), (r) => r.n);
+}
+
+/** Households and places lost since the damage was last this low. */
+export function departuresBetween(from, to) {
+  return REGISTER.filter((r) => r.at > from && r.at <= to);
 }
 
 export function tickTown(state, d, hooks) {
   if (!state.town) state.town = { damage: 0, seen: [], sinceDay: {} };
   const target = townTarget(state, d);
   if (target <= state.town.damage) return;
+  const was = state.town.damage;
   state.town.damage = target;
+
+  // Each address that has just gone gets one line in the feed and nothing
+  // else. No card, no toast, no sound: they are meant to pile up at the edge
+  // of your attention rather than interrupt what you are doing.
+  for (const r of departuresBetween(was, target)) {
+    hooks?.log(r.addr + (r.who ? ' \u2014 ' + r.who : '') + '. ' + r.line, 'bad', { toast: false });
+  }
+
+  // The one moment in a run that is allowed to stop everything. It happens
+  // once and it is the only ending the game has.
+  if (target >= 1 && !state.town.closed) {
+    state.town.closed = Math.floor(state.day);
+    hooks?.onClosing?.();
+  }
   for (let i = STAGES.length - 1; i >= 0; i--) {
     const st = STAGES[i];
     if (target >= st.at && !state.town.seen.includes(i)) {

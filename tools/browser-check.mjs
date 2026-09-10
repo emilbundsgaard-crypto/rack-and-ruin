@@ -829,6 +829,129 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------------------------- the register is the population
+{
+  // The population counter used to be 940 * (1 - damage) ** 1.4: a number that
+  // looked plausible and answered to nothing. It is now the sum of the
+  // households still standing, so this checks the two can never drift apart —
+  // and that the register adds up to the town the game says exists.
+  const page = await newPage(1400, 900);
+  await page.click('text=Start in the cupboard');
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(async () => {
+    const A = await import('/src/data/ashbrook.js');
+    const T = await import('/src/town.js');
+    const rows = A.REGISTER;
+    const ascending = rows.every((x, i) => i === 0 || x.at >= rows[i - 1].at);
+    const drift = [];
+    for (let d = 0; d <= 1.0001; d += 0.02) {
+      const fromRegister = A.standing(d).reduce((t, x) => t + x.n, 0);
+      if (T.population(d) !== fromRegister) drift.push(d.toFixed(2));
+    }
+    return {
+      total: A.TOWN_POPULATION, entries: rows.length, ascending, drift,
+      startsFull: T.population(0), endsEmpty: T.population(1),
+      everyLineWritten: rows.every((x) => typeof x.line === 'string' && x.line.length > 25),
+    };
+  });
+  if (r.total !== 940) fail('the register is the population', `the register holds ${r.total}, the town says 940`);
+  else if (!r.ascending) fail('the register is the population', 'the thresholds are out of order');
+  else if (r.drift.length) fail('the register is the population', `counter and register disagree at damage ${r.drift[0]}`);
+  else if (r.startsFull !== 940 || r.endsEmpty !== 0) fail('the register is the population',
+    `starts at ${r.startsFull}, ends at ${r.endsEmpty}`);
+  else if (!r.everyLineWritten) fail('the register is the population', 'an entry has no line written for it');
+  else pass('the register is the population', `${r.entries} addresses, 940 people, no drift`);
+  await page.close();
+}
+
+// --------------------------------------------- a finished town gets an ending
+{
+  // Reaching nothing used to pass as a log line. It is the only ending the
+  // game has, so it has to fire, fire once, and report figures from the run
+  // rather than invented ones.
+  const page = await newPage(1400, 900);
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(async () => {
+    const town = await import('/src/town.js');
+    const app = window.__rr, s = app.state;
+    s.day = 412; s.lifetimeEarnings = 8.42e10;
+    s.stats.powerDrawn = 1.24e9; s.stats.waterTaken = 4.91e9;
+    for (let i = 0; i < 620; i++) s.tiles['x' + i] = { b: 'rack3' };
+    const big = { actualDraw: 3.0e6, waterDemand: 26000, heatLoad: 2.2e6 };
+
+    let fired = 0;
+    const hooks = { ...app.hooks, onClosing: () => { fired++; app.hooks.onClosing(); } };
+    town.tickTown(s, big, hooks);
+    await new Promise((x) => setTimeout(x, 350));
+    const sheet = document.querySelector('.sheet.closing');
+    const text = sheet ? sheet.innerText : '';
+    // A second tick must not put it up again.
+    town.tickTown(s, big, hooks);
+    return {
+      reachable: town.townTarget(s, big) >= 1,
+      fired, shown: !!sheet, day: s.town.closed,
+      hasFigures: /1\.2 TWh/.test(text) && /4\.9 billion litres/.test(text) && /412 days/.test(text),
+      namesTheLast: /Marie Baptiste/.test(text),
+    };
+  });
+  if (!r.reachable) fail('a finished town gets an ending', 'damage 1.0 cannot be reached at all');
+  else if (!r.shown) fail('a finished town gets an ending', 'nothing appeared');
+  else if (r.fired !== 1) fail('a finished town gets an ending', `it fired ${r.fired} times`);
+  else if (!r.hasFigures) fail('a finished town gets an ending', 'the figures are not from the run');
+  else if (!r.namesTheLast) fail('a finished town gets an ending', 'it does not name the last to go');
+  else pass('a finished town gets an ending', `once, on day ${r.day}, with the run's own figures`);
+  await page.close();
+}
+
+// ------------------------------------ a dialogue does not cost the frame rate
+{
+  // backdrop-filter over the whole screen was taking a finished site from 36fps
+  // to 12 — for the Menu, for an event decision, for the bank's offer, for
+  // every dialogue in the game. It had nothing to do with the canvas redrawing;
+  // the compositor re-filters the page regardless. This is here so no one puts
+  // it back.
+  const page = await newPage(1500, 940);
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(async () => {
+    const A = await import('/src/actions.js');
+    const sim = await import('/src/sim.js');
+    const R = await import('/src/data/research.js');
+    const app = window.__rr, s = app.state;
+    s.tutorial.skipped = true;
+    s.facility = 9; s.money = 1e30; s.gridPower = 6e6;
+    for (const r of R.RESEARCH) s.research.done.push(r.id);
+    app.d = sim.derive(s);
+    let n = 0;
+    for (let y = 0; y < 18; y++) for (let x = 0; x < 30; x++) {
+      A.place(s, app.d, x, y, x % 5 === 4 ? 'pdu5' : 'rack5', null);
+      if (++n % 60 === 0) app.d = sim.derive(s);
+    }
+    app.d = sim.derive(s);
+    app.view.centred = false;
+  });
+  await page.waitForTimeout(1400);
+  const fps = () => page.evaluate(() => new Promise((res) => {
+    let f = 0; const t0 = performance.now();
+    const loop = () => { f++; performance.now() - t0 < 2000 ? requestAnimationFrame(loop) : res(f / ((performance.now() - t0) / 1000)); };
+    requestAnimationFrame(loop);
+  }));
+  const open = await fps();
+  await page.evaluate(() => window.__rr.openMenu());
+  await page.waitForTimeout(400);
+  const withDialogue = await fps();
+  const blurred = await page.evaluate(() =>
+    getComputedStyle(document.getElementById('modal')).backdropFilter);
+  if (blurred && blurred !== 'none') fail('a dialogue does not cost the frame rate',
+    `the modal is back to backdrop-filter: ${blurred}`);
+  else if (withDialogue < open * 0.9) fail('a dialogue does not cost the frame rate',
+    `${open.toFixed(0)}fps without, ${withDialogue.toFixed(0)}fps with`);
+  else pass('a dialogue does not cost the frame rate',
+    `${open.toFixed(0)}fps free, ${withDialogue.toFixed(0)}fps behind the Menu`);
+  await page.close();
+}
+
 // --------------------------------------- the town is on screen, and it decays
 {
   // The best writing in the game used to be behind a tab you might never open.

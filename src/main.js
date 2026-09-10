@@ -1,6 +1,6 @@
 // Boot, the game loop, and everything that glues the simulation to the UI.
 
-import { el, fill, fmt, fmtTime, money } from './util.js';
+import { el, fill, fmt, fmtInt, fmtTime, money } from './util.js';
 import { newGame, load, save, wipe, exportSave, importSave, tileAt, roomOf, DAY_SECONDS, BUILD } from './state.js';
 import { derive, tick, resolveDecision, fireEvent, legacyGain, rescueTerms } from './sim.js';
 import * as SIM from './sim.js';
@@ -14,6 +14,7 @@ import { initTips, hide as hideTip } from './tip.js';
 import { startAudio, setEnabled as setSound, isEnabled as soundOn, ambience, sfx } from './audio.js';
 import { advance as tutAdvance, active as tutActive, FINISH, STEPS } from './tutorial.js';
 import { BootArt } from './bootart.js';
+import { REGISTER, TOWN_POPULATION } from './data/ashbrook.js';
 import { initPresence } from './presence.js';
 
 const TICK = 0.2;          // seconds of simulated time per fixed step
@@ -82,7 +83,13 @@ function logLine(text, tone, opts) {
   // countdown, deals have a tab, objectives have a panel, and everything lands
   // in the log along the bottom. A toast is for the handful of things that
   // need you to stop and look.
-  if (opts?.toast !== false && (tone === 'good' || tone === 'bad')) toast(text, tone);
+  //
+  // toast: false means "this belongs in the background", and that has to cover
+  // the sound as well. The register can retire a dozen addresses in one tick,
+  // and a dozen alarms in one second is not a mood, it is a fire drill.
+  const quiet = opts?.toast === false;
+  if (!quiet && (tone === 'good' || tone === 'bad')) toast(text, tone);
+  if (quiet) return;
   if (tone === 'bad') sfx.alarm();
   else if (tone === 'good') sfx.good();
 }
@@ -98,7 +105,7 @@ function closeModal() {
 
 function showModal(title, sub, body, buttons, opts) {
   const m = document.getElementById('modal');
-  const sheet = el('div', 'sheet');
+  const sheet = el('div', 'sheet' + (opts?.cls ? ' ' + opts.cls : ''));
   sheet.append(el('h2', null, title));
   if (sub) sheet.append(el('div', 'sub', sub));
   for (const node of [].concat(body)) sheet.append(typeof node === 'string' ? el('p', null, node) : node);
@@ -143,6 +150,64 @@ app.selectedRack = () => {
   const b = BUILDINGS_BY_ID[t.b];
   return b && b.cat === 'compute' ? t : null;
 };
+
+/**
+ * The closing statement.
+ *
+ * Ashbrook reaching nothing is the only ending the game has, and until now it
+ * passed as a log line. This is the reckoning: what the site drew, what it
+ * drank, what it earned, and the last address to go, in its own words.
+ */
+function showClosing() {
+  const state = app.state;
+  const st = state.stats || {};
+  const body = [];
+
+  const led = el('div', 'ledger');
+  const row = (k, v, cls) => {
+    led.append(el('div', 'lk', k), el('div', 'lv' + (cls ? ' ' + cls : ''), v));
+  };
+  row('Population at the start', fmtInt(TOWN_POPULATION));
+  row('Population now', 'Nobody', 'bad');
+  row('Addresses on the register', String(REGISTER.length));
+  row('Addresses still standing', 'None', 'bad');
+  led.append(el('div', 'lrule'), el('div', 'lrule'));
+  row('The site drew', energy(st.powerDrawn || 0));
+  row('The site drank', litres(st.waterTaken || 0));
+  row('The site earned', money(state.lifetimeEarnings || 0));
+  row('It took', Math.floor(state.day) + ' days');
+  body.push(led);
+
+  const last = REGISTER[REGISTER.length - 2];   // the last address with people in it
+  if (last) {
+    const quote = el('div', 'closinglast');
+    quote.append(el('div', 'ck', 'The last to go'));
+    quote.append(el('div', 'caddr', last.addr + (last.who ? ' \u2014 ' + last.who : '')));
+    quote.append(el('div', 'cline', last.line));
+    body.push(quote);
+  }
+
+  showModal('Ashbrook', 'Closing statement', body, [
+    { label: 'Read the register', kind: 'primary', onClick: () => goTab('town') },
+    { label: 'Close', onClick: () => {} },
+  ], { sticky: true, cls: 'closing' });
+}
+
+/** Kilowatt-hours, in the unit a person would actually say it in. */
+function energy(kwh) {
+  if (kwh >= 1e9) return (kwh / 1e9).toFixed(1) + ' TWh';
+  if (kwh >= 1e6) return (kwh / 1e6).toFixed(1) + ' GWh';
+  if (kwh >= 1e3) return (kwh / 1e3).toFixed(1) + ' MWh';
+  return Math.round(kwh) + ' kWh';
+}
+
+/** Litres per second accumulated into something comprehensible. */
+function litres(l) {
+  if (l >= 1e9) return (l / 1e9).toFixed(1) + ' billion litres';
+  if (l >= 1e6) return (l / 1e6).toFixed(1) + ' million litres';
+  if (l >= 1e3) return Math.round(l / 1e3) + ' thousand litres';
+  return Math.round(l) + ' litres';
+}
 
 app.openMenu = () => {
   const state = app.state;
@@ -450,7 +515,14 @@ function step(now) {
   }
   if (!app.d) app.d = derive(state);
 
-  app.view.draw(state, app.d, real);
+  // Nothing behind a full-screen dialogue needs redrawing, and redrawing it is
+  // expensive in a way that is easy to miss: the backdrop blur on the modal has
+  // to re-filter the whole canvas every time the canvas changes. On a finished
+  // site that took the game from 36fps to 12 — for the Menu, for an event
+  // decision, for the bank's offer, for every dialogue there is. Holding the
+  // last frame lets the compositor keep the blurred copy it already has.
+  const behindModal = !document.getElementById('modal').hidden;
+  if (!behindModal) app.view.draw(state, app.d, real);
 
   tickNumbers(state, app.d, real);
   ambience(app.d, speed === 0);
@@ -626,6 +698,7 @@ function boot() {
     onRescue,
     onObjective: () => markDirty(),
     onAchievement: () => markDirty(),
+    onClosing: showClosing,
   };
 
   const saved = load();

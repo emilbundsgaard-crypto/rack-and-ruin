@@ -547,6 +547,13 @@ export function tick(state, dt, d, hooks) {
   state.money += d.netIncome * dt;
   if (d.revenue > 0) state.lifetimeEarnings += d.revenue * dt;
 
+  // What the site has taken, in total, for the closing statement. Kept as
+  // running totals rather than worked out at the end from a snapshot: a site
+  // that ran hot for a hundred days and was then half sold off would otherwise
+  // account for almost none of what it actually drank.
+  state.stats.waterTaken = (state.stats.waterTaken || 0) + d.waterUsed * dt;
+  state.stats.powerDrawn = (state.stats.powerDrawn || 0) + d.actualDraw * (dt / 3600);
+
   if (bank) {
     // Interest on a loan you chose to take, capped so it can never compound
     // past the credit line. Without that ceiling, coming back to an idle site
