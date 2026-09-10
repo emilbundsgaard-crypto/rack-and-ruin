@@ -1,0 +1,22 @@
+import { chromium } from 'playwright';
+const [out, tag] = process.argv.slice(2);
+const b = await chromium.launch();
+const p = await b.newPage({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 2 });
+await p.goto('http://127.0.0.1:8099/index.html', { waitUntil: 'networkidle' });
+await p.click('text=Start in the cupboard');
+await p.evaluate(async () => {
+  const A = await import('/src/actions.js'); const sim = await import('/src/sim.js');
+  const app = window.__rr, s = app.state;
+  s.tutorial.skipped = true; s.money = 2.4e6; s.settings.speed = 1;
+  app.d = sim.derive(s);
+  A.place(s, app.d, 2, 2, 'rack2', app.hooks);
+  A.place(s, app.d, 3, 2, 'pdu2', app.hooks);
+  app.d = sim.derive(s);
+});
+await p.waitForTimeout(900);
+await p.locator('#panel').screenshot({ path: `${out}/ui-panel-${tag}.png` });
+await p.locator('#topbar').screenshot({ path: `${out}/ui-top-${tag}.png` });
+await p.click('#tabs >> text=Deals'); await p.waitForTimeout(600);
+await p.locator('#panel').screenshot({ path: `${out}/ui-deals-${tag}.png` });
+await b.close();
+console.log('ui shots:', tag);

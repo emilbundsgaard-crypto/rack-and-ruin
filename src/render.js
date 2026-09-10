@@ -1039,7 +1039,7 @@ function mix(a, b, t) {
  */
 const lightSprites = new Map();
 
-function lightSprite(rgb) {
+export function lightSprite(rgb) {
   const hit = lightSprites.get(rgb);
   if (hit) return hit;
   const size = 64;

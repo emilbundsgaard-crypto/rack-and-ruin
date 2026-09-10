@@ -559,19 +559,28 @@ function sec(title, ...kids) {
  * the old note ("Locked — needs Enclosed racks.") never said so, never said
  * where to go, and never said whether it was affordable. This does all three.
  */
+/**
+ * Why something is locked, in one line.
+ *
+ * This used to be a sentence and a half — 'Research needed — "Magnetic
+ * confinement", 6.36K points. You have 0.' — which wrapped onto two lines on
+ * every locked item in the list. Four of those, each with a button under it,
+ * pushed the one thing you could actually buy off the bottom of the panel.
+ * Same three facts, a third of the height.
+ */
 function lockNote(state, reqId) {
   const r = RESEARCH_BY_ID[reqId];
   if (!r) return 'Locked.';
-  const affordable = state.rp >= r.cost;
-  return 'Research needed — "' + r.name + '", ' + fmt(r.cost) + ' points'
-    + (affordable ? ' (you can afford it now).' : '. You have ' + fmt(state.rp) + '.');
+  return 'Needs ' + r.name + ' \u00b7 ' + fmt(state.rp) + '/' + fmt(r.cost) + ' pts';
 }
 
 /** Takes you straight to the node that unlocks it. */
 function lockButton(state, reqId) {
   const r = RESEARCH_BY_ID[reqId];
   if (!r) return null;
-  const b = el('button', 'btn small' + (state.rp >= r.cost ? ' primary' : ''), 'Go to research');
+  const ready = state.rp >= r.cost;
+  const b = el('button', 'btn small' + (ready ? ' primary' : ''),
+    ready ? 'Research it now' : 'Show me');
   b.dataset.tip = 'Research it|Opens the Upgrade tab at "' + r.name + '". '
     + 'Points come from the share of your compute set aside for R&D.';
   b.onclick = () => { goTab('upgrade'); highlightResearch(r.id); };
@@ -668,16 +677,20 @@ function panelBuild(state, d) {
     }));
   }
 
-  // Say it in the verbs of the device in front of them.
+  // Say it in the verbs of the device in front of them — and only while it is
+  // still news. Four lines of instructions at the top of the panel every time
+  // you open it is four lines of the list you cannot see, and by the sixth
+  // building nobody is reading them. It stays in the Guide either way.
   const touch = matchMedia('(hover: none)').matches;
-  const help = el('div', 'hint', touch
+  const learned = (state.stats?.built || 0) >= 6;
+  const help = learned ? null : el('div', 'hint', touch
     ? 'Tap a building below, then tap the floor to put it down. Drag anywhere to move the floor '
       + 'around, pinch to zoom, and use Turn above it to rotate. The ✕ button in the corner of '
       + 'the floor puts it down again.'
     : 'Click a building below, then click the floor to put it down. Hold and drag to lay a whole row. '
       + 'Drag empty floor to move around, scroll to zoom, and press R to turn the room. '
       + 'Escape, or the ✕ in the corner of the floor, puts it down again.');
-  return [sec(null, catRow), sec(null, help), sec(null, list)];
+  return [sec(null, catRow), ...(help ? [sec(null, help)] : []), sec(null, list)];
 }
 
 // ------------------------------------------------------------------ hardware

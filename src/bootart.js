@@ -1,3 +1,4 @@
+import { lightSprite } from './render.js';
 /**
  * The backdrop behind the title card: a slow isometric drift over a floor of
  * racks, lit only by their own status strips. Purely decorative — it holds no
@@ -158,6 +159,18 @@ export class BootArt {
     ctx.lineTo(x - hw, y - H);
     ctx.closePath();
     ctx.fill();
+
+    // The same lamp the floor uses, so the title screen is lit by the same
+    // light as the game behind it.
+    if (a > 0.06) {
+      const rgb = t.lit > 0.86 ? '111,200,216' : '242,168,60';
+      const gr = (hw + hh) * 0.9;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = a * (0.10 + 0.10 * Math.max(0, Math.sin(this.t * t.rate + t.lit * 6)));
+      ctx.drawImage(lightSprite(rgb), x + hw / 2 - gr, y - gr * 0.6, gr * 2, gr * 1.2);
+      ctx.restore();
+    }
 
     // Status strips down the right face: four bays, each on its own beat.
     for (let i = 0; i < 4; i++) {
