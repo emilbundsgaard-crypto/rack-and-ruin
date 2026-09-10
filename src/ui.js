@@ -885,6 +885,24 @@ function panelContracts(state, d) {
     bar.append(el('i'));
     bar.firstChild.style.width = clamp((state.day - c.startDay) / (c.endDay - c.startDay), 0, 1) * 100 + '%';
     card.append(bar);
+
+    // The way out. It only appears once a deal is actually going wrong,
+    // because that is the only time it is the right move — and it is the only
+    // move available when the fines have taken you below zero and being
+    // overdrawn has stopped you buying your way back to delivering.
+    if (breached) {
+      const left = Math.max(0, c.endDay - state.day);
+      const guess = Math.max(3, Math.round(
+        (state.reputation || 0) * 0.10 + left * 0.6 + ((t?.penalty || 0) * 8)));
+      const out = el('button', 'btn small danger', 'Walk away \u2014 \u2212' + guess + ' rep');
+      out.dataset.tip = 'Walk away|Ends the contract now and stops the fines. It costs reputation '
+        + 'and never money, so it is always available — including when you are overdrawn and '
+        + 'cannot buy your way back to delivering.';
+      out.onclick = () => app.act(() => SIM.breakContract(state, c.cid, app.hooks));
+      const row = el('div', 'btnrow');
+      row.append(out);
+      card.append(row);
+    }
     return card;
   });
   out.push(sec('Active (' + state.contracts.active.length + ')',

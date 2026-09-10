@@ -1,6 +1,6 @@
 // A crude but competent player bot, used to check pacing over a long run.
 import { newGame, facilityOf, tileAt, key, DAY_SECONDS } from '../src/state.js';
-import { derive, tick, signContract, resolveDecision, legacyGain, takeRescue } from '../src/sim.js';
+import { derive, tick, signContract, resolveDecision, legacyGain, takeRescue, breakContract } from '../src/sim.js';
 import * as A from '../src/actions.js';
 import { HARDWARE } from '../src/data/hardware.js';
 import { BUILDINGS } from '../src/data/buildings.js';
@@ -53,6 +53,33 @@ function step() {
   if (s.rescue) {
     takeRescue(s, d, quiet);
     d = derive(s);
+  }
+
+  // Cut the site down when it is losing money.
+  //
+  // This is what the game tells an overdrawn player to do in as many words —
+  // "sell servers you cannot run" — and the bot never did it, which is why
+  // every losing run ran all the way to the bottom. Without this the bot
+  // cannot answer the question of whether the hole is escapable at all.
+  if (d.netIncome < 0 && (s.money < 0 || d.netIncome < -d.revenue * 0.4)) {
+    const worst = d.racks
+      .filter((r) => r.used > 0)
+      .sort((a, b) => b.draw - a.draw)[0];
+    if (worst) {
+      const tile = tileAt(s, worst.x, worst.y);
+      const held = tile && tile.units && tile.units.length ? tile.units[0] : null;
+      if (held) { A.uninstall(s, d, tile, held.id ?? held, 1, quiet); d = derive(s); }
+    }
+  }
+
+  // Drop work the site cannot do. A player watching fines outrun revenue would
+  // walk away from the worst deal rather than pay for the rest of its term;
+  // without this the bot sits and takes it, which is how the trap was found.
+  if (d.penalties > d.revenue * 0.5 || s.money < 0) {
+    const bad = s.contracts.active
+      .filter((c) => c.effUptime < c.uptimeReq)
+      .sort((a, b) => (b.livePay || b.pay) - (a.livePay || a.pay))[0];
+    if (bad) { breakContract(s, bad.cid, quiet); d = derive(s); }
   }
 
   // Answer decision events immediately.
@@ -211,9 +238,21 @@ while (t < total) {
   }
   if (s.money < 0 && !botWentUnder) {
     botWentUnder = true;
+    // Where the money is going, not just how fast. Inferring this from the net
+    // figure is guesswork, and guessing is how you end up fixing the wrong cost.
     console.log('DIAG went overdrawn at ' + (t/60).toFixed(1) + 'm  tier ' + s.facility
       + '  net ' + d.netIncome.toFixed(1) + '  staff ' + JSON.stringify(s.staff)
       + '  tiles ' + Object.keys(s.tiles).length + '  rescues ' + s.bank.rescues);
+    console.log('DIAG   revenue ' + d.revenue.toFixed(2)
+      + ' | power ' + d.powerCost.toFixed(2)
+      + ' | fuel ' + d.fuelCost.toFixed(2)
+      + ' | water ' + d.waterBill.toFixed(2)
+      + ' | upkeep+wages ' + d.upkeepCost.toFixed(2)
+      + ' | fines ' + d.penalties.toFixed(2)
+      + ' | interest ' + d.interestCost.toFixed(2)
+      + ' | broken ' + d.brokenTotal + '/' + d.unitsTotal
+      + ' | contracts ' + s.contracts.active.length
+      + ' | uptime ' + (d.uptime * 100).toFixed(0) + '%');
   }
   if (t >= nextReport) {
     nextReport = t + 900;

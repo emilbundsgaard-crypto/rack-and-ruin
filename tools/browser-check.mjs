@@ -905,6 +905,100 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// -------------------------------- a deal you cannot keep can always be dropped
+{
+  // The active list was only ever added to. A site that promised more than it
+  // could deliver was fined every second for the rest of the term, and being
+  // overdrawn stops you buying the capacity that would end the fines. The bot
+  // found it: ten contracts ten minutes in, $87.50 a second of fines against
+  // $14.91 of revenue, uptime 97% and nothing broken, and no move that helped.
+  const page = await newPage(1400, 900);
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const app = window.__rr, s = app.state;
+    // A contract being missed, on a site that is already under water.
+    s.contracts.active = [{
+      cid: 'x1', tid: s.contracts.offers[0]?.tid || 'c_backup', name: 'Test deal',
+      client: 'Someone', demand: 100, pay: 50, uptimeReq: 0.99, effUptime: 0.4,
+      startDay: 1, endDay: 40, breached: true,
+    }];
+    s.money = -250000;                       // overdrawn: buying is frozen
+    s.reputation = 60;                       // there has to be something to lose
+    app.d = sim.derive(s);
+    const finesBefore = app.d.penalties;
+    const rep = s.reputation;
+
+    const err = sim.breakContract(s, 'x1', app.hooks);
+    app.d = sim.derive(s);
+    return {
+      err, finesBefore, finesAfter: app.d.penalties,
+      left: s.contracts.active.length,
+      repCost: rep - s.reputation,
+      moneyUnchanged: s.money === -250000,
+    };
+  });
+  if (r.err) fail('a deal you cannot keep can always be dropped', r.err);
+  else if (r.left !== 0) fail('a deal you cannot keep can always be dropped', 'the contract is still running');
+  else if (r.finesAfter >= r.finesBefore && r.finesBefore > 0)
+    fail('a deal you cannot keep can always be dropped', 'the fines did not stop');
+  else if (!r.moneyUnchanged)
+    fail('a deal you cannot keep can always be dropped', 'it charged money to an overdrawn site');
+  else if (r.repCost <= 0)
+    fail('a deal you cannot keep can always be dropped',
+      'walking away cost nothing even with reputation to lose');
+  else pass('a deal you cannot keep can always be dropped',
+    `while overdrawn, for ${r.repCost} reputation and no cash`);
+  await page.close();
+}
+
+// ------------------------------------- you are told before the money runs out
+{
+  // The game only warned once you were already overdrawn, which is after the
+  // window where it is cheap to fix. A site can bleed for ten minutes with
+  // everything green because the electricity costs more than the compute is
+  // worth.
+  const page = await newPage(1400, 900);
+  await page.click('text=Start in the cupboard');
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const app = window.__rr, s = app.state;
+    s.tutorial.skipped = true;
+    s.money = 5000;
+    // A real site drawing real power with nothing sold: revenue zero, bills
+    // ticking. Setting the grid connection alone proved nothing, because the
+    // bill follows what is actually drawn.
+    const A = await import('/src/actions.js');
+    let d = sim.derive(s);
+    A.place(s, d, 2, 2, 'rack', app.hooks);
+    A.place(s, d, 3, 2, 'pdu', app.hooks);
+    d = sim.derive(s);
+    A.buyGrid(s, 20, app.hooks);
+    d = sim.derive(s);
+    A.fillAll(s, d, 'pizza', app.hooks);
+    s.contracts.active = [];
+    s.market.power = 1.3;
+    s.money = 5000;
+    d = sim.derive(s);
+    const warn = d.problems.find((p) => /losing .* a second/.test(p.text));
+    return {
+      losing: d.revenue < d.costs,
+      warned: !!warn,
+      text: warn ? warn.text : d.problems.map((p) => p.text)[0] || '(no problems at all)',
+    };
+  });
+  if (!r.losing) fail('you are told before the money runs out', 'the test site was not losing money');
+  else if (!r.warned) fail('you are told before the money runs out',
+    `no warning while still in credit; top problem was "${r.text.slice(0, 60)}"`);
+  else if (!/runs out in/.test(r.text) || !/Most of it is/.test(r.text))
+    fail('you are told before the money runs out', `the warning does not say when or why: "${r.text}"`);
+  else pass('you are told before the money runs out', r.text.slice(0, 64) + '…');
+  await page.close();
+}
+
 // ------------------------------- an overlay is visible on a floor worth reading
 {
   // The overlays were painted on the bare floor and then buried under the very

@@ -1,7 +1,7 @@
 // The whole simulation: modifiers, the per-tick derived snapshot of the site,
 // and the state mutations that follow from it.
 
-import { clamp, sum, noise, weightedPick, fmt as fmtShort, money } from './util.js';
+import { clamp, sum, noise, weightedPick, fmt as fmtShort, fmtTime, money } from './util.js';
 
 // Log it, but do not pop a toast for it: these are all already on screen
 // somewhere the player is looking — the event strip, the Deals tab, the
@@ -370,6 +370,23 @@ export function derive(state) {
       tone: 'bad', tab: 'site',
       text: `You owe ${money(debt)} and the site is still losing money. `
         + `The debt grows ${Math.round(LOAN_RATE * 100)}% a day — open the Site tab.`,
+    });
+  } else if (revenue < costs && state.money > 0) {
+    // The warning used to arrive only once you were already overdrawn, which
+    // is after the window in which it is cheap to fix. A site can be quietly
+    // losing money for ten minutes with everything green — no breakage, uptime
+    // at 97% — because the electricity costs more than the compute is worth.
+    // Say so while there is still money to act with, and name the cost, so the
+    // answer is not a guessing game between five bills.
+    const bleed = costs - revenue;
+    const biggest = [
+      ['electricity', powerCost], ['fuel', fuelCost], ['water', waterBill],
+      ['upkeep and wages', upkeepCost], ['contract fines', penalties],
+    ].sort((a, b) => b[1] - a[1])[0];
+    problems.push({
+      tone: 'warn', tab: 'site',
+      text: `The site is losing ${money(bleed)} a second and the money runs out in `
+        + `${fmtTime(state.money / bleed)}. Most of it is ${biggest[0]}.`,
     });
   }
   const noPower = racks.filter((r) => r.used > 0 && r.pduFactor < 0.95).length;
@@ -761,6 +778,36 @@ export function signContract(state, d, offer, hooks) {
   const c = { ...offer, startDay: state.day, endDay: state.day + offer.days, breached: false, delivered: 1, effUptime: 1 };
   state.contracts.active.push(c);
   hooks?.log(`Signed ${c.name} with ${c.client} — ${c.days} days.`, 'good', QUIET);
+  return null;
+}
+
+/**
+ * Walk away from a contract you cannot keep.
+ *
+ * Until now the active list was only ever added to. A site that promised more
+ * than it could deliver was fined every second for the rest of the term, and
+ * because being overdrawn stops you buying anything, it could not buy the
+ * capacity that would end the fines. The bot found this the hard way: ten
+ * contracts at ten minutes in, fines of $87.50 a second against $14.91 of
+ * revenue, uptime at 97% and nothing broken. There was no move that helped.
+ *
+ * The price is reputation, never cash. A way out of a hole that puts you
+ * further into it is not a way out — and reputation is what welching on a deal
+ * actually costs you: it gates the next site, and it is slow to earn back.
+ */
+export function breakContract(state, id, hooks) {
+  const i = state.contracts.active.findIndex((c) => c.cid === id);
+  if (i < 0) return 'That contract is not running.';
+  const c = state.contracts.active[i];
+  const t = TEMPLATES_BY_ID[c.tid];
+  const left = Math.max(0, (c.endDay ?? state.day) - state.day);
+  // Bigger promises and longer left to run cost more to walk away from.
+  const cost = Math.max(3, Math.round(
+    (state.reputation || 0) * 0.10 + left * 0.6 + (t ? t.penalty * 8 : 2)));
+  state.contracts.active.splice(i, 1);
+  state.reputation = Math.max(0, (state.reputation || 0) - cost);
+  state.stats.broken = (state.stats.broken || 0) + 1;
+  hooks?.log(`Walked away from ${c.name}. ${c.client} will tell people: -${cost} reputation.`, 'bad');
   return null;
 }
 
