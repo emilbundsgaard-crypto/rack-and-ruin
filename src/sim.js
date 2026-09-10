@@ -539,7 +539,7 @@ export function derive(state) {
     waterSupply: waterAvail, waterDemand, waterUsed, waterFactor,
     heatLoad, coolCap: coolCapRaw * waterEff, netCap, netNeed, netFactor,
     computeTotal, computeResearch, computeSellable, contractDemand, deliverRatio,
-    uptime, maxTemp, avgTemp: tempW > 0 ? tempSum / tempW : ambient, ambient,
+    uptime, baseUptime, maxTemp, avgTemp: tempW > 0 ? tempSum / tempW : ambient, ambient,
     revenue, costs, netIncome: revenue - costs,
     powerCost, fuelCost, waterBill, upkeepCost, penalties, interestCost,
     // Salaries are folded into upkeep for the maths, but the player needs to
@@ -794,6 +794,74 @@ export function makeOffer(state, d, seedIndex) {
     penalty: t.penalty,
     seed: seedIndex,
   };
+}
+
+/**
+ * Why a contract is not delivering everything it promised.
+ *
+ * Delivery is a product of four things, and the panel only ever showed the
+ * result — you could watch a deal sit at 71% with no way to find out which of
+ * them was costing you what. Each factor is quantified against the same maths
+ * that produced the figure:
+ *
+ *   instUptime = deliverRatio x baseUptime x (1 - brokenFrac * 0.75)
+ *                             x (0.35 + 0.65 * powerFactor)
+ *
+ * so the share each one is taking is exactly what it multiplies away. Ranked
+ * by that, so the first line is the one worth acting on.
+ */
+export function deliveryReport(state, d) {
+  const reasons = [];
+  const pc = (x) => (x * 100).toFixed(x < 0.1 ? 1 : 0) + '%';
+
+  const oversold = 1 - clamp(d.deliverRatio ?? 1, 0, 1);
+  if (oversold > 0.001) {
+    const short = Math.max(0, (d.contractDemand || 0) - (d.computeSellable || 0));
+    const rnd = d.computeResearch || 0;
+    reasons.push({
+      lost: oversold,
+      what: `Oversold by ${fmtShort(short)} compute. You have promised `
+        + `${fmtShort(d.contractDemand || 0)} and can sell ${fmtShort(d.computeSellable || 0)}.`,
+      fix: rnd > short * 0.5
+        ? `Build more servers, turn the R&D share down — it is holding back ${fmtShort(rnd)} `
+          + 'compute — or walk away from a deal.'
+        : 'Build more servers, or walk away from a deal you cannot cover.',
+    });
+  }
+
+  const brokenFrac = d.unitsTotal > 0 ? (d.brokenTotal || 0) / d.unitsTotal : 0;
+  if (brokenFrac > 0.001) {
+    reasons.push({
+      lost: brokenFrac * 0.75,
+      what: `${fmtShort(d.brokenTotal)} of ${fmtShort(d.unitsTotal)} `
+        + `server${d.brokenTotal === 1 ? ' is' : 's are'} down.`,
+      fix: (state.staff?.tech || 0) > 0
+        ? `Your ${state.staff.tech} technician${state.staff.tech > 1 ? 's are' : ' is'} working `
+          + `through them at ${fmtShort(d.repairRate || 0)} a day. More would be quicker.`
+        : 'You have no technicians. Nothing gets repaired without one — hire on Utilities.',
+    });
+  }
+
+  const powerLoss = 0.65 * (1 - clamp(d.powerFactor ?? 1, 0, 1));
+  if (powerLoss > 0.001) {
+    reasons.push({
+      lost: powerLoss,
+      what: `Power is meeting ${pc(d.powerFactor)} of what the floor is drawing.`,
+      fix: 'Buy a bigger utility connection or build your own supply, on Utilities.',
+    });
+  }
+
+  const base = d.baseUptime ?? 0.965;
+  if (1 - base > 0.001) {
+    reasons.push({
+      lost: 1 - base,
+      what: `Ordinary faults take ${pc(1 - base)} of the time whatever you do.`,
+      fix: 'An operations centre and ops staff bring it down; some research does too.',
+    });
+  }
+
+  reasons.sort((a, b) => b.lost - a.lost);
+  return { delivering: d.uptime * (d.deliverRatio ?? 1), reasons };
 }
 
 export function signContract(state, d, offer, hooks) {

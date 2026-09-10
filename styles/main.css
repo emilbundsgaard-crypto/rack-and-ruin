@@ -969,3 +969,24 @@ button:focus:not(:focus-visible) { outline: none; }
 .caplbl b { color: var(--fg); font-family: var(--mono); font-weight: 600; }
 .caprow input[type="range"] { width: 100%; accent-color: var(--acc); margin: 0; }
 .caphint { font-size: 11px; color: var(--dimmer); margin-top: 6px; }
+
+/* ------------------------------------------ why a contract is not delivering */
+
+.whybtn {
+  display: inline-grid; place-items: center; vertical-align: middle;
+  width: 15px; height: 15px; margin-left: 5px; padding: 0;
+  border: 1px solid var(--line2); border-radius: 50%;
+  background: var(--raise); color: var(--dim);
+  font: 600 10px var(--sans); line-height: 1; cursor: help;
+}
+.whybtn:hover { color: var(--acc); border-color: var(--acc-dim); background: #241b0e; }
+
+.sheet.why { max-width: 520px; }
+.whyrow {
+  display: grid; grid-template-columns: 52px 1fr; gap: 12px;
+  padding: 10px 0; border-top: 1px solid var(--line);
+}
+.whyrow:first-of-type { border-top: 0; }
+.whycost { font: 600 13px var(--mono); color: var(--bad); text-align: right; }
+.whytext { font-size: 13px; line-height: 1.55; color: var(--dim); }
+.whytext b { color: var(--fg); font-weight: 600; }

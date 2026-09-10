@@ -911,7 +911,49 @@ function panelContracts(state, d) {
       ['ends', 'day ' + Math.ceil(c.endDay)],
       ['left', Math.max(0, c.endDay - state.day).toFixed(1) + ' days'],
     ];
-    for (const [k, v] of bits) { const s = el('span'); s.append(k + ' ', el('b', null, v)); meta.append(s); }
+    for (const [k, v] of bits) {
+      const sp = el('span');
+      sp.append(k + ' ', el('b', null, v));
+      // Why it is not 100%, next to the number that is not 100%.
+      //
+      // The panel showed the result and nothing else: a deal could sit at 71%
+      // with no way to find out which of the four things that go into it was
+      // costing what. The tip carries the whole breakdown on a desktop; tips
+      // are suppressed on touch, so the same text opens as a sheet when it is
+      // tapped.
+      if (k === 'delivering' && c.effUptime < 0.9995) {
+        const report = SIM.deliveryReport(state, d);
+        const lines = report.reasons.map((r) =>
+          '\u2212' + (r.lost * 100).toFixed(r.lost < 0.1 ? 1 : 0) + '%  ' + r.what + ' ' + r.fix);
+        const why = el('button', 'whybtn', '?');
+        why.type = 'button';
+        why.setAttribute('aria-label', 'Why is this not delivering fully?');
+        why.dataset.tip = 'Not delivering in full|' + (lines.length
+          ? lines.join('\n')
+          : 'Delivery has dipped recently and is still catching up. It is an average '
+            + 'over the last few days, so it lags behind the site.');
+        why.onclick = (e) => {
+          e.stopPropagation();
+          const body = report.reasons.length
+            ? report.reasons.map((r) => {
+              const line = el('div', 'whyrow');
+              line.append(el('div', 'whycost', '\u2212'
+                + (r.lost * 100).toFixed(r.lost < 0.1 ? 1 : 0) + '%'));
+              const t = el('div', 'whytext');
+              t.append(el('b', null, r.what), el('span', null, ' ' + r.fix));
+              line.append(t);
+              return line;
+            })
+            : [el('p', null, 'Delivery has dipped recently and is still catching up. '
+                + 'It is an average over the last few days, so it lags behind the site.')];
+          app.showWhy(c.name, 'Delivering '
+            + (c.effUptime * 100).toFixed(1) + '% of a promised '
+            + (c.uptimeReq * 100).toFixed(1) + '%', body);
+        };
+        sp.append(why);
+      }
+      meta.append(sp);
+    }
     card.append(meta);
     const bar = el('div', 'bar' + (breached ? ' bad' : ''));
     bar.append(el('i'));
@@ -966,7 +1008,49 @@ function panelContracts(state, d) {
       ['expires', Math.max(0, (o.expires ?? state.day) - state.day).toFixed(1) + ' days'],
       ['total', money(o.pay * d.mods.priceMult * o.days * DAY_SECONDS)],
     ];
-    for (const [k, v] of bits) { const s = el('span'); s.append(k + ' ', el('b', null, v)); meta.append(s); }
+    for (const [k, v] of bits) {
+      const sp = el('span');
+      sp.append(k + ' ', el('b', null, v));
+      // Why it is not 100%, next to the number that is not 100%.
+      //
+      // The panel showed the result and nothing else: a deal could sit at 71%
+      // with no way to find out which of the four things that go into it was
+      // costing what. The tip carries the whole breakdown on a desktop; tips
+      // are suppressed on touch, so the same text opens as a sheet when it is
+      // tapped.
+      if (k === 'delivering' && c.effUptime < 0.9995) {
+        const report = SIM.deliveryReport(state, d);
+        const lines = report.reasons.map((r) =>
+          '\u2212' + (r.lost * 100).toFixed(r.lost < 0.1 ? 1 : 0) + '%  ' + r.what + ' ' + r.fix);
+        const why = el('button', 'whybtn', '?');
+        why.type = 'button';
+        why.setAttribute('aria-label', 'Why is this not delivering fully?');
+        why.dataset.tip = 'Not delivering in full|' + (lines.length
+          ? lines.join('\n')
+          : 'Delivery has dipped recently and is still catching up. It is an average '
+            + 'over the last few days, so it lags behind the site.');
+        why.onclick = (e) => {
+          e.stopPropagation();
+          const body = report.reasons.length
+            ? report.reasons.map((r) => {
+              const line = el('div', 'whyrow');
+              line.append(el('div', 'whycost', '\u2212'
+                + (r.lost * 100).toFixed(r.lost < 0.1 ? 1 : 0) + '%'));
+              const t = el('div', 'whytext');
+              t.append(el('b', null, r.what), el('span', null, ' ' + r.fix));
+              line.append(t);
+              return line;
+            })
+            : [el('p', null, 'Delivery has dipped recently and is still catching up. '
+                + 'It is an average over the last few days, so it lags behind the site.')];
+          app.showWhy(c.name, 'Delivering '
+            + (c.effUptime * 100).toFixed(1) + '% of a promised '
+            + (c.uptimeReq * 100).toFixed(1) + '%', body);
+        };
+        sp.append(why);
+      }
+      meta.append(sp);
+    }
     card.append(meta);
     if (fits && d.uptime < o.uptimeReq) {
       card.append(el('div', 'desc', 'You cannot stay up as much as this deal asks. '

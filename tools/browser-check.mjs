@@ -905,6 +905,81 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------------ a deal that is short says what is short of it
+{
+  // The panel showed the result and nothing else: a contract could sit at 62%
+  // with no way to find out which of the four things that go into delivery was
+  // costing what. Delivery is deliverRatio x baseUptime x broken x power, so
+  // each reason is quantified against the same maths that produced the figure.
+  const page = await newPage(1400, 900);
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(async () => {
+    const A = await import('/src/actions.js');
+    const sim = await import('/src/sim.js');
+    const R = await import('/src/data/research.js');
+    const app = window.__rr, s = app.state;
+    s.tutorial.skipped = true; s.money = 5e6; s.settings.speed = 0;
+    s.research.done = R.RESEARCH.map((r) => r.id);
+    app.d = sim.derive(s);
+    A.place(s, app.d, 2, 2, 'rack2', app.hooks);
+    A.place(s, app.d, 3, 2, 'pdu2', app.hooks);
+    app.d = sim.derive(s);
+    A.buyGrid(s, A.maxGrid(s), app.hooks); app.d = sim.derive(s);
+    A.fillAll(s, app.d, 'pizza', app.hooks); app.d = sim.derive(s);
+    // Every cause at once: units down, power short, more promised than made.
+    const tile = s.tiles['2,2'];
+    if (tile && tile.units) tile.units.forEach((u, i) => { if (i % 3 === 0) u.broken = true; });
+    s.gridPower = Math.max(1, Math.round(app.d.actualDraw * 0.55));
+    s.staff.tech = 1;
+    s.contracts.active = [{
+      cid: 'w1', tid: s.contracts.offers[0]?.tid || 'c_backup', name: 'Overnight batch',
+      client: 'Someone', demand: 120, pay: 40, uptimeReq: 0.95, effUptime: 0.62,
+      startDay: 1, endDay: 30, breached: true,
+    }];
+    app.d = sim.derive(s);
+  });
+  await page.waitForTimeout(500);
+  await page.click('#tabs >> text=Deals');
+  await page.waitForTimeout(600);
+
+  const r = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const app = window.__rr;
+    const btn = document.querySelector('.whybtn');
+    const report = sim.deliveryReport(app.state, app.d);
+    return {
+      button: !!btn,
+      tip: btn ? btn.dataset.tip : '',
+      reasons: report.reasons.map((x) => ({ lost: x.lost, what: x.what, fix: x.fix })),
+      ordered: report.reasons.every((x, i, a) => i === 0 || a[i - 1].lost >= x.lost),
+    };
+  });
+  const kinds = r.reasons.map((x) => x.what).join(' ');
+  if (!r.button) fail('a deal that is short says what is short of it', 'no ? on a breaching deal');
+  else if (r.reasons.length < 3) fail('a deal that is short says what is short of it',
+    `only ${r.reasons.length} reason(s) with three things wrong`);
+  else if (!r.ordered) fail('a deal that is short says what is short of it', 'not ranked by cost');
+  else if (!/Oversold/.test(kinds)) fail('a deal that is short says what is short of it', 'it misses being oversold');
+  else if (!/Power is meeting/.test(kinds)) fail('a deal that is short says what is short of it', 'it misses the power shortfall');
+  else if (!/down\./.test(kinds)) fail('a deal that is short says what is short of it', 'it misses the broken servers');
+  else if (r.reasons.some((x) => !x.fix || x.fix.length < 12))
+    fail('a deal that is short says what is short of it', 'a reason has no fix attached');
+  else if (!r.tip.includes('\n')) fail('a deal that is short says what is short of it',
+    'the hover tip is a single line');
+  else pass('a deal that is short says what is short of it',
+    `${r.reasons.length} causes, worst first, each with what to do`);
+
+  // And it has to be reachable without a hover, because tips are off on touch.
+  const opened = await page.evaluate(async () => {
+    document.querySelector('.whybtn').click();
+    await new Promise((x) => setTimeout(x, 250));
+    return !!document.querySelector('.sheet.why');
+  });
+  if (!opened) fail('a deal that is short says what is short of it',
+    'tapping the ? opens nothing, so it is useless on a phone');
+  await page.close();
+}
+
 // ---------------------------------------- auto-sign only takes what you allow
 {
   // Auto-sign takes the best-paying offer that fits, and the best-paying

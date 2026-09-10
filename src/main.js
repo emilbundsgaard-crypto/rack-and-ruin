@@ -209,6 +209,11 @@ function litres(l) {
   return Math.round(l) + ' litres';
 }
 
+/** A small sheet for an explanation that will not fit in a tooltip. */
+app.showWhy = (title, sub, body) => {
+  showModal(title, sub, body, [{ label: 'Right', kind: 'primary' }], { cls: 'why' });
+};
+
 app.openMenu = () => {
   const state = app.state;
   const body = [];
