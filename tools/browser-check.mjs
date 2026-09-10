@@ -905,6 +905,58 @@ async function clickTile(page, gx, gy) {
   await page.close();
 }
 
+// ------------------------------------------------ the lighting stays cheap
+{
+  // Frame rate is a bad signal here: this browser has no GPU, so fps swings by
+  // a third between identical runs and reads the same whether a pass costs
+  // 0.1ms or nothing at all. Chasing it led to rewriting the bloom twice for a
+  // cost that turned out to be measurement noise. So this times the passes
+  // themselves, which is the number that means something.
+  const page = await newPage(1400, 900);
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(async () => {
+    const A = await import('/src/actions.js');
+    const sim = await import('/src/sim.js');
+    const R = await import('/src/data/research.js');
+    const St = await import('/src/state.js');
+    const app = window.__rr, s = app.state;
+    s.tutorial.skipped = true; s.money = 1e14; s.reputation = 500;
+    s.research.done = R.RESEARCH.map((r) => r.id);
+    while (s.facility < 5 && !A.upgradeFacility(s, app.hooks)) {}
+    s.money = 1e14; app.d = sim.derive(s);
+    const f = St.roomOf(s);
+    for (let x = 0; x < f.w; x++) for (let y = 0; y < f.h; y++) {
+      A.place(s, app.d, x, y, (x + y) % 6 === 0 ? 'pdu3' : 'rack3', app.hooks);
+    }
+    app.d = sim.derive(s);
+    for (let i = 0; i < 5; i++) {
+      A.buyGrid(s, A.maxGrid(s), app.hooks); app.d = sim.derive(s);
+      A.fillAll(s, app.d, 'blade', app.hooks); app.d = sim.derive(s);
+    }
+    s.day = 3.9; s.settings.speed = 0; app.view.centred = false;
+  });
+  await page.waitForTimeout(1200);
+  const m = await page.evaluate(() => new Promise((res) => {
+    const v = window.__rr.view;
+    const oBurn = v.burn.bind(v), oVig = v.vignette.bind(v), oDraw = v.draw.bind(v);
+    let burn = 0, vig = 0, all = 0, n = 0;
+    v.burn = (c) => { const t = performance.now(); oBurn(c); burn += performance.now() - t; };
+    v.vignette = (c) => { const t = performance.now(); oVig(c); vig += performance.now() - t; };
+    v.draw = (a, b, c) => { const t = performance.now(); oDraw(a, b, c); all += performance.now() - t; n++; };
+    setTimeout(() => res({ n, burn: burn / n, vig: vig / n, all: all / n, lamps: v.lights.length }), 2200);
+  }));
+  const light = m.burn + m.vig;
+  if (!m.n) fail('the lighting stays cheap', 'the floor never drew');
+  else if (!m.lamps) fail('the lighting stays cheap', 'nothing lit a full hall');
+  else if (light > 2.5) fail('the lighting stays cheap',
+    `${light.toFixed(2)}ms a frame on ${m.lamps} lamps`);
+  else if (m.all > 12) fail('the lighting stays cheap',
+    `the whole draw is ${m.all.toFixed(1)}ms a frame`);
+  else pass('the lighting stays cheap',
+    `${light.toFixed(2)}ms of ${m.all.toFixed(1)}ms, ${m.lamps} lamps`);
+  await page.close();
+}
+
 // ------------------------------------ a dialogue does not cost the frame rate
 {
   // backdrop-filter over the whole screen was taking a finished site from 36fps

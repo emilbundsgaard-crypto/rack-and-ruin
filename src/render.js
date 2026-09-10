@@ -98,6 +98,7 @@ export class FloorView {
     this.ctx = canvas.getContext('2d');
     this.cb = callbacks || {};
     this.zoom = 1;
+    this.lights = [];          // lamps to bloom, refilled every frame
     this.ox = 0;
     this.oy = 0;
     this.w = 0;
@@ -371,6 +372,9 @@ export class FloorView {
     // machine lights read, and what colour the air is at dawn and dusk.
     this.sun = daylight(state.day);
     this.night = 1 - this.sun;
+    // Every lamp the scene wants to bloom, gathered as it is drawn and burned
+    // in afterwards in one pass.
+    this.lights.length = 0;
     if (!this.centred && this.w) this.centre(state);
     ctx.clearRect(0, 0, this.w, this.h);
 
@@ -444,6 +448,8 @@ export class FloorView {
 
     ctx.restore();
 
+    this.burn(ctx);
+
     // One wash over the finished scene for the hour of the day. It is a single
     // fill, and it ties the room to the clock in the top bar.
     const hour = state.day % 1;
@@ -464,6 +470,70 @@ export class FloorView {
       }
       ctx.restore();
     }
+
+    this.vignette(ctx);
+  }
+
+  /**
+   * Darken the corners.
+   *
+   * The room is one flat field of light from edge to edge without it, and the
+   * eye has nowhere to land. The gradient is built once per size rather than
+   * per frame — that is the whole trick to making this free.
+   */
+  vignette(ctx) {
+    const key = this.w + 'x' + this.h;
+    if (this._vigKey !== key) {
+      const g = ctx.createRadialGradient(
+        this.w * 0.5, this.h * 0.46, Math.min(this.w, this.h) * 0.30,
+        this.w * 0.5, this.h * 0.5, Math.max(this.w, this.h) * 0.76);
+      g.addColorStop(0, 'rgba(0,0,0,0)');
+      g.addColorStop(0.62, 'rgba(4,5,8,0.20)');
+      g.addColorStop(1, 'rgba(3,4,7,0.62)');
+      this._vig = g;
+      this._vigKey = key;
+    }
+    ctx.save();
+    ctx.fillStyle = this._vig;
+    ctx.fillRect(0, 0, this.w, this.h);
+    ctx.restore();
+  }
+
+  /**
+   * Burn the lamps in.
+   *
+   * Hundreds of server LEDs in a dark room should light the room. They did not:
+   * every lamp was a flat coloured strip and the floor between them stayed as
+   * dark as the floor under them.
+   *
+   * The first version of this rendered the lamps to a quarter-size canvas and
+   * scaled it back up, on the theory that the upscale is a free blur. It is,
+   * but it was the wrong thing to optimise: the cost was never the lamps, it
+   * was compositing a full-screen layer in 'lighter' every frame. Forty lamps
+   * took a finished room from 30fps to 12, and dropping the smoothing quality
+   * changed nothing, which is what gave it away.
+   *
+   * So there is no layer. The sprite is a soft radial gradient — it is already
+   * the blur — and it goes straight onto the scene. Now the blending only
+   * touches the area the lamps actually cover.
+   */
+  burn(ctx) {
+    if (!this.lights.length || this.w < 8) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const L of this.lights) {
+      // The lamps are collected in floor coordinates, so they go through the
+      // same camera the scene did.
+      const x = L.x * this.zoom + this.ox;
+      const y = L.y * this.zoom + this.oy;
+      const r = L.r * this.zoom;
+      if (r < 1.5 || x + r < 0 || y + r < 0 || x - r > this.w || y - r > this.h) continue;
+      ctx.globalAlpha = L.a;
+      // A pool on the floor is squashed to the same angle the floor is.
+      const ry = L.flat ? r * L.flat : r;
+      ctx.drawImage(lightSprite(L.c), x - r, y - ry, r * 2, ry * 2);
+    }
+    ctx.restore();
   }
 
   /** Heat haze: a couple of wobbling threads rising off a cooking rack. */
@@ -592,22 +662,28 @@ export class FloorView {
     const c0 = this.isoR(-0.5, -0.5), c1 = this.isoR(f.w - 0.5, -0.5);
     const c2 = this.isoR(f.w - 0.5, f.h - 0.5), c3 = this.isoR(-0.5, f.h - 0.5);
     const drop = 13;
-    ctx.fillStyle = '#0b0907';
+    ctx.fillStyle = '#080a0d';
     ctx.beginPath();
     ctx.moveTo(c3.x, c3.y); ctx.lineTo(c2.x, c2.y); ctx.lineTo(c2.x, c2.y + drop);
     ctx.lineTo(c3.x, c3.y + drop); ctx.closePath(); ctx.fill();
-    ctx.fillStyle = '#100d0a';
+    ctx.fillStyle = '#0d1015';
     ctx.beginPath();
     ctx.moveTo(c2.x, c2.y); ctx.lineTo(c1.x, c1.y); ctx.lineTo(c1.x, c1.y + drop);
     ctx.lineTo(c2.x, c2.y + drop); ctx.closePath(); ctx.fill();
 
-    ctx.strokeStyle = '#2b241b';
+    // Cool slate, not warm brown.
+    //
+    // The room used to be the same rusty brown as the machines standing in it,
+    // which left nothing for the lamps to read against: a lit rack and the
+    // floor beside it were the same value. A datacentre is cold steel with
+    // coloured light in it, and the split is what makes the light land.
+    ctx.strokeStyle = '#242a33';
     ctx.lineWidth = 1;
     for (let gy = 0; gy < f.h; gy++) {
       for (let gx = 0; gx < f.w; gx++) {
         const p = this.isoR(gx, gy);
         this.diamond(ctx, p);
-        ctx.fillStyle = (gx + gy) % 2 ? '#1d1913' : '#191510';
+        ctx.fillStyle = (gx + gy) % 2 ? '#161a20' : '#12151b';
         ctx.fill();
         ctx.stroke();
       }
@@ -739,6 +815,58 @@ export class FloorView {
     const B0 = { x: p.x + hw, y: p.y };
     const D0 = { x: p.x - hw, y: p.y };
 
+    // Distance. The far end of a big hall should sit back in the air rather
+    // than being as sharp as the row under your nose; without it a two hundred
+    // rack floor reads as wallpaper.
+    const rot = this.rotate(gx, gy, this._fac);
+    const span = this._fac.w + this._fac.h;
+    // Kept deliberately light. At the strength that looked best in isolation
+    // it muted the red on an overheating rack at the far end of the hall, and
+    // atmosphere that hides what the site is telling you is a bad trade.
+    const fog = span > 6 ? clamp(1 - (rot.x + rot.y) / (span - 2), 0, 1) ** 1.6 * 0.26 : 0;
+
+    // Hand the lamp to the bloom pass. One per machine rather than one per bay:
+    // by the time it has been blurred they are the same picture, and it is the
+    // difference between a few hundred blits a frame and a few thousand.
+    if (!ghost) {
+      if (rack) {
+        const live = Math.max(0, rack.used - rack.down);
+        if (live > 0) {
+          const hot = clamp((rack.temp - 30) / 32, 0, 1);
+          const load = clamp(rack.load * rack.throttle, 0, 1);
+          const colour = rack.down > 0 ? '255,104,96'
+            : hot > 0.55 ? '255,148,132'
+            : '116,255,204';
+          // Lamps add together, so a dense hall is a hundred of these on top
+          // of one another. Tuned bright enough to read one rack in the dark
+          // and dim enough that fifty of them do not become one sheet of light
+          // with no racks left in it — which is exactly what the first pass at
+          // these numbers produced.
+          const power = (0.085 + 0.165 * load) * (0.55 + this.night * 0.8) * (1 - fog * 1.2);
+          this.lights.push({
+            x: top.x, y: top.y + hh * 0.55, r: TW * 0.42, a: power, c: colour,
+          });
+          // A wider, flatter pool at its feet. Light that never touches the
+          // ground reads as a sticker rather than a lamp.
+          this.lights.push({
+            x: base.x, y: base.y, r: TW * 0.66, a: power * 0.36, c: colour, flat: 0.44,
+          });
+        }
+      } else if (b.supplyKW || b.powerCap) {
+        // Switchgear and generators carry a standing amber lamp.
+        this.lights.push({
+          x: top.x, y: top.y + hh * 0.4, r: TW * 0.46,
+          a: 0.085 * (0.5 + this.night) * (1 - fog * 1.2), c: '242,168,60',
+        });
+      } else if (b.research || b.uptime || b.staff) {
+        // Anywhere with people in it has the lights on.
+        this.lights.push({
+          x: top.x, y: top.y + hh * 0.4, r: TW * 0.42,
+          a: 0.10 * (0.4 + this.night * 1.2) * (1 - fog * 1.2), c: '255,214,150',
+        });
+      }
+    }
+
     // Left face.
     ctx.fillStyle = body ? shade(body, 0.72) : shade(colour, 0.42, '#0d0a07');
     ctx.beginPath();
@@ -786,6 +914,17 @@ export class FloorView {
     else if (this.zoom >= DETAIL) this.decal(ctx, top, b, gx, gy);
 
     if (rack) this.rackWarnings(ctx, rack, top);
+
+    // One translucent pass over the whole silhouette, rather than mixing the
+    // colour of every face and every lit strip separately: the same picture
+    // for one fill instead of a few thousand string-built colours a frame.
+    if (fog > 0.012 && !ghost) {
+      ctx.fillStyle = `rgba(12,16,23,${fog})`;
+      ctx.beginPath();
+      ctx.moveTo(A.x, A.y); ctx.lineTo(B.x, B.y); ctx.lineTo(B0.x, B0.y);
+      ctx.lineTo(C0.x, C0.y); ctx.lineTo(D0.x, D0.y); ctx.lineTo(D.x, D.y);
+      ctx.closePath(); ctx.fill();
+    }
   }
 
   /**
@@ -889,6 +1028,32 @@ function mix(a, b, t) {
   const [r2, g2, b2] = hexToRgb(b);
   const c = (x, y) => Math.round(x + (y - x) * t).toString(16).padStart(2, '0');
   return '#' + c(r1, r2) + c(g1, g2) + c(b1, b2);
+}
+
+/**
+ * One soft dot of light, drawn once and reused for every lamp on the floor.
+ *
+ * Making a radial gradient per light was the obvious way to do this and the
+ * wrong one: a site with six hundred racks would build six hundred gradient
+ * objects a frame. A sprite is a single drawImage each.
+ */
+const lightSprites = new Map();
+
+function lightSprite(rgb) {
+  const hit = lightSprites.get(rgb);
+  if (hit) return hit;
+  const size = 64;
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+  grad.addColorStop(0, `rgba(${rgb},0.95)`);
+  grad.addColorStop(0.35, `rgba(${rgb},0.34)`);
+  grad.addColorStop(1, `rgba(${rgb},0)`);
+  g.fillStyle = grad;
+  g.fillRect(0, 0, size, size);
+  lightSprites.set(rgb, c);
+  return c;
 }
 
 function pointInPoly(px, py, poly) {
