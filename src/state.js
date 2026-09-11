@@ -6,7 +6,7 @@ export const SAVE_VERSION = 1;
 // Bumped whenever the files change, and shown in the Menu. It exists so that
 // "is the server actually running the new code?" is a question you can answer
 // by looking, instead of by guessing from behaviour.
-export const BUILD = '2026-09-11a';
+export const BUILD = '2026-09-11b';
 
 /** Seconds of real time per in-game day. */
 export const DAY_SECONDS = 60;

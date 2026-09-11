@@ -1714,6 +1714,47 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   await page.close();
 }
 
+// ------------------------------------------------- compute is a commodity
+// Revenue used to be strictly linear in compute while every cost stayed tied
+// to kW, tiles or heads — so across a full game revenue went from 5x costs to
+// 29,000,000x and there was nothing left to manage. The price per unit now
+// falls as the site floods the market. Two things have to hold: a small site
+// pays the list price, and a large one does not.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(300);
+  const curve = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const s = window.__rr.state;
+    const at = (c) => sim.sellPrice(s, c) / s.market.compute;
+    return {
+      ref: sim.MARKET_REF,
+      small: at(sim.MARKET_REF * 0.5),
+      atRef: at(sim.MARKET_REF),
+      x1e3: at(sim.MARKET_REF * 1e3),
+      x1e6: at(sim.MARKET_REF * 1e6),
+      x1e9: at(sim.MARKET_REF * 1e9),
+    };
+  });
+  const monotone = curve.atRef > curve.x1e3 && curve.x1e3 > curve.x1e6
+    && curve.x1e6 > curve.x1e9;
+  // The opening is fragile and is not where the problem was, so nothing at or
+  // below the reference may be touched at all.
+  const earlyUntouched = curve.small === 1 && curve.atRef === 1;
+  // And it has to actually bite: a thousandfold site cannot still be near list.
+  const bites = curve.x1e6 < 0.05;
+  if (monotone && earlyUntouched && bites) {
+    pass('compute is worth less the more of it you sell',
+      '1e3x:' + (curve.x1e3 * 100).toFixed(1) + '%  1e6x:' + (curve.x1e6 * 100).toFixed(2)
+      + '%  1e9x:' + (curve.x1e9 * 100).toFixed(3) + '%');
+  } else {
+    fail('compute is worth less the more of it you sell', JSON.stringify(curve));
+  }
+  await page.close();
+}
+
 // ----------------------------------------- the headline fits where it is shown
 // The sub-line under COMPUTE is the game's central diagnostic and it is inside
 // a fixed-width cell, so a sentence one word too long simply disappears: it

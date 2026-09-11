@@ -494,6 +494,9 @@ html, body { touch-action: none; }
 .overdrawn .odbig { font-family: var(--mono); font-size: 26px; font-weight: 700;
   color: var(--bad); letter-spacing: -1px; font-variant-numeric: tabular-nums; margin: 2px 0 6px; }
 .kv .v { text-align: right; }
+/* A figure in a key/value block that is not the number you would expect —
+   the compute rate once the site is large enough to price itself down. */
+.kv .v.warn { color: var(--warn); }
 
 table.grid { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.grid th { text-align: left; padding: 4px 5px; }

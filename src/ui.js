@@ -915,7 +915,21 @@ function panelContracts(state, d) {
   row('Compute promised', fmt(d.contractDemand) + ' of ' + fmt(d.computeSellable));
   row('Spare compute', fmt(Math.max(0, d.freeCompute)));
   row('Delivering', (d.deliverRatio * 100).toFixed(1) + '%');
-  row('Market rate', '$' + state.market.compute.toFixed(3) + ' per compute·s');
+  // The list price and what you actually get for it. They part company once a
+  // site is big enough to be most of the market, and a player who cannot see
+  // that is just watching their deals quietly pay less for no stated reason.
+  const glut = d.listPrice > 0 ? d.sellPrice / d.listPrice : 1;
+  const rateRow = el('div', 'v', '$' + d.sellPrice.toFixed(d.sellPrice < 0.1 ? 4 : 3)
+    + ' per compute·s');
+  rateRow.dataset.tip = 'Market rate|What one unit of compute fetches on a new contract.\n'
+    + 'Compute is a commodity: the more of it you sell, the less each unit is worth, so a '
+    + 'site large enough to be most of the market prices itself down. Deals already signed '
+    + 'keep the rate they were signed at.';
+  kv.append(el('div', 'k', 'Market rate'), rateRow);
+  if (glut < 0.995) {
+    rateRow.classList.add('warn');
+    row('Going rate', Math.round(glut * 100) + '% of list — you are flooding it');
+  }
   row('Next offer in', fmtTime(Math.max(0, state.contracts.nextOffer) * DAY_SECONDS));
   head.append(kv);
   const auto = el('button', 'btn small' + (state.settings.autoSign ? ' primary' : ''),

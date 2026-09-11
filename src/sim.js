@@ -602,7 +602,8 @@ export function derive(state) {
     boardSize: Math.max(3, Math.round(5 + mods.boardSize + boardBonus + Math.min(4, state.staff.sales / 2))),
     repairRate: (0.12 + state.staff.tech * 1.35) * repairBoost * mods.repairMult,
     rackCount: Math.max(1, racks.length),
-    security: clamp(security, 0, 0.9), sun, sellPrice: state.market.compute,
+    security: clamp(security, 0, 0.9), sun, sellPrice: sellPrice(state, computeSellable),
+    listPrice: state.market.compute,
   };
 }
 
@@ -827,7 +828,7 @@ export function makeOffer(state, d, seedIndex) {
   const scale = band;
   const demand = Math.max(2, free * t.size * scale * d.mods.offerSize);
   const repBonus = 1 + Math.min(1.5, state.reputation / 220);
-  const pay = demand * state.market.compute * t.pay * repBonus;
+  const pay = demand * sellPrice(state, d.computeSellable) * t.pay * repBonus;
   return {
     cid: state.contracts.seq++,
     tid: t.id,
@@ -1189,6 +1190,33 @@ export function resolveDecision(state, d, effect, hooks) {
 // servers are nowhere near proportional: half the peak draw is there the
 // moment they are powered on, whatever they are doing.
 export const IDLE_DRAW = 0.45;
+
+// Compute is a commodity, and a site this size is most of the market for it.
+//
+// Everything on the cost side of this game is priced per kW, per tile or per
+// head. Compute is the only thing that grows superlinearly: the hardware tree
+// alone is 4,495x more compute per kW from the first box to the last, and the
+// efficiency research multiplies that again. Revenue used to be strictly
+// linear in compute, so every upgrade widened the gap between what a site
+// earns and what it costs to run — measured across a full game, revenue went
+// from 5x costs at the start to 29,000,000x by tier 8. There was nothing left
+// to manage.
+//
+// So the price per unit falls as you flood the market with it. Scaling is
+// still worth it — total revenue climbs the whole way — but it climbs on a
+// curve rather than a line, and efficiency keeps mattering after the point
+// where you could previously just bolt on another hall and stop thinking.
+//
+// Nothing below MARKET_REF is touched at all: the opening is fragile enough
+// and it is not where the problem is.
+export const MARKET_REF = 400;
+export const MARKET_ELASTICITY = 0.46;
+
+/** What one unit of compute fetches, given how much of it you are selling. */
+export function sellPrice(state, sellable) {
+  const glut = Math.max(1, (sellable || 0) / MARKET_REF);
+  return state.market.compute * Math.pow(glut, -MARKET_ELASTICITY);
+}
 
 // Interest is charged per game day on whatever is outstanding. It is meant to
 // be felt: a loan taken to buy a rack should be paid off by that rack inside a
