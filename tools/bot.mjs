@@ -11,6 +11,25 @@ import { fmt, money, fmtTime } from '../src/util.js';
 const quiet = { log: () => {}, onDecision: (ev) => { pending = ev; } };
 let pending = null;
 
+/**
+ * How this run plays, so many runs can be compared across play styles rather
+ * than one crude policy standing in for every player.
+ *
+ *   sell     how much of its sellable compute it is willing to promise
+ *   cap      the highest uptime it will sign up to
+ *   ahead    how much firm supply it keeps ahead of the draw
+ *   payroll  the share of net income it will spend on a new wage
+ *   quietly  suppress the running commentary (for batch runs)
+ */
+const STYLES = {
+  balanced:   { sell: 0.92, cap: 1.00, ahead: 1.30, payroll: 0.25 },
+  cautious:   { sell: 0.70, cap: 0.95, ahead: 1.70, payroll: 0.15 },
+  aggressive: { sell: 1.00, cap: 1.00, ahead: 1.10, payroll: 0.40 },
+};
+const STYLE = STYLES[process.env.BOT_STYLE] || STYLES.balanced;
+const QUIET_RUN = process.env.BOT_QUIET === '1';
+const say = (...a) => { if (!QUIET_RUN) console.log(...a); };
+
 const s = newGame();
 let d = derive(s);
 
@@ -102,14 +121,14 @@ function step() {
   }
 
   // Utility feed: buy grid first, then build generation for whatever is left.
-  if (d.firmSupply < d.powerDraw * 1.3) {
+  if (d.firmSupply < d.powerDraw * STYLE.ahead) {
     const room = A.gridCap(s) - s.gridPower;
     if (room > 0.5) {
       const want = Math.min(room, Math.max(2, d.powerDraw * 0.5));
       const cost = A.gridUpgradeCost(s, want);
       if (can(cost)) { A.buyGrid(s, want, quiet); d = derive(s); }
     }
-    if (d.firmSupply < d.powerDraw * 1.3) {
+    if (d.firmSupply < d.powerDraw * STYLE.ahead) {
       const gens = unlockedB('power').filter((b) => b.supplyKW && !b.solar && !b.wind);
       const gen = gens.sort((a, b) => a.supplyKW - b.supplyKW)
         .filter((b) => can(A.buildCost(b, d) * 1.5)).slice(-1)[0];
@@ -180,7 +199,7 @@ function step() {
     if (d.staffTotal >= d.staffCap) continue;
     const def = STAFF_BY_ID[role];
     const wage = (def?.salary || 0) / DAY_SECONDS;
-    if (d.netIncome <= 0 || wage > d.netIncome * 0.25) continue;
+    if (d.netIncome <= 0 || wage > d.netIncome * STYLE.payroll) continue;
     const c = A.staffCost(role, s.staff[role]);
     if (can(c * 4)) A.hire(s, d, role, quiet);
   }
@@ -205,7 +224,7 @@ function step() {
   // No slot limit any more: keep taking work while there is compute for it.
   for (let guard = 0; guard < 12; guard++) {
     const fits = s.contracts.offers
-      .filter((o) => o.demand <= free * 0.92)
+      .filter((o) => o.demand <= free * STYLE.sell && (o.uptimeReq ?? 1) <= STYLE.cap + 1e-6)
       .sort((a, b) => b.pay - a.pay);
     if (!fits.length) break;
     free -= fits[0].demand;
@@ -218,6 +237,7 @@ const HOURS = 5;
 const total = HOURS * 3600;
 let botWentUnder = false;
 let t = 0, nextStep = 0, nextReport = 0, lastTier = -1, treeDone = false, objDone = false;
+let peakTier = 0, underAt = null, peakMoney = 0;
 const t0 = Date.now();
 while (t < total) {
   d = derive(s);
@@ -226,24 +246,27 @@ while (t < total) {
   if (t >= nextStep) { step(); nextStep = t + 2; }
   if (s.facility !== lastTier) {
     lastTier = s.facility;
-    console.log('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  facility tier ' + s.facility);
+    say('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  facility tier ' + s.facility);
   }
   if (s.research.done.length === RESEARCH.length && !treeDone) {
     treeDone = true;
-    console.log('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  research tree complete');
+    say('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  research tree complete');
   }
   if (s.objectives.done.length === OBJECTIVES.length && !objDone) {
     objDone = true;
-    console.log('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  all objectives complete');
+    say('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  all objectives complete');
   }
+  if (s.facility > peakTier) peakTier = s.facility;
+  if (s.money > peakMoney) peakMoney = s.money;
+  if (s.money < 0 && underAt === null) underAt = t / 60;
   if (s.money < 0 && !botWentUnder) {
     botWentUnder = true;
     // Where the money is going, not just how fast. Inferring this from the net
     // figure is guesswork, and guessing is how you end up fixing the wrong cost.
-    console.log('DIAG went overdrawn at ' + (t/60).toFixed(1) + 'm  tier ' + s.facility
+    say('DIAG went overdrawn at ' + (t/60).toFixed(1) + 'm  tier ' + s.facility
       + '  net ' + d.netIncome.toFixed(1) + '  staff ' + JSON.stringify(s.staff)
       + '  tiles ' + Object.keys(s.tiles).length + '  rescues ' + s.bank.rescues);
-    console.log('DIAG   revenue ' + d.revenue.toFixed(2)
+    say('DIAG   revenue ' + d.revenue.toFixed(2)
       + ' | power ' + d.powerCost.toFixed(2)
       + ' | fuel ' + d.fuelCost.toFixed(2)
       + ' | water ' + d.waterBill.toFixed(2)
@@ -255,9 +278,11 @@ while (t < total) {
       + ' | uptime ' + (d.uptime * 100).toFixed(0) + '%');
   }
   if (t >= nextReport) {
-    nextReport = t + 900;
+    // Dense at the start. Most losing runs are over inside ten minutes, and a
+    // quarter-hour report shows one row before the balance is already gone.
+    nextReport = t + (t < 1200 ? 60 : 900);
     d = derive(s);
-    console.log(
+    say(
       String(Math.round(t / 60)).padStart(4) + 'm',
       '| tier', s.facility,
       '| $' + fmt(s.money).padStart(7),
@@ -280,25 +305,42 @@ while (t < total) {
   let broken = 0, total = 0;
   for (const r of d.racks) for (const g of (r.tile.units || [])) { conds.push(g.cond); broken += g.broken; total += g.n; }
   conds.sort((a,b)=>a-b);
-  console.log('DIAG racks', d.racks.length, 'units', total, 'broken', broken,
+  say('DIAG racks', d.racks.length, 'units', total, 'broken', broken,
     'brokenFrac', (d.brokenTotal/Math.max(1,d.unitsTotal)).toFixed(3),
     'cond min/med/max', conds[0]?.toFixed(2), conds[Math.floor(conds.length/2)]?.toFixed(2), conds[conds.length-1]?.toFixed(2));
-  console.log('DIAG staff', JSON.stringify(s.staff), 'cap', d.staffCap, 'repairRate', d.repairRate.toFixed(2),
+  say('DIAG staff', JSON.stringify(s.staff), 'cap', d.staffCap, 'repairRate', d.repairRate.toFixed(2),
     'powerFactor', d.powerFactor.toFixed(3), 'netFactor', d.netFactor.toFixed(3),
     'uptime', d.uptime.toFixed(3), 'contracts', s.contracts.active.length,
     'offers', s.contracts.offers.length, 'freeTiles', (facilityOf(s).w*facilityOf(s).h)-Object.keys(s.tiles).length);
   const kinds = {};
   for (const k in s.tiles) kinds[s.tiles[k].b] = (kinds[s.tiles[k].b]||0)+1;
-  console.log('DIAG tiles', JSON.stringify(kinds));
-  console.log('DIAG contractsDone', s.stats.contractsDone, 'breaches', s.stats.breaches, 'failed', s.stats.failed, 'repaired', s.stats.repaired);
+  say('DIAG tiles', JSON.stringify(kinds));
+  say('DIAG contractsDone', s.stats.contractsDone, 'breaches', s.stats.breaches, 'failed', s.stats.failed, 'repaired', s.stats.repaired);
 }
 {
   const left = OBJECTIVES.filter((o) => !s.objectives.done.includes(o.id));
-  if (left.length) console.log('DIAG objectives not done:',
+  if (left.length) say('DIAG objectives not done:',
     left.map((o) => o.id + ' ' + o.name).join(' | '));
 }
-console.log('wall time', ((Date.now() - t0) / 1000).toFixed(1) + 's');
-console.log('final: tier', s.facility, 'research', s.research.done.length + '/' + RESEARCH.length,
+say('wall time', ((Date.now() - t0) / 1000).toFixed(1) + 's');
+// One machine-readable line, so many runs can be compared without parsing prose.
+console.log('RESULT ' + JSON.stringify({
+  style: process.env.BOT_STYLE || 'balanced',
+  tier: s.facility,
+  peakTier,
+  research: s.research.done.length,
+  researchOf: RESEARCH.length,
+  objectives: s.objectives.done.length,
+  objectivesOf: OBJECTIVES.length,
+  town: +((s.town?.damage || 0)).toFixed(3),
+  lifetime: s.lifetimeEarnings,
+  endMoney: s.money,
+  peakMoney,
+  underAt: underAt === null ? null : +underAt.toFixed(1),
+  breaches: s.stats.breaches,
+  survived: s.money >= 0 && s.facility >= 1,
+}));
+say('final: tier', s.facility, 'research', s.research.done.length + '/' + RESEARCH.length,
   'upgrades', s.upgrades.length + '/' + UPGRADES.length,
   'objectives', s.objectives.done.length, 'achievements', s.achievements.length,
   'town', ((s.town?.damage || 0) * 100).toFixed(0) + '%',

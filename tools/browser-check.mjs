@@ -1714,6 +1714,211 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   await page.close();
 }
 
+// ----------------------------------------- the headline fits where it is shown
+// The sub-line under COMPUTE is the game's central diagnostic and it is inside
+// a fixed-width cell, so a sentence one word too long simply disappears: it
+// read "no servers inst…" on a 1920px screen. Every short form has to fit, and
+// every bottleneck the sim can produce has to have one.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(400);
+  const fit = await page.evaluate(async () => {
+    const ui = await import('/src/ui.js');
+    const sub = [...document.querySelectorAll('#topbar .vital')][1].querySelector('.sub');
+    const was = sub.textContent;
+    const cut = [];
+    for (const [full, short] of Object.entries(ui.SHORT_BOTTLENECK)) {
+      sub.textContent = short;
+      if (sub.scrollWidth > sub.clientWidth + 1) cut.push(short + ' (' + sub.scrollWidth + 'px)');
+      void full;
+    }
+    sub.textContent = was;
+    return { cut, have: sub.clientWidth, n: Object.keys(ui.SHORT_BOTTLENECK).length };
+  });
+  // And the sim must not be able to produce one the map has never heard of.
+  const missing = await page.evaluate(async () => {
+    const ui = await import('/src/ui.js');
+    const res = await fetch('/src/sim.js').then((r) => r.text());
+    const found = [...res.matchAll(/bottleneck = '([^']+)'/g)].map((m) => m[1]);
+    return found.filter((x) => !(x in ui.SHORT_BOTTLENECK));
+  });
+  if (!fit.cut.length && !missing.length) {
+    pass('the compute headline fits its cell', fit.n + ' phrasings in ' + fit.have + 'px');
+  } else {
+    fail('the compute headline fits its cell',
+      JSON.stringify({ cut: fit.cut, noShortForm: missing }));
+  }
+  await page.close();
+}
+
+// --------------------------------------------- the first screen of the shop
+// The build and hardware lists used to open on everything in the game, so a
+// player with $10,000 met a $900B fusion reactor before anything they could
+// buy. What is reachable comes first, a couple of next goals after it, and the
+// rest waits behind a line.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.waitForTimeout(400);
+  const counts = [];
+  for (const cat of ['Racks', 'Power', 'Cooling', 'Water', 'Support']) {
+    await page.evaluate((c) => {
+      [...document.querySelectorAll('#panel .btnrow .btn')].find((b) => b.textContent === c)?.click();
+    }, cat);
+    await page.waitForTimeout(250);
+    counts.push(await page.evaluate((c) => ({
+      cat: c,
+      locked: document.querySelectorAll('#panel .row.locked').length,
+      fold: !!document.querySelector('#panel .lockfold'),
+    }), cat));
+  }
+  const wall = counts.filter((c) => c.locked > 2);
+  if (!wall.length) {
+    pass('the shop opens on what you can reach',
+      counts.map((c) => c.cat + ':' + c.locked).join(' '));
+  } else {
+    fail('the shop opens on what you can reach', JSON.stringify(wall));
+  }
+  // And the line actually opens.
+  const opened = await page.evaluate(async () => {
+    const b = document.querySelector('#panel .lockfold');
+    if (!b) return -1;
+    const before = document.querySelectorAll('#panel .row.locked').length;
+    b.click();
+    await new Promise((r) => setTimeout(r, 250));
+    return document.querySelectorAll('#panel .row.locked').length - before;
+  });
+  if (opened > 0) pass('the locked half opens when you ask for it', '+' + opened + ' rows');
+  else fail('the locked half opens when you ask for it', String(opened));
+  await page.close();
+}
+
+// ------------------------------------- the headline and the list agree
+// These ran off two different thresholds, so a site between them had the top
+// bar saying compute was going to waste while the to-do list said nothing was
+// wrong. Whenever the headline says it, the list has to say it too.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(300);
+  const agree = await page.evaluate(async () => {
+    const A = await import('/src/actions.js'); const sim = await import('/src/sim.js');
+    const app = window.__rr, s = app.state;
+    s.money = 1e9;
+    A.place(s, app.d, 2, 2, 'pdu', null); app.d = sim.derive(s);
+    for (let x = 0; x < 4; x++) { A.place(s, app.d, x, 1, 'rack', null); app.d = sim.derive(s); }
+    // Cool and fed, so the bottleneck chain gets past power and heat and
+    // actually reaches the clause under test. A site that is too hot names the
+    // heat instead, and rightly: the headline is the worst thing, not a list.
+    for (const x of [0, 1, 2, 3]) { A.place(s, app.d, x, 2, 'fan', null); app.d = sim.derive(s); }
+    A.buyGrid(s, A.maxGrid(s), null); app.d = sim.derive(s);
+    A.fillAll(s, app.d, 'desktop', null); app.d = sim.derive(s);
+    const out = [];
+    // Sweep the whole band either side of both old thresholds.
+    for (const frac of [0.6, 0.65, 0.7, 0.72, 0.75, 0.78, 0.8, 0.85, 0.9]) {
+      s.contracts.active = [{
+        cid: 'x', tid: 'static', name: 'Test', client: 'Test', pay: 1, days: 9,
+        demand: app.d.computeSellable * frac, startDay: s.day, endDay: s.day + 9,
+        breached: false, delivered: 1, effUptime: 1, uptime: 0.8,
+      }];
+      const d = sim.derive(s);
+      const headline = d.bottleneck === 'compute going to waste';
+      const listed = d.problems.some((p) => /nobody is paying for/.test(p.text));
+      out.push({ frac, headline, listed, ok: headline === listed, saw: d.bottleneck,
+        temp: +d.maxTemp.toFixed(0) });
+    }
+    return out;
+  });
+  const bad = agree.filter((x) => !x.ok);
+  // A sweep in which the headline never fires proves nothing, so say so rather
+  // than passing on an empty set.
+  if (!agree.some((x) => x.headline)) {
+    fail('the headline and the to-do list agree about idle compute',
+      'the headline never said it: ' + JSON.stringify(agree.map((x) => x.saw)));
+  } else if (!bad.length) {
+    pass('the headline and the to-do list agree about idle compute',
+      agree.filter((x) => x.headline).length + ' of ' + agree.length + ' say it');
+  } else {
+    fail('the headline and the to-do list agree about idle compute', JSON.stringify(bad));
+  }
+  await page.close();
+}
+
+// ------------------------------------------------- readable without colour
+// Everything the game says in red or amber has to say it a second way, or a
+// tenth of the men playing cannot read it. Colour is checked by shape here,
+// not by eye: two problems must draw two different polygons, and a meter over
+// capacity must carry a mark that survives a greyscale.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(400);
+
+  // Count the vertices of every filled path a warning draws, by asking the
+  // view to draw one rack in trouble at a time.
+  const shapes = await page.evaluate(() => {
+    const view = window.__rr.view;
+    const zoom = view.zoom; view.zoom = 1;
+    const ctx = view.ctx;
+    const real = { beginPath: ctx.beginPath, moveTo: ctx.moveTo, lineTo: ctx.lineTo, fill: ctx.fill };
+    let n = 0; const out = [];
+    ctx.beginPath = function (...a) { n = 0; return real.beginPath.apply(this, a); };
+    ctx.moveTo = function (...a) { n = 1; return real.moveTo.apply(this, a); };
+    ctx.lineTo = function (...a) { n++; return real.lineTo.apply(this, a); };
+    ctx.fill = function (...a) { if (n) out.push(n); n = 0; return real.fill.apply(this, a); };
+    const rack = (extra) => Object.assign(
+      { x: 1, y: 1, used: 4, cap: 8, pduFactor: 1, cover: 1, temp: 22 }, extra);
+    const top = { x: 200, y: 200 };
+    view.rackWarnings(ctx, rack({ pduFactor: 0.4 }), top);
+    const starved = out.splice(0);
+    view.rackWarnings(ctx, rack({ temp: 52 }), top);
+    const cooking = out.splice(0);
+    view.rackWarnings(ctx, rack({}), top);
+    const fine = out.splice(0);
+    Object.assign(ctx, real);
+    view.zoom = zoom;
+    return { starved, cooking, fine };
+  });
+  const sv = shapes.starved[0], cv = shapes.cooking[0];
+  if (sv && cv && sv !== cv && !shapes.fine.length) {
+    pass('a starved rack and a cooking one are different shapes',
+      `${sv}-sided vs ${cv}-sided`);
+  } else {
+    fail('a starved rack and a cooking one are different shapes', JSON.stringify(shapes));
+  }
+
+  // A meter past capacity: striped fill and an exclamation before the number,
+  // neither of which depends on being able to see the red.
+  // A meter past capacity: striped fill and an exclamation before the number,
+  // neither of which depends on being able to see the red. The power meter is
+  // clamped at supply by construction and can never read over, so the state is
+  // set on the element — what is under test is the styling contract, not which
+  // utility happens to be short.
+  const cue = await page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.meters .meter')];
+    if (rows.length < 2) return { rows: rows.length };
+    const read = (n) => ({
+      stripes: getComputedStyle(n.querySelector('.mbar > i')).backgroundImage !== 'none',
+      before: getComputedStyle(n.querySelector('.mv'), '::before').content,
+    });
+    rows[0].className = 'meter bad';
+    rows[1].className = 'meter';
+    return { bad: read(rows[0]), ok: read(rows[1]) };
+  });
+  if (cue.bad && cue.bad.stripes && /!/.test(cue.bad.before)
+      && !cue.ok.stripes && !/!/.test(cue.ok.before)) {
+    pass('a meter over capacity is marked without colour',
+      'stripes + ' + cue.bad.before.replace(/"/g, ''));
+  } else {
+    fail('a meter over capacity is marked without colour', JSON.stringify(cue));
+  }
+  await page.close();
+}
+
 await browser.close();
 
 if (errors.length) fail('no page errors', errors.slice(0, 4).join(' | '));

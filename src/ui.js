@@ -25,10 +25,29 @@ import { STEPS, current as tutStep, skip as tutSkip } from './tutorial.js';
 let app = null;
 let tab = 'build';
 let buildCat = 'compute';
+// Which lists have had their locked half opened this session, keyed by list.
+const lockedOpen = new Set();
 let researchCat = 'hardware';
 let dirty = true;
 
 /** Which tab actually fixes each bottleneck the simulation can report. */
+// The bottleneck in the words the bar has room for. Measured, not guessed:
+// the sub-line under COMPUTE is 112px of 11px monospace, about fifteen
+// characters, and every sentence below was longer than that — so the game's
+// central diagnostic read "no servers inst…" on a 1920px screen. The whole
+// sentence is still there, in the tooltip and in the to-do list.
+export const SHORT_BOTTLENECK = {
+  'no servers installed': 'no servers yet',
+  'not enough electricity': 'power short',
+  'a rack has no power nearby': 'no power point',
+  'not enough network': 'network short',
+  'not enough water': 'water short',
+  'not enough cooling': 'cooling short',
+  'compute going to waste': 'compute unsold',
+  'empty space in your racks': 'empty slots',
+  'running clean': 'running clean',
+};
+
 const FIX_TAB = {
   'no servers installed': 'racks',
   'not enough electricity': 'ops',
@@ -351,11 +370,13 @@ export function renderTop(state, d) {
     d.netIncome >= 0 ? 'good' : 'bad');
 
   const fixTab = FIX_TAB[d.bottleneck];
-  set(t.v_compute, t.v_compute.big.textContent, d.bottleneck,
+  set(t.v_compute, t.v_compute.big.textContent,
+    SHORT_BOTTLENECK[d.bottleneck] || d.bottleneck,
     (d.bottleneck === 'running clean' ? '' : 'warn') + (fixTab ? ' jump' : ''));
   t.v_compute.n.onclick = fixTab ? () => goTab(fixTab) : null;
   t.v_compute.n.dataset.tip = 'Compute|Capacity your fleet produces right now, and the one thing '
-    + 'holding it back.' + (fixTab ? '\nClick to go straight to the tab that fixes it.' : '');
+    + 'holding it back: ' + d.bottleneck + '.'
+    + (fixTab ? '\nClick to go straight to the tab that fixes it.' : '');
 
   gauge(t.m_power, d.actualDraw, d.supplyKW, fmt(d.actualDraw) + '/' + fmt(d.supplyKW));
   gauge(t.m_cool, d.heatLoad, d.coolCap, fmt(d.heatLoad) + '/' + fmt(d.coolCap));
@@ -620,11 +641,22 @@ function panelBuild(state, d) {
       const cost = A.buildCost(b, d);
       return { b, unlocked, cost, band: rank(unlocked, state.money >= cost) };
     })
-    .sort((x, y) => x.band - y.band || y.cost - x.cost);
+    // Dearest first among the things you can act on — the best you can afford
+    // is the one you want to see. The opposite among the locked ones: there the
+    // cheapest is the nearest, and leading the locked half with a $900B fusion
+    // reactor told a player with $10,000 nothing at all.
+    .sort((x, y) => x.band - y.band || (x.band === 2 ? x.cost - y.cost : y.cost - x.cost));
+
+  const lockedCount = inCat.filter((x) => !x.unlocked).length;
+  const open = lockedOpen.has('build:' + buildCat);
+  // Two is a horizon; six is a wall. The rest waits behind a line you can click.
+  const LOCKED_SHOWN = 2;
+  let lockedSoFar = 0;
 
   const list = [];
   for (const { b } of inCat) {
     const unlocked = !b.req || state.research.done.includes(b.req);
+    if (!unlocked && !open && ++lockedSoFar > LOCKED_SHOWN) continue;
     const cost = A.buildCost(b, d);
     const afford = state.money >= cost;
     // Headline facts on the row; everything else waits in the tooltip.
@@ -677,6 +709,17 @@ function panelBuild(state, d) {
     }));
   }
 
+  if (lockedCount > LOCKED_SHOWN) {
+    const more = lockedCount - LOCKED_SHOWN;
+    const t = el('button', 'btn small lockfold',
+      open ? 'Hide the ' + more + ' further off' : more + ' more, further down the tree');
+    t.onclick = () => {
+      if (open) lockedOpen.delete('build:' + buildCat); else lockedOpen.add('build:' + buildCat);
+      markDirty(); renderUI();
+    };
+    list.push(t);
+  }
+
   // Say it in the verbs of the device in front of them — and only while it is
   // still news. Four lines of instructions at the top of the panel every time
   // you open it is four lines of the list you cannot see, and by the sixth
@@ -706,6 +749,9 @@ function panelRacks(state, d) {
   row('Racks', fmtInt(d.counts.rackAll || 0));
   row('Slots used', fmtInt(slotsUsed) + ' / ' + fmtInt(slotsTotal));
   row('Units down', fmtInt(d.brokenTotal));
+  // The number that decides when the next ones go down, next to the count of
+  // the ones already gone.
+  row('Worst condition', Math.round(d.fleetCond * 100) + '%');
   row('Repair throughput', fmt(d.repairRate) + ' units/day');
   row('Compute', fmt(d.computeTotal));
   summary.append(kv);
@@ -723,13 +769,21 @@ function panelRacks(state, d) {
       const cost = A.hwCost(hw, d);
       return { hw, cost, band: hwRank(unlocked, state.money >= cost) };
     })
-    .sort((x, y) => x.band - y.band || y.cost - x.cost);
+    .sort((x, y) => x.band - y.band || (x.band === 2 ? x.cost - y.cost : y.cost - x.cost));
+
+  // Same fold as the build list. The hardware tree is the longest one in the
+  // game, and all of it was on screen from the first minute.
+  const hwLocked = hwSorted.filter((x) => x.band === 2 && !(d.units[x.hw.id] || 0)).length;
+  const hwOpen = lockedOpen.has('hw');
+  const HW_SHOWN = 3;
+  let hwSoFar = 0;
 
   const cards = [];
   for (const { hw } of hwSorted) {
     const unlocked = !hw.req || state.research.done.includes(hw.req);
     const cost = A.hwCost(hw, d);
     const owned = d.units[hw.id] || 0;
+    if (!unlocked && owned === 0 && !hwOpen && ++hwSoFar > HW_SHOWN) continue;
     if (!unlocked && owned === 0) {
       cards.push(listRow({
         iconText: hw.short, iconColor: '#3f7dd6',
@@ -797,6 +851,16 @@ function panelRacks(state, d) {
       cls: state.money >= cost ? '' : 'cant',
       buttons,
     }));
+  }
+  if (hwLocked > HW_SHOWN) {
+    const more = hwLocked - HW_SHOWN;
+    const t = el('button', 'btn small lockfold',
+      hwOpen ? 'Hide the ' + more + ' further off' : more + ' more, further down the tree');
+    t.onclick = () => {
+      if (hwOpen) lockedOpen.delete('hw'); else lockedOpen.add('hw');
+      markDirty(); renderUI();
+    };
+    cards.push(t);
   }
   out.push(sec('Hardware', cards));
   return out;
@@ -1229,6 +1293,12 @@ function panelUtilities(state, d) {
   const kv = el('div', 'kv');
   const row = (k, v) => kv.append(el('div', 'k', k), el('div', 'v', v));
   row('Draw', fmt(d.actualDraw) + ' kW');
+  // What the meter reads is not what the supply has to cover: machines sitting
+  // throttled still need their feed, they just stop eating it. Showing only one
+  // of the two numbers makes the bill look wrong either way round.
+  if (d.billedDraw < d.actualDraw * 0.995) {
+    row('Metered', fmt(d.billedDraw) + ' kW');
+  }
   row('Firm supply', fmt(d.firmSupply) + ' kW');
   row('Utility feed', fmt(state.gridPower) + ' / ' + fmt(cap) + ' kW');
   row('On site', fmt(d.ownSupply) + ' kW');
@@ -1840,11 +1910,17 @@ export function renderInspector(state, d) {
     box.dataset.sig = sig;
     box.dataset.mode = 'todo';
     const kids = [];
+    // An empty floor has nothing wrong with it, which is true and useless.
+    // "Everything is sold" in front of a room with no servers in it reads as
+    // the game not knowing what it is looking at, and that is the first screen
+    // a new player sees.
+    const bare = d.unitsTotal === 0;
     kids.push(el('div', 'todohead', d.problems.length
-      ? 'Needs attention' : 'Nothing needs attention'));
+      ? 'Needs attention' : bare ? 'Nothing here yet' : 'Nothing needs attention'));
     if (!d.problems.length) {
-      kids.push(el('div', 'empty',
-        'The site is balanced and everything is sold. Build more, or push research.'));
+      kids.push(el('div', 'empty', bare
+        ? 'Nothing is installed. An empty floor costs nothing and earns nothing.'
+        : 'The site is balanced and everything is sold. Build more, or push research.'));
     }
     for (const p of d.problems.slice(0, 6)) {
       const row = el('button', 'todo ' + p.tone);

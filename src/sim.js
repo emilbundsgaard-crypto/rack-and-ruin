@@ -346,7 +346,20 @@ export function derive(state) {
 
   // --- costs.
   const actualDraw = demandKW * powerFactor;
-  const gridUsed = clamp(actualDraw - ownSupply * mods.powerSupplyMult, 0, gridSupply);
+  // A machine throttled back by heat is not doing the work, and a machine not
+  // doing the work does not eat its nameplate. Servers idle at roughly half
+  // what they draw flat out, so the bill follows utilisation even though the
+  // supply still has to be sized for the peak — which is why the power meter
+  // goes on reading against demandKW and only the money follows this.
+  //
+  // This is what used to make a hot room unrecoverable. Output collapsed to
+  // 4% at 68 °C while the bill stayed at 100%, so revenue fell through the
+  // electricity cost and the site could never earn its way back out; being
+  // overdrawn then stopped it buying the cooling that would have fixed it.
+  const billedDraw = sum(racks, (r) => r.power * r.pduFactor * powerFactor
+      * (r.used > 0 ? IDLE_DRAW + (1 - IDLE_DRAW) * r.throttle : 1))
+    + (coolDraw + miscDraw) * powerFactor;
+  const gridUsed = clamp(billedDraw - ownSupply * mods.powerSupplyMult, 0, gridSupply);
   const powerCost = gridUsed * state.market.power * mods.gridCostMult * ENERGY_RATE;
   const waterPrice = waterSupply > 0 ? waterCost / waterSupply : 0;
   const waterUsed = Math.min(waterDemand, waterAvail);
@@ -383,6 +396,11 @@ export function derive(state) {
   else if (contractDemand < computeSellable * 0.8) bottleneck = 'compute going to waste';
   else if (freeSlots > unitsTotal * 0.25) bottleneck = 'empty space in your racks';
   else bottleneck = 'running clean';
+
+  // The worst condition anywhere on the floor, which is the one that decides
+  // when the first units start dropping off.
+  const fleetCond = racks.length
+    ? Math.min(1, ...racks.filter((r) => r.used > 0).map((r) => r.cond)) : 1;
 
   // A concrete to-do list. Only things the player can act on, worst first.
   const problems = [];
@@ -453,7 +471,12 @@ export function derive(state) {
     problems.push({
       tone: 'bad', tab: 'build', cat: 'cooling', overlay: 'cool',
       focus: worst && { x: worst.x, y: worst.y },
-      text: `${noCool} rack${noCool > 1 ? 's need' : ' needs'} more cooling nearby.`,
+      // Overdrawn, "build more cooling" is an instruction you cannot follow,
+      // and a to-do list you cannot act on is worse than no list. The other
+      // way to cool a room is to take machines out of it.
+      text: `${noCool} rack${noCool > 1 ? 's need' : ' needs'} more cooling nearby.`
+        + (state.money < 0 ? ' You cannot buy any until you are back above zero — '
+          + 'sell the servers out of the hottest ones instead.' : ''),
     });
   }
   if (maxTemp > 40) {
@@ -462,6 +485,21 @@ export function derive(state) {
       tone: 'bad', tab: 'build', cat: 'cooling', overlay: 'heat',
       focus: worst && { x: worst.x, y: worst.y },
       text: `Your hottest rack is ${maxTemp.toFixed(0)} °C. Over 40 °C the servers break quickly.`,
+    });
+  }
+  // Wear is the one number in the game that only ever moves one way, and until
+  // now you could not see it move. Heat was warned about; what heat was doing
+  // was not, so a fleet cooked slowly for ten minutes with every meter green
+  // and then a large share of it went down within a minute of each other —
+  // bought together, run at the same temperature, worn through together.
+  // Below 45% condition units start dropping off outright, so say it while
+  // there is still something to do about it.
+  if (fleetCond < 0.7 && unitsTotal > 0) {
+    problems.push({
+      tone: fleetCond < 0.5 ? 'bad' : 'warn', tab: 'racks',
+      text: `Your worst hardware is down to ${Math.round(fleetCond * 100)}% condition`
+        + (maxTemp > 40 ? ` and still running at ${maxTemp.toFixed(0)} °C` : '')
+        + '. Under 45% it starts failing outright — cool it, or retire it before it goes.',
     });
   }
   if (waterFactor < 0.95) {
@@ -494,10 +532,19 @@ export function derive(state) {
       text: `${takeable} deal${takeable > 1 ? 's' : ''} you have the spare compute to take.`,
     });
   }
-  if (contractDemand < computeSellable * 0.7 && computeSellable > 1) {
+  // The same threshold the headline uses. These were 0.7 and 0.8, so a site
+  // sitting between the two had the top bar saying compute was going to waste
+  // while the to-do list said nothing was wrong — and clicking the headline
+  // landed on a Deals tab with nothing on it small enough to take. Ten minutes
+  // of that is the first thing a new player meets.
+  if (contractDemand < computeSellable * 0.8 && computeSellable > 1) {
     problems.push({
       tone: 'warn', tab: 'deals',
-      text: `You make ${fmtShort(computeSellable - contractDemand)} of compute nobody is paying for.`,
+      text: `You make ${fmtShort(computeSellable - contractDemand)} of compute nobody is paying for.`
+        + (takeable ? '' : state.contracts.offers.length
+          ? ' Nothing on the board is small enough to fill it — hold on for a better offer, '
+            + 'or put the spare into research on the Upgrade tab.'
+          : ' The board is empty; a new offer is never far off.'),
     });
   }
   if (freeSlots > 0 && unitsTotal > 0) {
@@ -535,11 +582,11 @@ export function derive(state) {
     state, mods, fac, racks, coolers, pdus, counts, units, unitsTotal, brokenTotal, bottleneck, problems,
     freeSlots, staffCap, staffTotal: sum(Object.keys(state.staff), (k) => state.staff[k] || 0),
     ownSupply, firmSupply: gridSupply + firmOwn * mods.powerSupplyMult,
-    gridSupply, supplyKW, powerDraw: demandKW, actualDraw, gridUsed, powerFactor, rawPowerFactor,
+    gridSupply, supplyKW, powerDraw: demandKW, actualDraw, billedDraw, gridUsed, powerFactor, rawPowerFactor,
     waterSupply: waterAvail, waterDemand, waterUsed, waterFactor,
     heatLoad, coolCap: coolCapRaw * waterEff, netCap, netNeed, netFactor,
     computeTotal, computeResearch, computeSellable, contractDemand, deliverRatio,
-    uptime, baseUptime, maxTemp, avgTemp: tempW > 0 ? tempSum / tempW : ambient, ambient,
+    uptime, baseUptime, fleetCond, maxTemp, avgTemp: tempW > 0 ? tempSum / tempW : ambient, ambient,
     revenue, costs, netIncome: revenue - costs,
     powerCost, fuelCost, waterBill, upkeepCost, penalties, interestCost,
     // Salaries are folded into upkeep for the maths, but the player needs to
@@ -597,7 +644,7 @@ export function tick(state, dt, d, hooks) {
   // that ran hot for a hundred days and was then half sold off would otherwise
   // account for almost none of what it actually drank.
   state.stats.waterTaken = (state.stats.waterTaken || 0) + d.waterUsed * dt;
-  state.stats.powerDrawn = (state.stats.powerDrawn || 0) + d.actualDraw * (dt / 3600);
+  state.stats.powerDrawn = (state.stats.powerDrawn || 0) + d.billedDraw * (dt / 3600);
 
   if (bank) {
     // Interest on a loan you chose to take, capped so it can never compound
@@ -1137,6 +1184,11 @@ export function resolveDecision(state, d, effect, hooks) {
 }
 
 // ------------------------------------------------------------------ the bank
+
+// What a rack draws with its machines idle, as a share of nameplate. Real
+// servers are nowhere near proportional: half the peak draw is there the
+// moment they are powered on, whatever they are doing.
+export const IDLE_DRAW = 0.45;
 
 // Interest is charged per game day on whatever is outstanding. It is meant to
 // be felt: a loan taken to buy a rack should be paid off by that rack inside a

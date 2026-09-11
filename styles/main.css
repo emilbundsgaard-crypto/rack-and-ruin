@@ -113,9 +113,21 @@ h1, h2, h3, h4 { margin: 0; font-weight: 620; }
 .meter .mbar > i { display: block; height: 100%; background: var(--cold); transition: width .25s; }
 .meter .mv { font-family: var(--mono); font-size: 10.5px; color: var(--dim); text-align: right;
   font-variant-numeric: tabular-nums; }
+/* State is not carried by colour alone.
+   Rendering a real frame through a deuteranopia filter, all four top-bar
+   meters came out the same yellow-green: a player could not see that cooling
+   and network were over capacity, which is the most important read on the
+   screen. The bar also clamps at 100%, so an over-capacity meter looked
+   identical to a merely full one and the colour was doing all the work.
+   Stripes carry it instead, and they survive any colour vision. */
 .meter.warn .mbar > i { background: var(--warn); }
-.meter.bad .mbar > i { background: var(--bad); }
+.meter.bad .mbar > i {
+  background:
+    repeating-linear-gradient(115deg,
+      var(--bad) 0 4px, #7d2b22 4px 8px);
+}
 .meter.bad .mv { color: var(--bad); }
+.meter.bad .mv::before { content: '! '; font-weight: 700; }
 /* The town drivers need room for a word and a real number, unlike the top-bar
    meters they borrow their shape from. */
 .townmeter { grid-template-columns: 54px 1fr 92px; margin: 5px 0; }
@@ -451,6 +463,15 @@ html, body { touch-action: none; }
 .btn.small { padding: 4px 10px; font-size: 11px; }
 .btnrow { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 9px; }
 
+/* The line that opens the locked half of a build list. It is a door, not an
+   offer, so it reads quieter than anything you can actually buy. */
+.btn.small.lockfold {
+  display: block; width: 100%; margin-top: 8px;
+  background: none; border: 1px dashed var(--line2);
+  color: var(--dim); font-size: 11px; letter-spacing: .02em;
+}
+.btn.small.lockfold:hover:not(:disabled) { background: rgba(255, 255, 255, .03); color: var(--fg); }
+
 .bar { height: 7px; background: #0b0e12; overflow: hidden; margin-top: 8px;
   border-radius: 4px; box-shadow: inset 0 0 0 1px #262a31, inset 0 1px 2px #0008; }
 .bar > i {
@@ -459,7 +480,9 @@ html, body { touch-action: none; }
   box-shadow: 0 0 8px -1px currentColor; transition: width .25s;
 }
 .bar.warn > i { background: var(--warn); }
-.bar.bad > i { background: var(--bad); }
+.bar.bad > i {
+  background: repeating-linear-gradient(115deg, var(--bad) 0 5px, #7d2b22 5px 10px);
+}
 
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; font-family: var(--mono);
   font-size: 11.5px; font-variant-numeric: tabular-nums; }

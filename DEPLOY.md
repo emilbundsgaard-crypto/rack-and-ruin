@@ -207,10 +207,16 @@ Vil du hellere slippe for Terminal:
 1. Gå til [repoet på GitHub](https://github.com/emilbundsgaard-crypto/rack-and-ruin)
 2. Klik den grønne **Code**-knap → **Download ZIP**
 3. Dobbeltklik ZIP-filen så den pakkes ud
-4. I Simply's **Filhåndtering**: upload `index.html`, mappen `src` og mappen
-   `styles` ind i `public_html`
+4. I Simply's **Filhåndtering**: upload `index.html`, `privatliv.html`, mappen
+   `src`, mappen `styles` og mappen `api` ind i `public_html`
 
 Mapperne `docs` og `tools` skal ikke med — de bruges ikke af siden.
+
+`api`-mappen er live-tælleren og statistikpanelet. Den følger ikke med i ZIP'en
+fra GitHub med din adgangskode i — den ligger med vilje ikke i repoet. Er
+`api/config.php` ikke med, så omdøb `api/config.example.php` til
+`api/config.php` og skriv din egen adgangskode ind i den. Panelet nægter at
+åbne, så længe der står `change-me`.
 
 Lav til sidst en fil i `public_html` der hedder `.htaccess` med præcis denne
 ene linje i:

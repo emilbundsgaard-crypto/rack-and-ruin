@@ -28,6 +28,9 @@ function hexToRgb(h) {
   return [parseInt(v.slice(0, 2), 16), parseInt(v.slice(2, 4), 16), parseInt(v.slice(4, 6), 16)];
 }
 
+/** Wet plant: the things with a plume worth drawing. */
+const STEAMS = new Set(['adiabatic', 'chiller', 'crac', 'cryo']);
+
 const shadeCache = new Map();
 
 /** Lighten (k > 1) or darken (k < 1) a hex colour, memoised. */
@@ -364,7 +367,10 @@ export class FloorView {
   }
 
   draw(state, d, dt) {
-    this.t += dt;
+    // One bad dt would poison the clock for the rest of the session: it feeds
+    // the sine that breathes the haze, and NaN there throws out of the gradient
+    // rather than drawing wrong, taking the whole frame with it.
+    this.t += Number.isFinite(dt) ? dt : 0;
     const ctx = this.ctx;
     const f = roomOf(state);
     this._fac = f;
@@ -423,6 +429,24 @@ export class FloorView {
       const rack = rackAt.get(item.gx + ',' + item.gy);
       const lifted = hv && hv.x === item.gx && hv.y === item.gy ? 5 : 0;
       this.drawSolid(ctx, item.gx, item.gy, b, rack, d, false, lifted);
+    }
+
+    // Air: steam off the wet plant, haze off whatever is cooking.
+    //
+    // Both of these were written and then never called — two atmospheric
+    // effects sitting dead in the file. The haze earns its place twice over:
+    // a rack in trouble is currently only red, and red is the one thing a
+    // deuteranope cannot see. Rising air says "hot" without any colour at all.
+    if (this.zoom > 0.34) {
+      for (const item of order) {
+        const b = BUILDINGS_BY_ID[item.tile.b];
+        if (b && STEAMS.has(b.id)) this.steam(ctx, item.gx, item.gy, b);
+      }
+      for (const r of d.racks) {
+        if (r.used > 0 && r.temp > 36) {
+          this.shimmer(ctx, r.x, r.y, clamp((r.temp - 36) / 26, 0, 1));
+        }
+      }
     }
 
     if (this.overlay !== 'none') this.drawOverlayOver(ctx);
@@ -1015,17 +1039,26 @@ export class FloorView {
 
   rackWarnings(ctx, r, top) {
     if (r.used === 0 || this.zoom < 0.45) return;
+    // Two different problems used to be two identically shaped triangles told
+    // apart by colour, which is no way to tell them apart: through a
+    // deuteranopia filter both come out the same pale yellow. A starved rack
+    // gets a triangle, a cooking one gets a diamond, and the shape carries it.
     const marks = [];
-    if (r.pduFactor < 0.95) marks.push('#e8b44a');
-    if (r.cover < 0.95 || r.temp > 40) marks.push('#e8615f');
+    if (r.pduFactor < 0.95) marks.push(['#e8b44a', 'tri']);
+    if (r.cover < 0.95 || r.temp > 40) marks.push(['#e8615f', 'dia']);
     if (!marks.length) return;
     const pulse = 0.55 + 0.45 * Math.sin(this.t * 4 + r.x + r.y);
     let y = top.y - 14;
-    for (const colour of marks) {
+    for (const [colour, shape] of marks) {
       ctx.globalAlpha = pulse;
       ctx.fillStyle = colour;
       ctx.beginPath();
-      ctx.moveTo(top.x, y - 7); ctx.lineTo(top.x + 6, y + 3); ctx.lineTo(top.x - 6, y + 3);
+      if (shape === 'dia') {
+        ctx.moveTo(top.x, y - 7); ctx.lineTo(top.x + 6, y - 2);
+        ctx.lineTo(top.x, y + 3); ctx.lineTo(top.x - 6, y - 2);
+      } else {
+        ctx.moveTo(top.x, y - 7); ctx.lineTo(top.x + 6, y + 3); ctx.lineTo(top.x - 6, y + 3);
+      }
       ctx.closePath(); ctx.fill();
       ctx.globalAlpha = 1;
       ctx.fillStyle = '#101821';
