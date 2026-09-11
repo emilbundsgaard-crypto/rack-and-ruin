@@ -95,7 +95,7 @@ export const STEPS = [
   {
     id: 't10',
     title: 'Look at what it costs',
-    body: 'Open the Town tab. Ashbrook is the village your site is built next to, and everything '
+    body: 'Open the Town tab. Ashbrook is the city your site is built next to, and everything '
       + 'you draw, take and cover comes out of it. It only ever goes one way.',
     note: 'Ruining it completely is the last objective in the game.',
     tab: 'town',

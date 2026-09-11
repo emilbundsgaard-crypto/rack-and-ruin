@@ -181,6 +181,170 @@ export const EVENTS = [
       { label: 'Isolate and keep running', hint: 'Damage 8% of units, stay online', effect: 'fire_isolate' },
     ],
   },
+  // ==================================================================== more
+  //
+  // Twenty-four more, written to the same severity as the originals: the
+  // worst modifier here is no worse than the worst that was already in, and
+  // every one of them still arrives through the ramp rather than all at once.
+  {
+    id: 'humid', name: 'Humid spell', weight: 8, minTier: 0, days: 3, tone: 'bad',
+    when: (s, d) => d.unitsTotal > 0,
+    mods: { coolMult: 0.85 },
+    text: 'Warm wet air off the Irish Sea. The evaporative stages are barely doing anything. −15% cooling.',
+  },
+  {
+    id: 'clearnight', name: 'Clear nights', weight: 7, minTier: 0, days: 4, tone: 'good',
+    when: (s, d) => d.unitsTotal > 0,
+    mods: { coolMult: 1.18 },
+    text: 'A settled high and cold nights. The free-cooling hours run to nearly dawn. +18% cooling.',
+  },
+  {
+    id: 'dustfilter', name: 'Filters blocked', weight: 6, minTier: 1, days: 2.5, tone: 'bad',
+    when: (s, d) => d.unitsTotal > 0,
+    mods: { coolMult: 0.88, upkeepMult: 1.06 },
+    text: 'Pollen season, and nobody changed the panel filters. Airflow is down until somebody does.',
+  },
+  {
+    id: 'windy', name: 'Named storm', weight: 6, minTier: 2, days: 2, tone: 'good',
+    when: (s, d) => d.ownSupply > 0,
+    mods: { powerSupplyMult: 1.2, coolMult: 1.1 },
+    text: 'Storm Bronwen is sitting over the county. Everything with a blade on it is earning its keep.',
+  },
+  {
+    id: 'gridcurtail', name: 'Curtailment notice', weight: 6, minTier: 3, days: 2.2, tone: 'bad',
+    when: (s, d) => d.gridUsed > 0,
+    mods: { powerSupplyMult: 0.78 },
+    text: 'The network operator has issued a curtailment notice for large loads in the region. You are the large load.',
+  },
+  {
+    id: 'cheapgas', name: 'Gas glut', weight: 5, minTier: 2, days: 4, tone: 'good',
+    when: (s, d) => d.fuelCost > 0,
+    mods: { fuelMult: 0.55 },
+    text: 'A mild winter across Europe and full storage. Fuel is cheap for as long as that lasts.',
+  },
+  {
+    id: 'fuelspike', name: 'Fuel on allocation', weight: 5, minTier: 2, days: 3.5, tone: 'bad',
+    when: (s, d) => d.fuelCost > 0,
+    mods: { fuelMult: 1.7 },
+    text: 'The supplier has moved everyone to allocation. What you can get costs 70% more.',
+  },
+  {
+    id: 'mainsburst', name: 'Water main burst', weight: 6, minTier: 2, days: 2, tone: 'bad',
+    when: (s, d) => d.waterDemand > 0,
+    mods: { waterSupplyMult: 0.6 },
+    text: 'A Victorian main has gone under the ring road. Pressure is down across the whole district.',
+  },
+  {
+    id: 'wetweek', name: 'A very wet week', weight: 6, minTier: 1, days: 4, tone: 'good',
+    when: (s, d) => d.waterDemand > 0,
+    mods: { waterSupplyMult: 1.25, coolMult: 1.08 },
+    text: 'Four inches in six days. The river is up, the harvesting tanks are full, and the air is cold.',
+  },
+  {
+    id: 'fancurve', name: 'Broken fan curve', weight: 7, minTier: 2, days: 3, tone: 'bad',
+    when: (s, d) => d.unitsTotal > 0,
+    mods: { computeMult: 0.9, wearMult: 1.15 },
+    text: 'A vendor update shipped with a broken fan curve. Everything runs hotter and slower until it is rolled back.',
+  },
+  {
+    id: 'kernelfix', name: 'Scheduler patch', weight: 6, minTier: 2, days: 5, tone: 'good',
+    when: (s, d) => d.unitsTotal > 0,
+    mods: { computeMult: 1.12 },
+    text: 'Somebody upstream fixed the scheduler. The same machines are doing 12% more work for nothing.',
+  },
+  {
+    id: 'batchbad', name: 'Bad silicon batch', weight: 5, minTier: 3, days: 6, tone: 'bad',
+    when: (s, d) => d.unitsTotal > 20,
+    mods: { wearMult: 1.4 },
+    text: 'A whole shipment came off a line with a marginal process corner. They will not last as long as they should.',
+  },
+  {
+    id: 'coolant', name: 'Coolant contract', weight: 5, minTier: 4, days: 6, tone: 'good',
+    when: (s, d) => d.coolCap > 0,
+    mods: { coolMult: 1.15, waterCostMult: 0.8 },
+    text: 'A three-year supply deal signed at the bottom of the market. The plant runs better and cheaper.',
+  },
+  {
+    id: 'auditlow', name: 'Efficiency audit', weight: 6, minTier: 3, days: 7, tone: 'good',
+    when: (s, d) => d.unitsTotal > 0,
+    mods: { upkeepMult: 0.85 },
+    text: 'The consultants found nine things. Six of them were true and four of them were free.',
+  },
+  {
+    id: 'insurance', name: 'Premium review', weight: 6, minTier: 3, days: 8, tone: 'bad',
+    when: (s, d) => d.unitsTotal > 0,
+    mods: { upkeepMult: 1.14 },
+    text: 'The underwriters have looked at what is on the floor and repriced accordingly.',
+  },
+  {
+    id: 'demandsurge', name: 'Capacity crunch', weight: 7, minTier: 3, days: 4, tone: 'good',
+    when: (s, d) => d.computeSellable > 0,
+    mods: { priceMult: 1.22 },
+    text: 'Everyone wants compute this quarter and nobody has any. New contracts are paying 22% over.',
+  },
+  {
+    id: 'demandslump', name: 'Capacity glut', weight: 6, minTier: 3, days: 5, tone: 'bad',
+    when: (s, d) => d.computeSellable > 0,
+    mods: { priceMult: 0.84 },
+    text: 'Three new campuses came online in the same month. Nobody is paying list this quarter.',
+  },
+  {
+    id: 'reference', name: 'A good reference', weight: 6, minTier: 2, days: 6, tone: 'good',
+    when: (s) => (s.reputation || 0) > 4,
+    mods: { repMult: 1.35, offerSize: 1.12 },
+    text: 'A customer said something kind in public, and the kind of people who read that are now calling.',
+  },
+  {
+    id: 'outage', name: 'A visible outage', weight: 5, minTier: 3, days: 4, tone: 'bad',
+    when: (s, d) => d.contractDemand > 0,
+    mods: { repMult: 0.75 },
+    text: 'Forty minutes, in the middle of a weekday, and it made a trade paper. Everyone saw it.',
+  },
+  {
+    id: 'strike', name: 'Contractors walk out', weight: 4, minTier: 4, days: 3, tone: 'bad',
+    when: (s, d) => d.brokenTotal > 0,
+    mods: { repairMult: 0.5, upkeepMult: 1.08 },
+    text: 'The maintenance contractor is in dispute. Nothing gets fixed this week that is not on fire.',
+  },
+
+  // ---- decisions
+  {
+    id: 'earlyaccess', name: 'Early access silicon', weight: 4, minTier: 3, tone: 'neutral', choice: true,
+    when: (s, d) => d.unitsTotal > 10,
+    text: 'A vendor will give you the next generation six months early, on the understanding that you find the faults.',
+    options: [
+      { label: 'Take the boards', hint: '30 days of research income, wear up 25% for 12 days', effect: 'early_take' },
+      { label: 'Wait for retail', hint: 'Nothing changes', effect: 'early_decline' },
+    ],
+  },
+  {
+    id: 'licence', name: 'Abstraction renewal', weight: 4, minTier: 4, tone: 'neutral', choice: true,
+    when: (s, d) => d.waterDemand > 0 && (s.town?.damage || 0) >= 0.2,
+    text: 'Your water licence is up. The regulator will renew it quietly, or hold a hearing you would win slowly.',
+    options: [
+      { label: 'Settle it quietly', hint: 'Costs 5 days of income, −6 reputation', effect: 'licence_settle' },
+      { label: 'Go to the hearing', hint: '12 days at 70% water, +10 reputation', effect: 'licence_fight' },
+    ],
+  },
+  {
+    id: 'heatdeal', name: 'The district heat scheme', weight: 4, minTier: 5, tone: 'good', choice: true,
+    when: (s, d) => d.heatLoad > 0 && (s.town?.damage || 0) >= 0.35,
+    text: 'The council will take your waste heat for what is left of the housing stock, if you pay for the pipe.',
+    options: [
+      { label: 'Pay for the pipe', hint: 'Costs 10 days of income, +16 reputation', effect: 'heat_build' },
+      { label: 'Not this year', hint: 'Nothing changes', effect: 'heat_decline' },
+    ],
+  },
+  {
+    id: 'poach2', name: 'The whole night shift', weight: 3, minTier: 5, tone: 'bad', choice: true,
+    when: (s) => (s.staff?.tech || 0) >= 4,
+    text: 'A campus two counties over has offered the entire night shift a move, together, with a bonus.',
+    options: [
+      { label: 'Beat the offer', hint: 'Costs 12 days of total salary', effect: 'poach2_pay' },
+      { label: 'Rebuild the shift', hint: 'Lose half your technicians, +30 days of reduced wages', effect: 'poach2_lose' },
+    ],
+  },
 ];
+
 
 export const EVENTS_BY_ID = Object.fromEntries(EVENTS.map((e) => [e.id, e]));

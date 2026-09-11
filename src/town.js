@@ -10,23 +10,27 @@ import { clamp, sum } from './util.js';
 import { REGISTER, standing, gone } from './data/ashbrook.js';
 
 export const STAGES = [
-  { at: 0.00, title: 'Ashbrook, population 940',
-    line: 'A river, a cricket pitch, and a substation nobody had heard of.' },
-  { at: 0.12, title: 'The hum',
+  { at: 0.00, title: 'Ashbrook, population 1,000,000',
+    line: 'A river, a foundry, a university, and a substation nobody had heard of.' },
+  { at: 0.07, title: 'The hum',
     line: 'Transformers run day and night now. Nobody on Mill Lane sleeps well.' },
-  { at: 0.25, title: 'Hosepipe ban',
-    line: 'Gardens go brown by August. Your cooling towers are exempt.' },
-  { at: 0.38, title: 'The pitch goes',
-    line: 'The cricket pitch is a contractors’ car park. The club folds in spring.' },
+  { at: 0.16, title: 'The river is spoken for',
+    line: 'The abstraction licence was varied in a consultation that drew eleven responses.' },
+  { at: 0.26, title: 'No connection',
+    line: 'Eight years in the queue for three-phase. The foundry did not have eight years.' },
+  { at: 0.38, title: 'Priced out',
+    line: 'Rents doubled in four years against wages that did not. The complaining was not the leaving.' },
   { at: 0.50, title: 'The river gives up',
     line: 'Down to a trickle below the weir. The fish went first, then the herons.' },
-  { at: 0.62, title: 'Boarded up',
-    line: 'Half the terraces are empty. The school closed at the end of June.' },
-  { at: 0.75, title: 'Nothing to buy',
-    line: 'The last shop shut. The bus route was cut the same week.' },
-  { at: 0.88, title: 'Only the church',
-    line: 'Still standing, and only because you rent it as overflow storage.' },
-  { at: 1.00, title: 'There is no town',
+  { at: 0.62, title: 'Rationalising the estate',
+    line: 'Eleven primaries in one review. It is the word for it that people remember.' },
+  { at: 0.72, title: 'Forty minutes to Derby',
+    line: 'A district general hospital needs a district. The last three wards went in March.' },
+  { at: 0.83, title: 'Managed decline',
+    line: 'Whole wards boarded and held. Cheaper than demolition, and quieter than either.' },
+  { at: 0.93, title: 'A rota for the generator',
+    line: 'A WhatsApp group for the water, and a shop that opens two mornings a week.' },
+  { at: 1.00, title: 'There is no city',
     line: 'There is a site, and a road that used to lead somewhere.' },
 ];
 
@@ -59,7 +63,7 @@ export function townTarget(state, d) {
   return clamp(sum(strands, (x) => x.at * x.weight), 0, 1);
 }
 
-/** Ashbrook started at 940 people. It does not go back up. */
+/** Ashbrook started at a million people. It does not go back up. */
 /**
  * Who is left, counted off the register rather than off a curve.
  *

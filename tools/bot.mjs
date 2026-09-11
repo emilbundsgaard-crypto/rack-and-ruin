@@ -232,11 +232,17 @@ function step() {
   }
 }
 
-const DT = 0.25;
-const HOURS = 5;
-const total = HOURS * 3600;
+// A run is measured in game-days, because that is the unit the pacing target
+// is in: at 10x speed one day is six real seconds, so ten hours of play is
+// 6,000 days. The step can be coarsened for long pacing runs — it costs some
+// resolution on wear and events, which is acceptable for "what day does the
+// tree finish" and is not for balance trials.
+const DT = Number(process.env.BOT_DT || 0.25);
+const DAYS = Number(process.env.BOT_DAYS || 300);
+const total = DAYS * DAY_SECONDS;
 let botWentUnder = false;
 let t = 0, nextStep = 0, nextReport = 0, lastTier = -1, treeDone = false, objDone = false;
+let dayTier9 = null, dayResearch = null, dayObjectives = null;
 let peakTier = 0, underAt = null, peakMoney = 0;
 const t0 = Date.now();
 while (t < total) {
@@ -246,15 +252,18 @@ while (t < total) {
   if (t >= nextStep) { step(); nextStep = t + 2; }
   if (s.facility !== lastTier) {
     lastTier = s.facility;
-    say('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  facility tier ' + s.facility);
+    if (s.facility >= 9 && dayTier9 === null) dayTier9 = t / 60;
+    say('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'd  facility tier ' + s.facility);
   }
   if (s.research.done.length === RESEARCH.length && !treeDone) {
     treeDone = true;
-    say('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  research tree complete');
+    dayResearch = t / 60;
+    say('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'd  research tree complete');
   }
   if (s.objectives.done.length === OBJECTIVES.length && !objDone) {
     objDone = true;
-    say('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'm  all objectives complete');
+    dayObjectives = t / 60;
+    say('MILESTONE ' + String(Math.round(t / 60)).padStart(4) + 'd  all objectives complete');
   }
   if (s.facility > peakTier) peakTier = s.facility;
   if (s.money > peakMoney) peakMoney = s.money;
@@ -344,6 +353,12 @@ console.log('RESULT ' + JSON.stringify({
   underAt: underAt === null ? null : +underAt.toFixed(1),
   breaches: s.stats.breaches,
   survived: s.money >= 0 && s.facility >= 1,
+  // The pacing target is measured in game-days: at 10x speed one day is six
+  // real seconds, so ten hours of play is 6,000 days.
+  dayTier9: dayTier9 === null ? null : Math.round(dayTier9),
+  dayResearch: dayResearch === null ? null : Math.round(dayResearch),
+  dayObjectives: dayObjectives === null ? null : Math.round(dayObjectives),
+  endDay: Math.round(t / 60),
 }));
 say('final: tier', s.facility, 'research', s.research.done.length + '/' + RESEARCH.length,
   'upgrades', s.upgrades.length + '/' + UPGRADES.length,

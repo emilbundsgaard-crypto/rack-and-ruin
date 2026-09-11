@@ -807,7 +807,7 @@ function showHelp() {
       ['Why', 'Perks are permanent. Every run after the first one starts easier and goes further.'],
     ]),
     guideSection('Ashbrook', [
-      ['The town', 'The village next door. It does nothing to you; it is simply the bill.'],
+      ['The town', 'The city next door. It does nothing to you; it is simply the bill.'],
       ['The dial', 'Follows your footprint — megawatts, litres, acres — and only goes one way.'],
       ['The goal', 'Ruin it completely. There is an objective and an achievement waiting.'],
     ]),

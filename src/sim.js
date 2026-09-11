@@ -1160,6 +1160,47 @@ export function resolveDecision(state, d, effect, hooks) {
     case 'anchor_decline':
       state.reputation += 14;
       return 'You held the line on price. Word gets around.';
+    // ---- the four added decisions.
+    case 'early_take':
+      state.events.active.push({ id: 'early', label: 'Pre-release boards', tone: 'neutral',
+        started: state.day, until: state.day + 30,
+        mods: { researchMult: 1.9 } });
+      state.events.active.push({ id: 'earlywear', label: 'Unproven silicon', tone: 'bad',
+        started: state.day, until: state.day + 12, mods: { wearMult: 1.25 } });
+      return 'They arrived in unmarked crates. Half of them will teach you something expensive.';
+    case 'early_decline':
+      return 'You will buy them when they have a part number and a warranty like everyone else.';
+    case 'licence_settle': {
+      const cost = Math.max(0, d.revenue) * DAY_SECONDS * 5;
+      state.money -= cost;
+      state.reputation = Math.max(0, state.reputation - 6);
+      return 'Renewed without a hearing. The cheque was not the expensive part.';
+    }
+    case 'licence_fight':
+      state.events.active.push({ id: 'hearing', label: 'Licence hearing', tone: 'bad',
+        started: state.day, until: state.day + 12, mods: { waterSupplyMult: 0.7 } });
+      state.reputation += 10;
+      return 'Twelve days on interim limits, and a decision that will hold for a decade.';
+    case 'heat_build': {
+      const cost = Math.max(0, d.revenue) * DAY_SECONDS * 10;
+      state.money -= cost;
+      state.reputation += 16;
+      return 'Eleven hundred homes on your waste heat. It is the first thing you have given back.';
+    }
+    case 'heat_decline':
+      return 'The pipe was costed at more than the goodwill was worth. You did the sum and said so.';
+    case 'poach2_pay': {
+      const cost = salaries * 12;
+      state.money = Math.max(0, state.money - cost);
+      return 'You beat it, and every day shift in the building now knows what a night shift is worth.';
+    }
+    case 'poach2_lose': {
+      const lost = Math.floor((state.staff.tech || 0) / 2);
+      state.staff.tech = Math.max(0, (state.staff.tech || 0) - lost);
+      state.events.active.push({ id: 'rebuildshift', label: 'Rebuilding the shift', tone: 'neutral',
+        started: state.day, until: state.day + 30, mods: { upkeepMult: 0.94, repairMult: 0.8 } });
+      return `${lost} technicians went together. The wage bill is lighter and so is the rota.`;
+    }
     case 'grant_take':
       state.events.active.push({ id: 'grant', label: 'Research grant running', tone: 'good', started: state.day, until: state.day + 10, mods: { researchMult: 2.6, priceMult: 0.9 } });
       return 'Their benchmark now runs on your floor. Research is flying.';

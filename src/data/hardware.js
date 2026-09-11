@@ -81,6 +81,88 @@ export const HARDWARE = [
     req: 'rnd_zetta',
     desc: 'The last thing anybody bothered to give a model number.',
   },
+
+  // ---------------------------------------------------------------- siblings
+  //
+  // One alternative at every tier, rather than a longer ladder. A longer
+  // ladder would push compute-per-kW further still, and that ratio is the
+  // spine of the economy: revenue scales with compute and almost every cost
+  // scales with kW, so stretching it is how the cost side vanished in the
+  // first place. These sit beside their tier-mates instead — each better at
+  // one thing and worse at another, so which one you buy is a decision about
+  // the site you actually have rather than a number going up.
+  {
+    id: 'nuc', name: 'Mini PC cluster', short: 'NUC', tier: 0,
+    cost: 900, compute: 2.2, power: 0.16, heat: 0.13, wear: 0.5, net: 0.03,
+    req: 'rnd_minipc',
+    desc: 'Eight of them on a shelf. Half the work of a pizza box for a third of the heat.',
+  },
+  {
+    id: 'jbod', name: 'Archive node', short: 'ARC', tier: 1,
+    cost: 4_200, compute: 9, power: 0.30, heat: 0.26, wear: 0.35, net: 0.05,
+    req: 'rnd_archive',
+    desc: 'Spinning rust and very little else. Cheap to run and hard to break.',
+  },
+  {
+    id: 'twin1u', name: 'Twin 1U node', short: '2×1U', tier: 2,
+    cost: 34_000, compute: 88, power: 2.3, heat: 2.2, wear: 0.85, net: 1,
+    req: 'rnd_twin',
+    desc: 'Two boards in one chassis. More work per slot, and it runs hot enough to say so.',
+  },
+  {
+    id: 'fpga', name: 'FPGA array', short: 'FPG', tier: 3,
+    cost: 150_000, compute: 190, power: 1.55, heat: 1.3, wear: 0.4, net: 1.2,
+    req: 'rnd_fpga',
+    desc: 'Reconfigurable, frugal and patient. Costs more per unit of work and repays it in the bill.',
+  },
+  {
+    id: 'armsled', name: 'ARM microserver sled', short: 'ARM', tier: 4,
+    cost: 480_000, compute: 820, power: 3.3, heat: 2.9, wear: 0.5, net: 12,
+    req: 'rnd_arm',
+    desc: 'Ninety-six cores that sip. Wants more switching than it is worth if your network is thin.',
+  },
+  {
+    id: 'inferbox', name: 'Inference appliance', short: 'INF', tier: 5,
+    cost: 2_200_000, compute: 3_200, power: 6.2, heat: 5.4, wear: 0.6, net: 4,
+    req: 'rnd_inference',
+    desc: 'Built to serve, not to train. Modest output, and it barely touches the switches.',
+  },
+  {
+    id: 'denspod', name: 'Dense compute pod', short: 'DCP', tier: 6,
+    cost: 15_000_000, compute: 27_000, power: 31, heat: 28, wear: 0.9, net: 40,
+    req: 'rnd_denspod',
+    desc: 'Everything the superpod does and more of it, at a temperature that eats the hardware.',
+  },
+  {
+    id: 'wafer', name: 'Wafer-scale engine', short: 'WSE', tier: 7,
+    cost: 96_000_000, compute: 140_000, power: 78, heat: 66, wear: 0.75, net: 120,
+    req: 'rnd_wafer',
+    desc: 'One die the size of a dinner plate. Enormous in a slot, and enormous in the bill.',
+  },
+  {
+    id: 'optic', name: 'Optical fabric node', short: 'OFN', tier: 8,
+    cost: 340_000_000, compute: 300_000, power: 60, heat: 44, wear: 0.42, net: 90,
+    req: 'rnd_optic',
+    desc: 'Switches in glass. Less raw output than the quantum crate and a third of the network to feed it.',
+  },
+  {
+    id: 'analog', name: 'Analogue compute array', short: 'ANA', tier: 9,
+    cost: 1_900_000_000, compute: 2_400_000, power: 210, heat: 165, wear: 0.95, net: 700,
+    req: 'rnd_analog',
+    desc: 'Maths in voltages. Faster and cheaper to run than anything at its tier, and it wears out watching you.',
+  },
+  {
+    id: 'swarm', name: 'Swarm node', short: 'SWM', tier: 10,
+    cost: 7_400_000_000, compute: 6_200_000, power: 275, heat: 205, wear: 0.3, net: 1_800,
+    req: 'rnd_swarm',
+    desc: 'Redundant to the point of boredom. Two thirds of a zettascale core and a fraction of the wear.',
+  },
+  {
+    id: 'supercon', name: 'Superconducting core', short: 'SCC', tier: 10,
+    cost: 13_000_000_000, compute: 13_000_000, power: 560, heat: 300, wear: 0.55, net: 4_000,
+    req: 'rnd_supercon',
+    desc: 'Zero resistance in the die and a great deal of it everywhere else. The most work a slot can hold.',
+  },
 ];
 
 export const HARDWARE_BY_ID = Object.fromEntries(HARDWARE.map((h) => [h.id, h]));
