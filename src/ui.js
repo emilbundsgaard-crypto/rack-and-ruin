@@ -1210,20 +1210,72 @@ function panelResearch(state, d) {
   });
   for (const [name, list] of groups) {
     if (!list.length) continue;
-    out.push(sec(name + ' (' + list.length + ')', list.map(cardFor)));
+    // Ready and Saving are what you came to the tab for, so they show in full.
+    // Locked and Completed only grow — with a tree this size a category can
+    // carry thirty of each, and thirty rows of things you cannot buy and
+    // thirty of things you already own is how you lose the four that matter.
+    const capped = name === 'Locked' || name === 'Completed';
+    const key = 'rnd:' + researchCat + ':' + name;
+    const open = lockedOpen.has(key);
+    const SHOWN = 4;
+    const rows = (capped && !open ? list.slice(0, SHOWN) : list).map(cardFor);
+    if (capped && list.length > SHOWN) {
+      const more = list.length - SHOWN;
+      const t = el('button', 'btn small lockfold',
+        open ? 'Hide the ' + more + ' further off'
+          : more + (name === 'Locked' ? ' more, deeper in the tree' : ' more already done'));
+      t.onclick = () => {
+        if (open) lockedOpen.delete(key); else lockedOpen.add(key);
+        markDirty(); renderUI();
+      };
+      rows.push(t);
+    }
+    out.push(sec(name + ' (' + list.length + ')', rows));
   }
   return out;
 }
 
 // ------------------------------------------------------------------ upgrades
 
+// Which slice of the upgrade list is on screen. Sixty-four permanent purchases
+// rendered as one column is a scroll, not a shop, and the thing you can afford
+// is somewhere in the middle of it.
+let upgradeCat = 'all';
+const UPGRADE_CATS = [
+  { id: 'all', name: 'All' },
+  { id: 'cooling', name: 'Cooling' },
+  { id: 'power', name: 'Power' },
+  { id: 'water', name: 'Water' },
+  { id: 'ops', name: 'Ops' },
+  { id: 'money', name: 'Money' },
+];
+
 function panelUpgrades(state, d) {
-  const order = [...UPGRADES].sort((a, b) => {
+  const catRow = el('div', 'btnrow');
+  for (const c of UPGRADE_CATS) {
+    const n = el('button', 'btn small' + (c.id === upgradeCat ? ' primary' : ''), c.name);
+    n.onclick = () => { upgradeCat = c.id; markDirty(); renderUI(); };
+    catRow.append(n);
+  }
+
+  const inCat = UPGRADES.filter((u) => upgradeCat === 'all' || u.cat === upgradeCat);
+  const order = [...inCat].sort((a, b) => {
     const ao = state.upgrades.includes(a.id) ? 1 : 0;
     const bo = state.upgrades.includes(b.id) ? 1 : 0;
     return ao - bo || a.cost - b.cost;
   });
-  const cards = order.map((u) => {
+  // Everything you can buy, plus a couple of next goals, and the rest behind a
+  // line — the same rule the build lists follow.
+  const AHEAD = 3;
+  const open = lockedOpen.has('upg:' + upgradeCat);
+  let ahead = 0;
+  const shown = order.filter((u) => {
+    if (state.upgrades.includes(u.id) || state.money >= u.cost) return true;
+    return open || ++ahead <= AHEAD;
+  });
+  const hidden = order.length - shown.length;
+
+  const cards = shown.map((u) => {
     const owned = state.upgrades.includes(u.id);
     const afford = state.money >= u.cost;
     return listRow({
@@ -1238,9 +1290,20 @@ function panelUpgrades(state, d) {
       onClick: owned ? null : () => app.act(() => A.buyUpgrade(state, d, u.id, app.hooks)),
     });
   });
+  if (hidden > 0) {
+    const t = el('button', 'btn small lockfold',
+      open ? 'Hide the ' + hidden + ' further off' : hidden + ' more you cannot afford yet');
+    t.onclick = () => {
+      if (open) lockedOpen.delete('upg:' + upgradeCat); else lockedOpen.add('upg:' + upgradeCat);
+      markDirty(); renderUI();
+    };
+    cards.push(t);
+  }
+  const ownedInCat = inCat.filter((u) => state.upgrades.includes(u.id)).length;
   return [
+    sec(null, catRow),
     sec(null, el('div', 'hint', 'Permanent, one-off purchases. They never expire and survive nothing but a company sale.')),
-    sec('Upgrades (' + state.upgrades.length + '/' + UPGRADES.length + ')', cards),
+    sec('Upgrades (' + ownedInCat + '/' + inCat.length + ')', cards),
   ];
 }
 

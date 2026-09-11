@@ -849,18 +849,23 @@ async function clickTile(page, gx, gy) {
       if (T.population(d) !== fromRegister) drift.push(d.toFixed(2));
     }
     return {
-      total: A.TOWN_POPULATION, entries: rows.length, ascending, drift,
+      total: A.TOWN_POPULATION, intended: A.INTENDED_POPULATION, entries: rows.length, ascending, drift,
       startsFull: T.population(0), endsEmpty: T.population(1),
       everyLineWritten: rows.every((x) => typeof x.line === 'string' && x.line.length > 25),
     };
   });
-  if (r.total !== 940) fail('the register is the population', `the register holds ${r.total}, the town says 940`);
+  // Against the intended figure the data declares, not a number typed in here:
+  // a size written in two places drifts, and the register module now refuses
+  // to load at all if it does not add up.
+  if (r.total !== r.intended) fail('the register is the population',
+    `the register holds ${r.total}, the city is meant to hold ${r.intended}`);
   else if (!r.ascending) fail('the register is the population', 'the thresholds are out of order');
   else if (r.drift.length) fail('the register is the population', `counter and register disagree at damage ${r.drift[0]}`);
-  else if (r.startsFull !== 940 || r.endsEmpty !== 0) fail('the register is the population',
+  else if (r.startsFull !== r.intended || r.endsEmpty !== 0) fail('the register is the population',
     `starts at ${r.startsFull}, ends at ${r.endsEmpty}`);
   else if (!r.everyLineWritten) fail('the register is the population', 'an entry has no line written for it');
-  else pass('the register is the population', `${r.entries} addresses, 940 people, no drift`);
+  else pass('the register is the population',
+    `${r.entries} addresses, ${r.total.toLocaleString('en-GB')} people, no drift`);
   await page.close();
 }
 

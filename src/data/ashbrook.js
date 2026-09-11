@@ -201,8 +201,23 @@ export const REGISTER = [
     line: 'There is a site, and a road that used to lead somewhere, and a sign the county has not got round to taking down.' },
 ];
 
+/**
+ * What the city is meant to hold, declared separately from the register so the
+ * two can be compared. The header has always claimed the total is checked at
+ * load rather than trusted; until now nothing actually checked it, and the
+ * browser check compared against a number typed into the test instead — which
+ * is the same trust in a second place. This is the one declaration, and the
+ * register has to meet it.
+ */
+export const INTENDED_POPULATION = 1_000_000;
+
 /** People in the register, which must equal the population the city started with. */
 export const TOWN_POPULATION = REGISTER.reduce((t, r) => t + r.n, 0);
+
+if (TOWN_POPULATION !== INTENDED_POPULATION) {
+  throw new Error(`Ashbrook register holds ${TOWN_POPULATION} people, not ${INTENDED_POPULATION}. `
+    + 'A register that disagrees with the population counter is worse than no register.');
+}
 
 /** Households and places still there at this much damage, and those gone. */
 export function standing(damage) {
