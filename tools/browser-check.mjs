@@ -1846,11 +1846,14 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
     // Five recoveries from the same starting state, not one.
     //
     // The recovery depends on which offers the board happens to post and
-    // which events land, and measured across ten runs this scenario succeeds
-    // about nine times in ten at any sane contract pay. Asserting on a single
-    // sample therefore failed roughly one suite run in ten with nothing
-    // wrong, which is worse than not checking it: a check that cries wolf
-    // gets ignored, and this one is guarding against handing a player an
+    // which events land. Measured over twelve fresh runs it succeeds eleven
+    // times — call it nine in ten — so a single sample failed roughly one
+    // suite run in ten with nothing wrong, and demanding four of five still
+    // fails one run in fourteen. Three of five is the threshold that matches
+    // what was measured: at a true rate of nine in ten it cries wolf less
+    // than once in a hundred runs, and it still fails hard if recovery
+    // actually breaks, which is what it is here to catch. A check that cries
+    // wolf gets ignored, and this one guards against handing a player an
     // unwinnable save.
     const snapshot = JSON.stringify(s);
     const runs = [];
@@ -1873,7 +1876,7 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   // Hot enough to be the state that used to be fatal, the remedy has to cut
   // the bill, and from there the balance has to climb without going under.
   if (out.before.temp > 60 && out.after.costs < out.before.costs * 0.75
-      && out.good >= 4) {
+      && out.good >= 3) {
     pass('a cooked site has a remedy that works',
       `${Math.round(out.before.temp)} °C, sold ${out.sold} units, bill `
       + `${out.before.costs.toFixed(1)} to ${out.after.costs.toFixed(1)}/s, `
@@ -2573,6 +2576,56 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   } else {
     fail('the tabs say where there is something to do',
       JSON.stringify({ fresh, broke, rich, stocked }));
+  }
+  await page.close();
+}
+
+// ------------------------- a bad stretch dents your name, it does not erase it
+//
+// The deadlock this guards against: a site at its facility's power cap cannot
+// add compute, so any wobble drops it under what its contracts promised;
+// breaching costs reputation; and the next facility — the only thing that
+// raises the power cap — is gated on reputation. Measured, that left a run
+// sitting at tier 4 from day 300 past day 470 with three and a half billion
+// in the bank and reputation swinging between 127 and 284 against the 400 it
+// needed. The floor under a track record is what breaks the loop, so it has
+// to hold, and a completion still has to be able to push past the old peak.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  const r = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const app = window.__rr;
+    const s = app.state;
+    s.tutorial.skipped = true;
+    s.reputation = 400;
+    s.repPeak = 400;
+    // One contract, wildly over-promised, so it breaches every tick.
+    // Long enough that it never completes: what is under test is the floor
+    // while breaching, and a contract that ends stops the bleeding early and
+    // makes the assertion pass without ever reaching it.
+    s.contracts.active = [{
+      cid: 'x1', tid: s.contracts.offers[0]?.tid || 'c_backup', name: 'Over-promised',
+      client: 'Test', demand: 1e9, net: 1, pay: 1, days: 9999,
+      endDay: s.day + 9999, uptimeReq: 0.99, penalty: 1, delivered: 0, effUptime: 0,
+    }];
+    let d = sim.derive(s);
+    const quiet = { log() {}, onDecision() {}, onRescue() {} };
+    for (let i = 0; i < 20_000; i++) { sim.tick(s, 0.2, d, quiet); d = sim.derive(s); }
+    const sank = s.reputation;
+    return {
+      floor: sim.REP_FLOOR, peak: 400, sank,
+      // It has to come to rest on the floor: high enough that the gate stays
+      // reachable, low enough that breaching still costs something real.
+      held: sank >= 400 * sim.REP_FLOOR - 0.5,
+      reached: sank <= 400 * sim.REP_FLOOR + 0.5,
+    };
+  });
+  if (r.held && r.reached) {
+    pass('a bad stretch dents your name, it does not erase it',
+      `400 down to ${r.sank.toFixed(0)}, floor ${(r.floor * 100).toFixed(0)}% of peak`);
+  } else {
+    fail('a bad stretch dents your name, it does not erase it', JSON.stringify(r));
   }
   await page.close();
 }

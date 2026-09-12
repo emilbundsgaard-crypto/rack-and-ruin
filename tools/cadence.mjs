@@ -48,6 +48,19 @@ if (worst) {
     + ` (node ${worst.at.rnd}, $${(worst.at.money / 1e9).toFixed(1)}B,`
     + ` ${worst.at.openUpgrades} upgrades unbought)`);
 }
+// The deadlock: rich enough for the next site, short of the reputation it
+// wants. That is the shape of the wall a player described as "ultra slow" —
+// nothing to do and no way to make it happen faster.
+const gated = rows.filter((r) => r.canAffordFacility === true && r.facilityRepShort > 0);
+if (gated.length) {
+  const days = gated.length * (rows[1] ? rows[1].day - rows[0].day : 1);
+  console.log(`\nblocked on reputation with the money already in hand: ${gated.length} samples`
+    + ` (~${Math.round(days)} days), first at day ${gated[0].day},`
+    + ` $${(gated[0].money / 1e9).toFixed(2)}B, ${Math.round(gated[0].facilityRepShort)} reputation short`);
+} else {
+  console.log('\nnever blocked on reputation with the money already in hand');
+}
+
 const stalled = rows.filter((r) => (r.daysToNextNode ?? 0) > 30 && r.affordableNodes === 0);
 if (stalled.length) {
   console.log(`${stalled.length} of ${rows.length} samples were more than 30 days from the next node`

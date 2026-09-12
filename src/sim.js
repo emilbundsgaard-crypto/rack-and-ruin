@@ -1017,7 +1017,7 @@ function contractsTick(state, d, days, hooks) {
   // are on the phone about it. The per-contract fines are punishment enough.
   if (breaching) {
     const share = breaching / Math.max(1, state.contracts.active.length);
-    const floor = (state.repPeak || 0) * 0.6;
+    const floor = (state.repPeak || 0) * REP_FLOOR;
     state.reputation = Math.max(floor, state.reputation - days * 0.9 * share);
   }
 
@@ -1498,6 +1498,25 @@ export function sellPrice(state, sellable) {
   const decay = MARKET_FLOOR + (1 - MARKET_FLOOR) * Math.pow(glut, -MARKET_ELASTICITY);
   return state.market.compute * decay;
 }
+
+// How much of your best reputation a bad stretch can take away.
+//
+// This was the wall a player hit and described as "around five or ten billion
+// it goes ultra slowly". The trace shows why, and it is a deadlock rather than
+// a slow patch: a site at its facility's power cap cannot add compute, so any
+// wobble — heat, a broken machine, a brownout — drops it under the delivery
+// its contracts promised. Breaching costs reputation. The next facility, the
+// only thing that raises the power cap, is gated on reputation. So the site
+// sat at tier 4 from day 300 past day 470 with three and a half billion in
+// the bank and compute frozen at 268,000, reputation swinging between 127 and
+// 284 against the 400 it needed, and nothing the player did could break the
+// loop. Twenty to thirty real minutes of watching a number oscillate.
+//
+// At 0.6 the floor was low enough that a bad stretch gave back more than a
+// good one could earn. At 0.85 a track record ratchets: a bad week dents your
+// name, it does not erase it, and the gate stays reachable while breaching
+// still costs real money in fines and real progress in lost time.
+export const REP_FLOOR = tune('REP_FLOOR', 0.85);
 
 // Interest is charged per game day on whatever is outstanding. It is meant to
 // be felt: a loan taken to buy a rack should be paid off by that rack inside a
