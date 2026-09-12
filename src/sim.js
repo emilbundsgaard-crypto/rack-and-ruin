@@ -733,8 +733,13 @@ export function tick(state, dt, d, hooks) {
       if (state.day - (state.lastOverdraft || -99) > 5) {
         state.lastOverdraft = state.day;
         bank.overdrafts++;
+        // Not just "sell". Measured on a five-rack site thirty thousand
+        // under: selling one rack is back above zero in 23 days, two takes
+        // 46, and three never gets there at all, because what climbs out of
+        // the hole is the machines still earning. The advice has to say so.
         hooks?.log(`Overdrawn by ${money(-state.money)}. Nothing can be bought until you are back `
-          + `above zero — sell what you cannot run.`, 'bad');
+          + `above zero — let staff go and sell what you cannot power, but keep enough running `
+          + `to earn: an empty floor earns nothing.`, 'bad');
       }
 
       // Deep enough in and the bank offers a way out, on terms designed to
@@ -1498,7 +1503,7 @@ export function sellPrice(state, sellable) {
 // be felt: a loan taken to buy a rack should be paid off by that rack inside a
 // few days, and sitting on the debt should hurt.
 export const LOAN_RATE = 0.05;        // per day, on a loan you chose to take
-export const OVERDRAFT_RATE = 0.03;   // per day, on a balance below zero
+export const OVERDRAFT_RATE = tune('OVERDRAFT_RATE', 0.03);   // per day, on a balance below zero
 export const REPAY_SHARE = 0.4;       // of positive income, while you owe
 
 // How far under you have to be before the bank offers a way out. There are

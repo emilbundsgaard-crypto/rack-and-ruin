@@ -501,18 +501,25 @@ export const HARDWARE = [
 // The spread inside a tier is deliberately left alone: the dense variant and
 // the efficient variant of the same generation keep their relationship to
 // each other, and only the tier's average moves onto the curve.
-export const HW_EFFICIENCY_BASE = tune('HW_EFFICIENCY_BASE', 4.55);
-export const HW_EFFICIENCY_GROWTH = tune('HW_EFFICIENCY_GROWTH', 1.0);
+export const HW_EFFICIENCY_GROWTH = tune('HW_EFFICIENCY_GROWTH', 1.10);
 
-if (HW_EFFICIENCY_GROWTH > 1.0001) {
+/** Geometric mean of compute per kW across a set of machines. */
+function effOf(units) {
+  return Math.exp(units.reduce((t, h) => t + Math.log(h.compute / h.power), 0) / units.length);
+}
+
+{
   const tiers = [...new Set(HARDWARE.map((h) => h.tier))].sort((a, b) => a - b);
+  // The first tier is the anchor, taken from the data rather than written
+  // down, so the opening is untouched by construction. It is the one part of
+  // the curve that was right: power is 86-98% of the ledger in the cupboard,
+  // and making the salvaged desktop draw more would wreck the one stretch of
+  // this game where electricity already mattered.
+  const base = effOf(HARDWARE.filter((h) => h.tier === tiers[0]));
   for (const tier of tiers) {
     const units = HARDWARE.filter((h) => h.tier === tier);
-    // Geometric mean, because efficiency spans decades and an arithmetic mean
-    // would let one dense outlier drag the whole tier.
-    const geo = Math.exp(units.reduce((t, h) => t + Math.log(h.compute / h.power), 0) / units.length);
-    const target = HW_EFFICIENCY_BASE * Math.pow(HW_EFFICIENCY_GROWTH, tier);
-    const factor = geo / target;
+    const target = base * Math.pow(HW_EFFICIENCY_GROWTH, tier - tiers[0]);
+    const factor = effOf(units) / target;
     if (!(factor > 0) || !Number.isFinite(factor)) continue;
     for (const h of units) {
       h.power = h.power * factor;
@@ -520,6 +527,8 @@ if (HW_EFFICIENCY_GROWTH > 1.0001) {
     }
   }
 }
+
+export const HW_EFFICIENCY_BASE = effOf(HARDWARE.filter((h) => h.tier === HARDWARE[0].tier));
 
 export const HARDWARE_BY_ID = Object.fromEntries(HARDWARE.map((h) => [h.id, h]));
 

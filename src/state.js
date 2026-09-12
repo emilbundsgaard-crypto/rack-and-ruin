@@ -25,11 +25,15 @@ export const WATER_RATE = 2.64;
  * to spend, and enough to coast: a player reported fifty thousand dollars two
  * minutes in, before they had understood a single system.
  *
- * This is what the guide actually costs, added up and nothing more. A power
- * strip, a rack and a box fan is $1,850; the first kilowatt of utility power
- * is $657; the technician it tells you to hire is $960 to sign. That is
- * $3,467 before a single machine, so the float covers the guide, leaves
- * enough for a rack's worth of salvaged desktops, and nothing else.
+ * This is what the guide actually costs, added up, plus a rack's worth of
+ * salvaged desktops and nothing else. A power strip, a rack and a box fan is
+ * $1,850; the first kilowatt of utility power is $657; the technician it
+ * tells you to hire is $960 to sign. That is $3,467 of asks, and the machines
+ * that have to earn them back come out of the rest.
+ *
+ * At $5,200 the guide finished but one walk in two ended it overdrawn, which
+ * is the one state in this game that stops you buying anything — a poor
+ * thing to hand somebody in the minute they stop being told what to do.
  *
  * Going lower was tried and measured: at $3,600 — before the signing cost
  * came down — the walk reached the eighth step and stopped, unable to afford
@@ -37,7 +41,7 @@ export const WATER_RATE = 2.64;
  * inside fifty days. A squeeze is the point; a guide you cannot finish is
  * not.
  */
-export const START_MONEY = tune('START_MONEY', 5_200);
+export const START_MONEY = tune('START_MONEY', 7_500);
 
 export function legacyLevel(state, id) {
   return state.legacy.perks[id] || 0;

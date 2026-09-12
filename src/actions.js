@@ -121,14 +121,21 @@ export function uninstall(state, d, tile, hardwareId, count, hooks) {
  * supply — will carry. Overfilling browns the whole site out, so the button
  * stops at the headroom rather than handing you a wrecked floor.
  *
- * It also stops short of your last dollar. The guide sends a new player
- * straight at this button with barely more money than the racks cost, and
- * spending all of it bought five machines drawing power with nothing signed
- * to pay for them: net minus three and a half a second from the first
- * moment, and the next thing the guide asks for — a kilowatt of utility
- * power — unaffordable. Two days of running costs held back is enough to
- * keep the site solvent long enough to earn, and at any real size it is
- * small enough not to be felt.
+ * It also stops short of your last dollar, and by more than it looks.
+ *
+ * The guide sends a new player at this button before it asks them to buy
+ * utility power and hire a technician, so a button that spends everything
+ * leaves them unable to do either: measured across five guided walks, every
+ * one of them finished the guide with between minus sixty and seven dollars
+ * in the bank, whatever the opening float was set to. Raising the float did
+ * not help, because this button simply took that too — the float is not the
+ * lever here, this is.
+ *
+ * So it keeps two fifths back. That is deliberately a lot, and it is the
+ * right shape: at the start it is the difference between a working site and
+ * an overdrawn one, and later it costs nothing, because the button is
+ * repeatable — press it twice and you have spent nearly two thirds, three
+ * times and it is seven eighths.
  */
 export function fillAll(state, d, hardwareId, hooks) {
   const hw = HARDWARE_BY_ID[hardwareId];
@@ -140,8 +147,8 @@ export function fillAll(state, d, hardwareId, hooks) {
   let budget = Math.max(0, (firm * 0.95) - d.actualDraw);
   let allowed = perUnitKW > 0 ? Math.floor(budget / perUnitKW) : Infinity;
   let placed = 0, stoppedOnPower = false;
-  const reserve = Math.min(state.money * 0.5,
-    Math.max(state.money * 0.15, d.costs * DAY_SECONDS * 2));
+  const reserve = Math.min(state.money * 0.6,
+    Math.max(state.money * 0.4, d.costs * DAY_SECONDS * 2));
   const spendable = Math.max(0, state.money - reserve);
 
   for (const k in state.tiles) {
