@@ -1253,10 +1253,28 @@ export const IDLE_DRAW = 0.45;
 export const MARKET_REF = 400;
 export const MARKET_ELASTICITY = 0.46;
 
+// The price falls towards a floor rather than towards nothing, and the floor
+// is the correction to the fix above.
+//
+// Decaying without limit looked right and produced a site that could not be
+// run at all: at 9.6 billion compute a unit fetched 2% of list, revenue was
+// $700M/s against $1.82B/s of upkeep, and the trace shows 350 game-days at
+// tier 8 sinking to minus thirty-eight trillion with nothing that could be
+// done about it. Revenue had been made sublinear in site size; upkeep is
+// still linear in it, so past a certain scale the two cross and never
+// uncross. That is not a hard late game, it is an unwinnable one.
+//
+// A real commodity price does not go to zero, it approaches marginal cost.
+// Past the knee the multiplier is essentially this floor, so revenue goes
+// back to scaling linearly — the same shape as the costs it has to cover —
+// and what the glut has permanently taken is the margin, not the business.
+export const MARKET_FLOOR = 0.12;
+
 /** What one unit of compute fetches, given how much of it you are selling. */
 export function sellPrice(state, sellable) {
   const glut = Math.max(1, (sellable || 0) / MARKET_REF);
-  return state.market.compute * Math.pow(glut, -MARKET_ELASTICITY);
+  const decay = MARKET_FLOOR + (1 - MARKET_FLOOR) * Math.pow(glut, -MARKET_ELASTICITY);
+  return state.market.compute * decay;
 }
 
 // Interest is charged per game day on whatever is outstanding. It is meant to

@@ -245,7 +245,12 @@ let t = 0, nextStep = 0, nextReport = 0, lastTier = -1, treeDone = false, objDon
 let dayTier9 = null, dayResearch = null, dayObjectives = null;
 let peakTier = 0, underAt = null, peakMoney = 0;
 const t0 = Date.now();
+// When the point of the run is "what day is it finished", carrying on past
+// the finish is the most expensive part of the measurement: a mature site is
+// hundreds of tiles and every step derives every one of them.
+const STOP_WHEN_DONE = process.env.BOT_STOP_DONE === '1';
 while (t < total) {
+  if (STOP_WHEN_DONE && dayResearch !== null && dayTier9 !== null && objDone) break;
   d = derive(s);
   tick(s, DT, d, quiet);
   t += DT;

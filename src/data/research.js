@@ -406,6 +406,35 @@ export const RESEARCH = [
     effects: { uptimeBonus: 0.012, penaltyMult: 0.85 }, desc: 'Higher baseline uptime, and fewer penalties when it slips anyway.' },
 ];
 
+/**
+ * How much dearer the tree is than it reads above, and why it is done here
+ * rather than by editing 174 numbers.
+ *
+ * Money in this game compounds: reinvest, earn more, reinvest more. Time to
+ * afford anything is therefore logarithmic in its price — make the whole
+ * facility ladder ten times dearer and the game gets about 20% longer, not
+ * ten times longer. Measured: tier 9 arrived on day 176.
+ *
+ * Research is the one system here that does not compound. Points accrue as
+ * compute to the power of 0.3, so doubling the site does not double the
+ * output — which means time to finish the tree is very nearly linear in what
+ * the tree costs, and it is the only lever in the game with that property.
+ * Making research the thing that gates the end is what buys the length.
+ *
+ * The knee leaves the opening exactly as it was. Nothing at or below it moves,
+ * so the guided start still researches its first node in the first minute;
+ * everything above it is stretched, and the stretch is all in the part of the
+ * game that was finishing in under an hour.
+ */
+export const RESEARCH_KNEE = 50;
+export const RESEARCH_SCALE = Number(process.env?.RR_RESEARCH_SCALE) || 26;
+
+for (const node of RESEARCH) {
+  if (node.cost > RESEARCH_KNEE) {
+    node.cost = Math.round(RESEARCH_KNEE + (node.cost - RESEARCH_KNEE) * RESEARCH_SCALE);
+  }
+}
+
 export const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map((r) => [r.id, r]));
 
 export const RESEARCH_CATS = [
