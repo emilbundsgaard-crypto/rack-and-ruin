@@ -5,7 +5,7 @@ import * as A from '../src/actions.js';
 import { HARDWARE } from '../src/data/hardware.js';
 import { BUILDINGS } from '../src/data/buildings.js';
 import { RESEARCH, available } from '../src/data/research.js';
-import { UPGRADES, OBJECTIVES, STAFF_BY_ID } from '../src/data/progression.js';
+import { UPGRADES, OBJECTIVES, STAFF_BY_ID, FACILITIES } from '../src/data/progression.js';
 import { fmt, money, fmtTime } from '../src/util.js';
 import { writeFileSync } from 'node:fs';
 
@@ -254,6 +254,49 @@ const STOP_WHEN_DONE = process.env.BOT_STOP_DONE === '1';
 // curve by re-running a twenty-hour game per candidate is not tuning, it is
 // waiting: with the trajectory on disk you can integrate any number of
 // candidate curves over the same run offline and only re-run to confirm.
+/**
+ * Is there anything to do with the money?
+ *
+ * "It goes ultra slowly around five or ten billion, as if you are not making
+ * any progress" is not a statement about income — income is fine there — it
+ * is a statement about there being nothing to spend it on. So count what a
+ * player could actually buy at this moment, and how long until the next thing
+ * unlocks. A run where money climbs while this sits at zero is a run that
+ * feels broken however healthy the ledger looks.
+ */
+function progress(s, d) {
+  const done = new Set(s.research.done);
+  const openNodes = RESEARCH.filter((n) => !done.has(n.id) && n.req.every((r) => done.has(r)));
+  const affordableNodes = openNodes.filter((n) => s.rp >= n.cost);
+  const cheapestNode = openNodes.reduce((a, n) => Math.min(a, n.cost), Infinity);
+  const rpGap = cheapestNode === Infinity ? null
+    : Math.max(0, (cheapestNode - s.rp) / Math.max(1e-9, d.rpPerSec)) / DAY_SECONDS;
+
+  const boughtU = new Set(s.upgrades || []);
+  const openU = UPGRADES.filter((u) => !boughtU.has(u.id));
+  const affordableU = openU.filter((u) => s.money >= u.cost * d.mods.buildCostMult);
+
+  const buildable = BUILDINGS.filter((b) => (!b.req || done.has(b.req))
+    && s.money >= b.cost * d.mods.buildCostMult).length;
+  const installable = HARDWARE.filter((h) => (!h.req || done.has(h.req))
+    && s.money >= h.cost * d.mods.hwCostMult).length;
+
+  const nextFac = FACILITIES[s.facility + 1];
+  return {
+    openNodes: openNodes.length,
+    affordableNodes: affordableNodes.length,
+    daysToNextNode: rpGap === null ? null : Math.round(rpGap),
+    affordableUpgrades: affordableU.length,
+    openUpgrades: openU.length,
+    buildable, installable,
+    // The one purchase that always means visible progress.
+    nextFacilityCost: nextFac ? nextFac.cost : null,
+    canAffordFacility: nextFac ? s.money >= nextFac.cost : null,
+    facilityRepShort: nextFac ? Math.max(0, nextFac.rep - s.reputation) : null,
+    freeTiles: (facilityOf(s).w * facilityOf(s).h) - Object.keys(s.tiles).length,
+  };
+}
+
 const TRACE = process.env.BOT_TRACE || '';
 const trace = [];
 let nextTrace = 0;
@@ -314,6 +357,7 @@ while (t < total) {
       sellPrice: d.sellPrice, listPrice: d.listPrice,
       rnd: s.research.done.length, contracts: s.contracts.active.length,
       eng: s.staff.eng, alloc: s.researchAlloc,
+      ...progress(s, d),
     });
   }
   if (t >= nextReport) {
@@ -336,6 +380,10 @@ while (t < total) {
       '| rpC%', String(Math.round(100 * d.rpCompute / Math.max(1e-9, d.rpCompute + d.rpFlat))).padStart(3),
       '| pwr%', String(Math.round(100 * (d.powerCost + d.fuelCost) / Math.max(1e-9, d.costs))).padStart(3),
       '| mkt%', String(Math.round(100 * d.sellPrice / Math.max(1e-9, d.listPrice))).padStart(3),
+      '| buy', (() => { const p = progress(s, d);
+        return String(p.affordableNodes) + '/' + p.openNodes + 'n '
+          + String(p.affordableUpgrades) + 'u '
+          + (p.daysToNextNode === null ? '-' : p.daysToNextNode + 'd'); })().padStart(14),
       '| rnd', String(s.research.done.length).padStart(2) + '/' + RESEARCH.length,
       '| rep', fmt(s.reputation).padStart(6),
       '| obj', String(s.objectives.done.length).padStart(2),

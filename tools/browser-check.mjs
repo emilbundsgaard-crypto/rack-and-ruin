@@ -2501,6 +2501,82 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   await page.close();
 }
 
+// ------------------------------ the tabs say where there is something to do
+//
+// "It should always feel like you can upgrade something." The counts that
+// answer that were spread across four panels, so the tabs carry them now: a
+// machine better than your best, a building that beats what is already on the
+// floor for its category, a research node you can pay for, a deal that fits.
+// What has to hold is that the badge appears when there is something and goes
+// away when there is not — a count that is always lit is wallpaper.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.waitForTimeout(400);
+  const read = () => page.evaluate(() => Object.fromEntries(
+    [...document.querySelectorAll('#tabs .tab')].map((t) => [t.dataset.tab,
+      parseInt(t.querySelector('.badge')?.textContent || '0', 10)])));
+  const fresh = await read();
+  // Broke, with nothing researched: nothing anywhere should be lit.
+  await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const app = window.__rr;
+    app.state.tutorial.skipped = true;
+    app.state.money = 0;
+    app.state.rp = 0;
+    app.d = sim.derive(app.state);
+    app.refreshLive();
+  });
+  await page.waitForTimeout(300);
+  const broke = await read();
+  // Rich, and with the best coolers the tree allows already on the floor: the
+  // Build count has to fall, because a count of things that do not beat what
+  // is already down there is wallpaper rather than a signal.
+  const rich = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const A = await import('/src/actions.js');
+    const B = await import('/src/data/buildings.js');
+    const R = await import('/src/data/research.js');
+    const app = window.__rr;
+    const s = app.state;
+    s.money = 1e9;
+    s.rp = 1e7;
+    for (const n of R.RESEARCH) s.research.done.push(n.id);
+    app.d = sim.derive(s);
+    const before = [...document.querySelectorAll('#tabs .tab')]
+      .reduce((n, t) => n + parseInt(t.querySelector('.badge')?.textContent || '0', 10), 0);
+    // The best of each category this money can buy, one of each.
+    const cap = (b) => Math.max(b.slots || 0, b.powerCap || 0, b.supplyKW || 0, b.coolCap || 0,
+      b.supplyWater || 0, b.net || 0, b.staff || 0, b.research || 0, b.repair || 0);
+    let x = 0;
+    for (const c of B.CATEGORIES) {
+      const best = B.BUILDINGS.filter((b) => b.cat === c.id && b.cost <= s.money)
+        .sort((a, b) => cap(b) - cap(a))[0];
+      if (!best) continue;
+      A.place(s, app.d, x++, 0, best.id, { log() {} });
+      app.d = sim.derive(s);
+    }
+    app.refreshLive();
+    return { before };
+  });
+  await page.waitForTimeout(300);
+  const stocked = await read();
+
+  const ok = fresh.build > 0 && fresh.upgrade > 0
+    && broke.build === 0 && broke.racks === 0 && broke.upgrade === 0
+    && stocked.build < fresh.build
+    && !fresh.ops && !fresh.site && !fresh.town;
+  if (ok) {
+    pass('the tabs say where there is something to do',
+      `fresh build ${fresh.build}, broke all clear, `
+      + `build ${stocked.build} once the best of each is on the floor`);
+  } else {
+    fail('the tabs say where there is something to do',
+      JSON.stringify({ fresh, broke, rich, stocked }));
+  }
+  await page.close();
+}
+
 await browser.close();
 
 if (errors.length) fail('no page errors', errors.slice(0, 4).join(' | '));

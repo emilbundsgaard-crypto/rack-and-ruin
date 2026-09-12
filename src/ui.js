@@ -159,6 +159,76 @@ function syncTabs() {
   }
 }
 
+/**
+ * How many new things are waiting behind each tab.
+ *
+ * A player said the middle of the game feels like no progress is being made
+ * and that it should always feel like something can be upgraded. Part of that
+ * was pacing and is fixed in the data; the rest is that the answer to "is
+ * there anything I can do right now" was spread across four panels. These are
+ * the counts, and they go on the tabs.
+ *
+ * Deliberately counting *new* things rather than affordable ones. Late on you
+ * can afford thousands of desk fans and that is not news; a machine better
+ * than your best, a building you have never placed, a node you can pay for
+ * and a deal that fits are.
+ */
+/** The one number that says how good a building is for its category. */
+function capability(b) {
+  return Math.max(b.slots || 0, b.powerCap || 0, b.supplyKW || 0, b.coolCap || 0,
+    b.supplyWater || 0, b.net || 0, b.staff || 0, b.research || 0, b.repair || 0);
+}
+
+function tabBadges(state, d) {
+  const done = new Set(state.research.done);
+  const bought = new Set(state.upgrades || []);
+  const money = state.money;
+
+  // For the floor, "new" means better than what is already down there, per
+  // category. Counting every affordable thing you have never placed makes the
+  // number meaningless by the second hour — there are always forty desk fans
+  // you could buy and have no reason to.
+  const bestPlaced = {};
+  for (const k in state.tiles) {
+    const b = BUILDINGS_BY_ID[state.tiles[k].b];
+    if (!b) continue;
+    bestPlaced[b.cat] = Math.max(bestPlaced[b.cat] || 0, capability(b));
+  }
+  const build = ALL_BUILDINGS.filter((b) => (!b.req || done.has(b.req))
+    && money >= b.cost * d.mods.buildCostMult
+    && capability(b) > (bestPlaced[b.cat] || 0)).length;
+
+  let bestOwned = 0;
+  for (const id in d.units) {
+    const hw = HARDWARE_BY_ID[id];
+    if (hw && d.units[id] > 0) bestOwned = Math.max(bestOwned, hw.compute);
+  }
+  const racks = HARDWARE.filter((h) => (!h.req || done.has(h.req)) && h.compute > bestOwned
+    && money >= h.cost * d.mods.hwCostMult).length;
+
+  const nodes = RESEARCH.filter((n) => !done.has(n.id) && available(n, state)
+    && state.rp >= n.cost).length;
+  const upg = UPGRADES.filter((u) => !bought.has(u.id)
+    && money >= u.cost * d.mods.buildCostMult).length;
+
+  const free = d.computeSellable - d.contractDemand;
+  const deals = state.contracts.offers.filter((o) => o.demand <= free).length;
+
+  return { build, racks, deals, upgrade: nodes + upg };
+}
+
+function paintBadges(state, d) {
+  const counts = tabBadges(state, d);
+  for (const b of document.querySelectorAll('#tabs .tab')) {
+    const n = counts[b.dataset.tab] || 0;
+    let dot = b.querySelector('.badge');
+    if (!n) { dot?.remove(); continue; }
+    if (!dot) { dot = el('span', 'badge'); b.append(dot); }
+    const text = n > 99 ? '99+' : String(n);
+    if (dot.textContent !== text) dot.textContent = text;
+  }
+}
+
 export function markDirty() { dirty = true; }
 export function setBuildCat(c) { buildCat = c; }
 export function currentTab() { return tab; }
@@ -474,6 +544,7 @@ export function refreshLive(state, d, dt) {
   renderEvents(state);
   renderObjective(state, d);
   renderInspector(state, d);
+  paintBadges(state, d);
   // Panels with live numbers refresh on their own slower clock: rebuilding a
   // list of buttons five times a second makes them feel like they miss clicks.
   liveClock += dt || 0;
@@ -1164,6 +1235,22 @@ function panelResearch(state, d) {
   kv.append(el('div', 'k', 'from deals and labs'), el('div', 'v', fmt(d.rpFlat) + '/s'));
   kv.append(el('div', 'k', 'Compute on R&D'), el('div', 'v', fmt(d.computeResearch)));
   kv.append(el('div', 'k', 'Completed'), el('div', 'v', state.research.done.length + ' / ' + RESEARCH.length));
+
+  // What is next, and when. A long wait with nothing to look at is what "as
+  // if you are not making any progress" feels like from the inside, and the
+  // wait is the same length either way — this at least makes it a countdown
+  // rather than a mystery. The estimate is in real seconds at the speed the
+  // game is running, because that is the number the player is living in.
+  const openNodes = RESEARCH.filter((n) => !state.research.done.includes(n.id) && available(n, state));
+  const next = openNodes.filter((n) => state.rp < n.cost).sort((a, b) => a.cost - b.cost)[0];
+  if (next) {
+    const speed = Math.max(1, state.settings.speed || 1);
+    const wait = (next.cost - state.rp) / Math.max(1e-9, d.rpPerSec) / speed;
+    const when = d.rpPerSec > 0 ? fmtTime(wait)
+      : d.computeResearch > 0 ? 'stalled' : 'nothing is on R&D';
+    kv.append(el('div', 'k', 'Next unlock'),
+      el('div', 'v', next.name + ' — ' + fmt(next.cost - state.rp) + ' pts, ' + when));
+  }
   head.append(kv);
 
   // What doubling the allocation is actually worth, spelled out. The curve is

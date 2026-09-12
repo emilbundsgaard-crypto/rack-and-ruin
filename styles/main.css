@@ -1016,3 +1016,23 @@ button:focus:not(:focus-visible) { outline: none; }
 .whycost { font: 600 13px var(--mono); color: var(--bad); text-align: right; }
 .whytext { font-size: 13px; line-height: 1.55; color: var(--dim); }
 .whytext b { color: var(--fg); font-weight: 600; }
+
+/* A tab with something waiting behind it.
+   "It should always feel like you can upgrade something" — and the counts a
+   player needs for that were spread across four panels, so knowing whether
+   there was anything to do meant opening all of them. The dot carries the
+   number of new things affordable behind that tab: a machine better than the
+   best one you own, a building you have never placed, a research node you can
+   pay for, a deal that fits. Shape as well as colour, so it reads without
+   relying on the accent being visible. */
+/* Absolutely positioned, because it must not cost the row any width. The tab
+   row has a check on it that it never wraps — seven tabs at 1500px have very
+   little slack, and an inline badge put it onto two lines immediately. */
+.tab { position: relative; }
+.tab .badge {
+  position: absolute; top: 1px; right: 0; padding: 0 3px; min-width: 12px;
+  font-size: 9px; font-weight: 700; line-height: 12px; text-align: center;
+  border-radius: 6px; background: var(--acc); color: #17120c;
+  pointer-events: none;
+}
+.tab.on .badge { background: var(--fg); }

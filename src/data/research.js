@@ -1185,29 +1185,50 @@ export const RESEARCH = [
  * game that was finishing in under an hour.
  */
 export const RESEARCH_KNEE = tune('RESEARCH_KNEE', 50);
-export const RESEARCH_SCALE = tune('RESEARCH_SCALE', 196);
 
-// And how sharply the tree steepens as you go down it.
-//
-// A flat multiplier was right while the research rate barely moved: at an
-// exponent of 0.30 a hundred times the compute bought five times the points,
-// so a node deep in the tree was reached at roughly the rate a node near the
-// top was. Making dedicated compute a real lever breaks that — the rate at
-// the end of a run is now many times the rate at the start — and a flat
-// multiplier would leave the last third of the tree falling over in an hour
-// while the first third crawled. The exponent here steepens the tree to
-// match, so the wall-clock cost of a node stays roughly level the whole way
-// down and both ends of the game keep their pace.
-//
-// Nothing at or below the knee is touched: those are the nodes the guide
-// walks you through, and they are the one part of the curve that was right.
-export const RESEARCH_GAMMA = tune('RESEARCH_GAMMA', 1.40);
+/**
+ * How much dearer each node is than the one before it, in rank order.
+ *
+ * This replaces a multiplier and an exponent applied to the hand-written
+ * costs, and the reason is a player report: the opening is fine, and then
+ * "around five or ten billion it goes ultra slowly, as if you are not making
+ * any progress". They were right, and the trace says exactly how right.
+ * Nodes were arriving one every 16 days at a quarter of the way in, one every
+ * 33 days at a third, one every 45 days at two thirds — which at 10x speed is
+ * one unlock every four and a half real minutes, for hours — and then the
+ * last two hundred and fifty nodes fell over in five hundred days because the
+ * rate had run away from the costs. Both ends were wrong and in opposite
+ * directions.
+ *
+ * The fix has to work with the shape of this tree, which is not a chain:
+ * 331 of the 545 nodes have no prerequisite at all, and their costs span
+ * three points to three hundred and sixty million. The gating here is price,
+ * not the graph, so price rank is what "how far in" actually means — and
+ * re-spacing by rank keeps every ordering decision in the data exactly as
+ * written while replacing the spacing, which is the part that was wrong.
+ *
+ * The growth rate comes from the measurement rather than from taste. The rate
+ * goes as compute^0.55, compute per machine roughly quadruples per hardware
+ * tier, and there are eighteen tiers across 545 nodes — so if nodes arrive at
+ * a steady cadence the rate rises about 2.6% per node, and a cost curve that
+ * rises with it holds the cadence flat. That is the whole target: a node
+ * every ten days or so, start to finish, so there is always something about
+ * to land.
+ *
+ * Nothing at or below the knee moves. Those are the nodes the guide walks you
+ * through in the first minute, and they were the one part of the curve that
+ * was right.
+ */
+export const RESEARCH_GROWTH = tune('RESEARCH_GROWTH', 1.0257);
+export const RESEARCH_FIRST = tune('RESEARCH_FIRST', 400);
 
-for (const node of RESEARCH) {
-  if (node.cost > RESEARCH_KNEE) {
-    const over = node.cost - RESEARCH_KNEE;
-    node.cost = Math.round(RESEARCH_KNEE + Math.pow(over, RESEARCH_GAMMA) * RESEARCH_SCALE);
-  }
+{
+  // Rank by the cost as written, so the designer's ordering survives intact.
+  const scaled = RESEARCH.filter((n) => n.cost > RESEARCH_KNEE)
+    .sort((a, b) => a.cost - b.cost || (a.id < b.id ? -1 : 1));
+  scaled.forEach((node, rank) => {
+    node.cost = Math.round(RESEARCH_FIRST * Math.pow(RESEARCH_GROWTH, rank));
+  });
 }
 
 export const RESEARCH_BY_ID = Object.fromEntries(RESEARCH.map((r) => [r.id, r]));
