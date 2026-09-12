@@ -943,7 +943,13 @@ async function clickTile(page, gx, gy) {
     // Every cause at once: units down, power short, more promised than made.
     const tile = s.tiles['2,2'];
     if (tile && tile.units) tile.units.forEach((u, i) => { if (i % 3 === 0) u.broken = true; });
-    s.gridPower = Math.max(1, Math.round(app.d.actualDraw * 0.55));
+    // Starve it properly rather than by a fixed fraction. With the whole tree
+    // bought — 545 nodes now, including ten rungs of supply reinforcement — a
+    // 55% cut was no longer a shortage at all, and the check went red while the
+    // report was working perfectly. Tighten until the site is actually short.
+    for (let i = 0; i < 40 && sim.derive(s).powerFactor > 0.75; i++) {
+      s.gridPower = Math.max(0.5, s.gridPower * 0.6);
+    }
     s.staff.tech = 1;
     s.contracts.active = [{
       cid: 'w1', tid: s.contracts.offers[0]?.tid || 'c_backup', name: 'Overnight batch',
@@ -966,12 +972,16 @@ async function clickTile(page, gx, gy) {
       tip: btn ? btn.dataset.tip : '',
       reasons: report.reasons.map((x) => ({ lost: x.lost, what: x.what, fix: x.fix })),
       ordered: report.reasons.every((x, i, a) => i === 0 || a[i - 1].lost >= x.lost),
+      // What the setup actually achieved, so a failure says whether the report
+      // is wrong or the scenario never happened.
+      staged: { powerFactor: app.d.powerFactor, broken: app.d.brokenTotal,
+        oversold: app.d.deliverRatio },
     };
   });
   const kinds = r.reasons.map((x) => x.what).join(' ');
   if (!r.button) fail('a deal that is short says what is short of it', 'no ? on a breaching deal');
   else if (r.reasons.length < 3) fail('a deal that is short says what is short of it',
-    `only ${r.reasons.length} reason(s) with three things wrong`);
+    `only ${r.reasons.length} reason(s); staged ${JSON.stringify(r.staged)}`);
   else if (!r.ordered) fail('a deal that is short says what is short of it', 'not ranked by cost');
   else if (!/Oversold/.test(kinds)) fail('a deal that is short says what is short of it', 'it misses being oversold');
   else if (!/Power is meeting/.test(kinds)) fail('a deal that is short says what is short of it', 'it misses the power shortfall');
