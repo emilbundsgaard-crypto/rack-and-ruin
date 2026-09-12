@@ -100,3 +100,23 @@ export function fill(parent, ...nodes) {
   parent.replaceChildren(...nodes.flat().filter(Boolean));
   return parent;
 }
+
+/**
+ * A balance number that a sweep can override, and that a browser never reads
+ * from the environment.
+ *
+ * There is a scar behind the `typeof` here. An earlier pass wrote
+ * `process.env.RR_RESEARCH_SCALE` straight into a data module. `process` does
+ * not exist in a browser and the reference throws before the optional chain
+ * can save it, so the game did not boot at all — while every measurement
+ * taken in Node stayed perfectly valid, which is the worst possible
+ * combination. Every environment read in this codebase goes through here.
+ */
+export function tune(name, fallback) {
+  const env = (typeof process !== 'undefined' && process && process.env) ? process.env : null;
+  if (!env) return fallback;
+  const raw = env['RR_' + name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}

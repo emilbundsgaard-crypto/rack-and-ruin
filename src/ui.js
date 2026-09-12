@@ -1156,18 +1156,28 @@ function panelResearch(state, d) {
   const kv = el('div', 'kv');
   kv.append(el('div', 'k', 'Points'), el('div', 'v', fmt(state.rp)));
   kv.append(el('div', 'k', 'Rate'), el('div', 'v', fmt(d.rpPerSec) + '/s'));
+  // Where the rate comes from, because a player who could not see this
+  // reasonably concluded the whole thing was broken: their dedicated compute
+  // was earning a fraction of what one signed deal paid, and the panel showed
+  // a single number with no way to tell which half was which.
+  kv.append(el('div', 'k', 'from compute'), el('div', 'v', fmt(d.rpCompute) + '/s'));
+  kv.append(el('div', 'k', 'from deals and labs'), el('div', 'v', fmt(d.rpFlat) + '/s'));
   kv.append(el('div', 'k', 'Compute on R&D'), el('div', 'v', fmt(d.computeResearch)));
   kv.append(el('div', 'k', 'Completed'), el('div', 'v', state.research.done.length + ' / ' + RESEARCH.length));
   head.append(kv);
 
-  const label = el('div', 'hint', 'Research allocation: ' + Math.round(state.researchAlloc * 100)
-    + '% of compute. The rest is what you can sell.');
+  // What doubling the allocation is actually worth, spelled out. The curve is
+  // a power law, so the honest answer is a percentage rather than "twice".
+  const perDouble = Math.round((Math.pow(2, SIM.RESEARCH_EXP) - 1) * 100);
+  const allocText = (pct) => 'Research allocation: ' + pct + '% of compute. The rest is what you '
+    + 'can sell. Doubling it is worth about ' + perDouble + '% more points.';
+  const label = el('div', 'hint', allocText(Math.round(state.researchAlloc * 100)));
   const slider = el('input');
   slider.type = 'range'; slider.min = '0'; slider.max = '60'; slider.step = '1';
   slider.value = String(Math.round(state.researchAlloc * 100));
   slider.oninput = () => {
     state.researchAlloc = Number(slider.value) / 100;
-    label.textContent = 'Research allocation: ' + slider.value + '% of compute. The rest is what you can sell.';
+    label.textContent = allocText(slider.value);
   };
   head.append(label, slider);
   out.push(sec('Research', head));
@@ -1381,6 +1391,12 @@ function panelUtilities(state, d) {
   row('On site', fmt(d.ownSupply) + ' kW');
   row('Headroom', fmt(d.supplyKW - d.actualDraw) + ' kW');
   row('Electricity price', '$' + state.market.power.toFixed(3) + ' /kWh');
+  // The tariff is the reason the bill is not price x kW, and hiding it makes
+  // the whole Electricity card read as arithmetic that does not add up.
+  const tariff = SIM.powerTariff(d.gridUsed);
+  if (tariff > 1.005) {
+    row('Industrial tariff', '\u00d7' + tariff.toFixed(1) + ' at ' + fmt(d.gridUsed) + ' kW');
+  }
   row('Power bill', rate(d.powerCost));
   row('Fuel bill', rate(d.fuelCost));
   if ((d.counts.rideSeconds || 0) > 0) row('UPS charge', Math.round(state.upsCharge * 100) + '%');
@@ -2232,9 +2248,13 @@ function applyAim(state, step) {
   clearAim();
   let sels = [];
   try { sels = step.aim(state, app.view) || []; } catch (err) { sels = []; }
+  // The list is a preference order, not a set: the first selector that finds
+  // something is the one that gets the ring. A step can then ask for the
+  // affordable button and fall back to the greyed-out one without lighting up
+  // two things at once.
   for (const sel of sels) {
     const n = document.querySelector(sel);
-    if (n) { n.classList.add('tut-target'); aimed.push(n); }
+    if (n) { n.classList.add('tut-target'); aimed.push(n); break; }
   }
 }
 

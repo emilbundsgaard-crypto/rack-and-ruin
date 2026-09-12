@@ -1,7 +1,7 @@
 // The whole simulation: modifiers, the per-tick derived snapshot of the site,
 // and the state mutations that follow from it.
 
-import { clamp, sum, noise, weightedPick, fmt as fmtShort, fmtTime, money } from './util.js';
+import { clamp, sum, noise, weightedPick, fmt as fmtShort, fmtTime, money, tune} from './util.js';
 
 // Log it, but do not pop a toast for it: these are all already on screen
 // somewhere the player is looking — the event strip, the Deals tab, the
@@ -362,7 +362,8 @@ export function derive(state) {
       * (r.used > 0 ? IDLE_DRAW + (1 - IDLE_DRAW) * r.throttle : 1))
     + (coolDraw + miscDraw) * powerFactor;
   const gridUsed = clamp(billedDraw - ownSupply * mods.powerSupplyMult, 0, gridSupply);
-  const powerCost = gridUsed * state.market.power * mods.gridCostMult * ENERGY_RATE;
+  const powerCost = gridUsed * state.market.power * mods.gridCostMult * ENERGY_RATE
+    * powerTariff(gridUsed);
   const waterPrice = waterSupply > 0 ? waterCost / waterSupply : 0;
   const waterUsed = Math.min(waterDemand, waterAvail);
   const waterBill = waterUsed * waterPrice * mods.waterCostMult * WATER_RATE;
@@ -848,7 +849,7 @@ export function makeOffer(state, d, seedIndex) {
   const scale = band;
   const demand = Math.max(2, free * t.size * scale * d.mods.offerSize);
   const repBonus = 1 + Math.min(1.5, state.reputation / 220);
-  const pay = demand * sellPrice(state, d.computeSellable) * t.pay * repBonus;
+  const pay = demand * sellPrice(state, d.computeSellable) * t.pay * repBonus * CONTRACT_PAY;
   return {
     cid: state.contracts.seq++,
     tid: t.id,
@@ -1053,6 +1054,27 @@ function contractsTick(state, d, days, hooks) {
     // offer in sooner.
     const keen = state.contracts.offers.length < 3 || d.freeCompute > d.computeSellable * 0.2;
     state.contracts.nextOffer = (keen ? 0.7 : 1.9) + Math.random() * 1.2;
+  }
+
+  // There is always something you can sign.
+  //
+  // An offer is sized off the compute you had when it was posted, so a site
+  // that has not been built yet — or one that has just shrunk to pay a bill —
+  // can find every offer on the board out of reach with no way back: nothing
+  // signable means nothing earning means nothing buyable. The guide's fifth
+  // step stalled on exactly this, with five salvaged desktops on the floor
+  // and every offer demanding seven units. Rather than post another offer and
+  // hope, the smallest one on the board is re-cut to a size this site can
+  // serve, at the same price per unit.
+  if (!state.contracts.active.length && state.contracts.offers.length) {
+    const room = Math.max(2, d.computeSellable);
+    if (!state.contracts.offers.some((o) => o.demand <= room)) {
+      const smallest = state.contracts.offers.reduce((a, b) => (b.demand < a.demand ? b : a));
+      const shrink = (room * 0.85) / smallest.demand;
+      smallest.demand *= shrink;
+      smallest.pay *= shrink;
+      smallest.net *= shrink;
+    }
   }
 
   // Optional hands-off signing, for when placing servers is the fun part.
@@ -1346,6 +1368,39 @@ export function floatCompany(state, d, hooks) {
   return null;
 }
 
+// Everything a deal pays, in one number.
+//
+// A player reading the ledger said contracts pay "a little too much", and the
+// instrument says considerably more than a little: a machine pays for itself
+// in under three game-days at every tier of the game, which is why money
+// doubles every couple of days from the first minute and why no cost line can
+// ever matter. This does not fix that on its own — the payback ratio is set
+// by hardware price against contract pay and both need moving — but it is the
+// side the player can see, and trimming it lengthens the opening without
+// touching the shape of anything else.
+export const CONTRACT_PAY = tune('CONTRACT_PAY', 0.62);
+
+// The utility does not sell 200 MW at the domestic rate.
+//
+// Power was 90% of the ledger in the cupboard and 1% of it by the third
+// facility, which is the opposite of how a datacentre works. The cause is the
+// hardware ladder: compute per kW improves 20,000x from the first salvaged
+// desktop to the last machine, so draw stays almost flat while revenue climbs
+// with compute, and the electricity line shrinks to a rounding error.
+//
+// A rising tariff is the honest half of the answer and the half that is true
+// of real plant: past a few tens of kW you are an industrial customer, and
+// past a few MW you are negotiating with a grid that has to build something
+// for you. Below TARIFF_REF nothing changes at all, because the opening is
+// already mostly an electricity bill.
+export const TARIFF_REF = tune('TARIFF_REF', 40);
+export const TARIFF_EXP = tune('TARIFF_EXP', 0.42);
+
+/** The multiple on the unit price at this draw. 1 up to TARIFF_REF kW. */
+export function powerTariff(kW) {
+  return Math.pow(Math.max(1, (kW || 0) / TARIFF_REF), TARIFF_EXP);
+}
+
 // What dedicated compute earns you in research points per second.
 //
 // The exponent is the important number, and it is the one that was wrong. At
@@ -1364,8 +1419,8 @@ export function floatCompany(state, d, hooks) {
 // wall-clock cost of a node stays roughly flat across the whole run instead
 // of ballooning 200x by the end. Doubling the allocation is then worth a
 // visible 46% more points, which is what the slider ought to feel like.
-export const RESEARCH_EXP = 0.30;
-export const RESEARCH_RATE = 0.075;
+export const RESEARCH_EXP = tune('RESEARCH_EXP', 0.55);
+export const RESEARCH_RATE = tune('RESEARCH_RATE', 0.075);
 
 // What a rack draws with its machines idle, as a share of nameplate. Real
 // servers are nowhere near proportional: half the peak draw is there the
@@ -1390,8 +1445,15 @@ export const IDLE_DRAW = 0.45;
 //
 // Nothing below MARKET_REF is touched at all: the opening is fragile enough
 // and it is not where the problem is.
-export const MARKET_REF = 400;
-export const MARKET_ELASTICITY = 0.46;
+//
+// The elasticity was halved after a player watched the rate collapse faster
+// than the site grew: at 189,000 units a unit already fetched 17% of list,
+// and the panel reads as a punishment for building rather than a market
+// finding a price. Halving the exponent halves the slope in log-log, which is
+// literally "falls half as fast" — the same 189,000 units now fetch 33%, and
+// the knee arrives at roughly the square of the compute it used to.
+export const MARKET_REF = tune('MARKET_REF', 400);
+export const MARKET_ELASTICITY = tune('MARKET_ELASTICITY', 0.23);
 
 // The price falls towards a floor rather than towards nothing, and the floor
 // is the correction to the fix above.
@@ -1408,7 +1470,7 @@ export const MARKET_ELASTICITY = 0.46;
 // Past the knee the multiplier is essentially this floor, so revenue goes
 // back to scaling linearly — the same shape as the costs it has to cover —
 // and what the glut has permanently taken is the margin, not the business.
-export const MARKET_FLOOR = 0.12;
+export const MARKET_FLOOR = tune('MARKET_FLOOR', 0.12);
 
 /** What one unit of compute fetches, given how much of it you are selling. */
 export function sellPrice(state, sellable) {

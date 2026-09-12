@@ -41,7 +41,7 @@ async function clickTile(page, gx, gy) {
   const page = await newPage();
   await page.click('text=Start in the cupboard');
   await page.waitForTimeout(500);
-  await page.evaluate(() => { window.__rr.state.settings.speed = 5; });
+  await page.evaluate(() => { window.__rr.state.settings.speed = 10; });
   const seen = [];
   const step = () => page.evaluate(() => ({
     n: window.__rr.state.tutorial.step,
@@ -54,7 +54,12 @@ async function clickTile(page, gx, gy) {
   // let each step decide for itself when it is satisfied.
   const spots = [[2, 2], [3, 2], [3, 3]];
   let placed = 0;
-  for (let guard = 0; guard < 30; guard++) {
+  // Patient, not fast. The opening float only just covers what the guide asks
+  // for, so a step can legitimately be waiting on a day of contract income —
+  // the first kilowatt of utility power has to be earned. What this still
+  // catches is a guide that cannot be finished at all, which is what a ring on
+  // a button no amount of waiting will enable looks like.
+  for (let guard = 0; guard < 220; guard++) {
     const st = await step();
     if (st.n >= 10) break;
     if (seen.length === st.n) seen.push(st);
@@ -62,6 +67,21 @@ async function clickTile(page, gx, gy) {
     if (!target) { await page.waitForTimeout(600); continue; }
     const id = await page.evaluate((n) => n.id, target);
     const tag = await page.evaluate((n) => n.tagName, target);
+    if (await page.evaluate((n) => n.disabled === true, target)) {
+      // A minimally competent player: if there is no deal running, sign one.
+      // Machines draw power whether or not anything is paying for them, so a
+      // walk that only ever clicks the ring is poorer than any real player and
+      // would report the guide broken for its own reason.
+      await page.evaluate(async () => {
+        const sim = await import('/src/sim.js');
+        const app = window.__rr;
+        if (app.state.contracts.active.length) return;
+        const o = app.state.contracts.offers.find((x) => x.demand <= app.d.computeSellable);
+        if (o) sim.signContract(app.state, app.d, o, { log() {} });
+      });
+      await page.waitForTimeout(900);
+      continue;
+    }
     if (id === 'canvaswrap') {
       const spot = spots[Math.min(placed++, spots.length - 1)];
       await clickTile(page, spot[0], spot[1]);
@@ -451,6 +471,7 @@ async function clickTile(page, gx, gy) {
     const s = S.newGame();
     return {
       start: s.money,
+      startMoney: S.START_MONEY,
       payCash: P.OBJECTIVES.filter((o) => o.reward && o.reward.money).length,
       payPoints: P.OBJECTIVES.filter((o) => o.reward && o.reward.rp).length,
       total: P.OBJECTIVES.length,
@@ -460,7 +481,11 @@ async function clickTile(page, gx, gy) {
   // Not one of them may hand out money. Paying a lump sum for doing the thing
   // the game just told you to do is paying the player to read the tutorial,
   // and it stops the balance in the corner being a reading of the site.
-  if (r.start === 10_000 && r.payCash === 0 && r.achCash === 0 && r.payPoints === r.total) {
+  // The starting float is a balance number and is read from state.js rather
+  // than pinned here: what this check is for is that nothing hands you a lump
+  // sum for doing what you were told, not what the opening float happens to
+  // be this month.
+  if (r.start === r.startMoney && r.payCash === 0 && r.achCash === 0 && r.payPoints === r.total) {
     pass('milestones pay points, never cash', r.total + ' objectives, all in RP');
   } else {
     fail('milestones pay points, never cash', JSON.stringify(r));
@@ -2016,8 +2041,16 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   // The opening is fragile and is not where the problem was, so nothing at or
   // below the reference may be touched at all.
   const earlyUntouched = curve.small === 1 && curve.atRef === 1;
-  // It has to bite: a thousandfold site cannot still be near list.
-  const bites = curve.x1e3 < 0.25;
+  // It has to bite: a thousandfold site cannot still be near list, and a
+  // millionfold one has to be near the floor.
+  //
+  // The thresholds were halved with the elasticity, after a player watched the
+  // rate reach 17% of list at 189,000 units and read it as a punishment for
+  // building rather than a market clearing. What is under test is that the
+  // decay is real and arrives, not how steep it is — the steepness is a
+  // tuning number and this is the assertion that must not move every time it
+  // does.
+  const bites = curve.x1e3 < 0.45 && curve.x1e6 < 0.2;
   // And it must never fall through the floor, at any size at all. Decaying
   // towards nothing is what made the late game unwinnable: revenue went
   // sublinear in site size while upkeep stayed linear, the two crossed, and

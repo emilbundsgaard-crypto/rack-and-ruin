@@ -6,6 +6,8 @@
 //   researchMult priceMult repMult gridCostMult fuelMult upkeepMult
 //   offerSize boardSize staffCap offlineHours uptimeBonus rackSlotBonus
 
+import { tune } from '../util.js';
+
 export const RESEARCH = [
   // ============================================================== hardware
   { id: 'rnd_rails', name: 'Rack rails', cat: 'hardware', cost: 4, req: [],
@@ -1182,17 +1184,29 @@ export const RESEARCH = [
  * everything above it is stretched, and the stretch is all in the part of the
  * game that was finishing in under an hour.
  */
-export const RESEARCH_KNEE = 50;
-// A plain constant, not an environment override. It was one while I was
-// searching for the right value, and `process` does not exist in a browser:
-// referencing it threw before optional chaining could help, and the game did
-// not boot at all. The check suite caught it by failing to find the start
-// button, which is the bluntest possible way to be told.
-export const RESEARCH_SCALE = 200;
+export const RESEARCH_KNEE = tune('RESEARCH_KNEE', 50);
+export const RESEARCH_SCALE = tune('RESEARCH_SCALE', 196);
+
+// And how sharply the tree steepens as you go down it.
+//
+// A flat multiplier was right while the research rate barely moved: at an
+// exponent of 0.30 a hundred times the compute bought five times the points,
+// so a node deep in the tree was reached at roughly the rate a node near the
+// top was. Making dedicated compute a real lever breaks that — the rate at
+// the end of a run is now many times the rate at the start — and a flat
+// multiplier would leave the last third of the tree falling over in an hour
+// while the first third crawled. The exponent here steepens the tree to
+// match, so the wall-clock cost of a node stays roughly level the whole way
+// down and both ends of the game keep their pace.
+//
+// Nothing at or below the knee is touched: those are the nodes the guide
+// walks you through, and they are the one part of the curve that was right.
+export const RESEARCH_GAMMA = tune('RESEARCH_GAMMA', 1.40);
 
 for (const node of RESEARCH) {
   if (node.cost > RESEARCH_KNEE) {
-    node.cost = Math.round(RESEARCH_KNEE + (node.cost - RESEARCH_KNEE) * RESEARCH_SCALE);
+    const over = node.cost - RESEARCH_KNEE;
+    node.cost = Math.round(RESEARCH_KNEE + Math.pow(over, RESEARCH_GAMMA) * RESEARCH_SCALE);
   }
 }
 

@@ -57,9 +57,13 @@ export const STEPS = [
     title: 'Buy more electricity',
     body: 'One socket will not run a datacentre. On the Running tab, buy more from the utility — '
       + 'it is the cheapest power there is, and everything you build needs it.',
-    note: 'When you run out, servers throttle and deals start slipping.',
+    note: 'If every option is greyed out you cannot afford one yet. Let the deal pay out '
+      + 'for a day and come back — earning it is the game.',
     tab: 'ops',
-    aim: () => ['[data-grid]'],
+    // Ring one you can actually press, if there is one. Ringing a greyed-out
+    // button with no explanation is how a guide reads as broken rather than as
+    // a site that has not earned its first kilowatt yet.
+    aim: () => ['[data-grid]:not(:disabled)', '[data-grid]'],
     done: (d) => d.state.gridPower > 6.001,
   },
   {

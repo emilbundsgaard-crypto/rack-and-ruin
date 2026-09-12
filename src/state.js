@@ -1,4 +1,5 @@
 import { FACILITIES, LEGACY_BY_ID } from './data/progression.js';
+import { tune } from './util.js';
 
 export const SAVE_KEY = 'rack-and-ruin-save-v1';
 export const SAVE_VERSION = 1;
@@ -17,6 +18,26 @@ export const ENERGY_RATE = 9.6;
 /** $ per litre per real second, at a price of $1/m³. */
 export const WATER_RATE = 2.64;
 
+/**
+ * What you start with.
+ *
+ * It used to be ten thousand, which is roughly twice what the guide asks you
+ * to spend, and enough to coast: a player reported fifty thousand dollars two
+ * minutes in, before they had understood a single system.
+ *
+ * This is what the guide actually costs, added up and nothing more. A power
+ * strip, a rack and a box fan is $1,850; the first kilowatt of utility power
+ * is $657; the technician it tells you to hire is $2,880 to sign. That is
+ * $5,387 before a single machine, so the float covers the guide and the
+ * machines have to come out of what the site earns.
+ *
+ * Going lower was tried and measured: at $3,600 the walk reaches the eighth
+ * step and stops, unable to afford the technician the guide is pointing at,
+ * and two of eight bot runs died inside fifty days. A squeeze is the point;
+ * a guide you cannot finish is not.
+ */
+export const START_MONEY = tune('START_MONEY', 5_200);
+
 export function legacyLevel(state, id) {
   return state.legacy.perks[id] || 0;
 }
@@ -34,7 +55,7 @@ export function newGame(legacy) {
     playtime: 0,
     day: 0,
 
-    money: 10_000 * Math.pow(LEGACY_BY_ID.l_start.per, seedLevels),
+    money: START_MONEY * Math.pow(LEGACY_BY_ID.l_start.per, seedLevels),
     lifetimeEarnings: 0,
     reputation: repStart,
     repPeak: repStart,
