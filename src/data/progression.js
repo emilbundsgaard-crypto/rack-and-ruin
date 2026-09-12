@@ -1,6 +1,24 @@
 // Facility tiers, staff, cash upgrades, objectives, achievements and the
 // legacy (prestige) shop.
 
+/**
+ * How much harder each site is to earn than the numbers below read.
+ *
+ * The ladder used to be gated on money, and money compounds, so the whole of
+ * it went past in six hundred days while the research tree took two thousand
+ * — a game shaped like a sprint followed by a long wait. Reputation is the
+ * other slow quantity in this game: it arrives per completed contract, and a
+ * contract takes a fixed nine to thirty days however large the site is, so it
+ * grows with how much work you can run at once rather than compounding on
+ * itself.
+ *
+ * Scaling the gates therefore stretches the ladder across the run instead of
+ * stacking it at the front. It delays rather than blocks: contracts keep
+ * completing at any tier, so the reputation always comes, it just takes the
+ * time it takes.
+ */
+export const FACILITY_REP_SCALE = 5;
+
 export const FACILITIES = [
   { id: 0, name: 'Broom cupboard', w: 7, h: 5, cost: 0, ambient: 24, gridCap: 24,
     desc: 'A cupboard behind the shop with one 13 A socket.' },
@@ -23,6 +41,10 @@ export const FACILITIES = [
   { id: 9, name: 'Continental site', w: 33, h: 20, cost: 9_000_000_000_000, ambient: 19, rep: 480, gridCap: 6_000_000,
     desc: 'People give directions relative to your cooling towers.' },
 ];
+
+for (const f of FACILITIES) {
+  if (f.rep) f.rep = Math.round(f.rep * FACILITY_REP_SCALE);
+}
 
 export const STAFF = [
   { id: 'tech', name: 'Technician', salary: 240, color: '#e8b44a',

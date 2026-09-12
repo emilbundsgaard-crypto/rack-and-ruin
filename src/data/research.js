@@ -427,7 +427,12 @@ export const RESEARCH = [
  * game that was finishing in under an hour.
  */
 export const RESEARCH_KNEE = 50;
-export const RESEARCH_SCALE = Number(process.env?.RR_RESEARCH_SCALE) || 26;
+// A plain constant, not an environment override. It was one while I was
+// searching for the right value, and `process` does not exist in a browser:
+// referencing it threw before optional chaining could help, and the game did
+// not boot at all. The check suite caught it by failing to find the start
+// button, which is the bluntest possible way to be told.
+export const RESEARCH_SCALE = 200;
 
 for (const node of RESEARCH) {
   if (node.cost > RESEARCH_KNEE) {

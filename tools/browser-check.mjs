@@ -1735,27 +1735,37 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
     const s = window.__rr.state;
     const at = (c) => sim.sellPrice(s, c) / s.market.compute;
     return {
-      ref: sim.MARKET_REF,
+      ref: sim.MARKET_REF, floor: sim.MARKET_FLOOR,
       small: at(sim.MARKET_REF * 0.5),
       atRef: at(sim.MARKET_REF),
       x1e3: at(sim.MARKET_REF * 1e3),
       x1e6: at(sim.MARKET_REF * 1e6),
       x1e9: at(sim.MARKET_REF * 1e9),
+      huge: at(sim.MARKET_REF * 1e15),
     };
   });
   const monotone = curve.atRef > curve.x1e3 && curve.x1e3 > curve.x1e6
-    && curve.x1e6 > curve.x1e9;
+    && curve.x1e6 >= curve.x1e9;
   // The opening is fragile and is not where the problem was, so nothing at or
   // below the reference may be touched at all.
   const earlyUntouched = curve.small === 1 && curve.atRef === 1;
-  // And it has to actually bite: a thousandfold site cannot still be near list.
-  const bites = curve.x1e6 < 0.05;
-  if (monotone && earlyUntouched && bites) {
-    pass('compute is worth less the more of it you sell',
-      '1e3x:' + (curve.x1e3 * 100).toFixed(1) + '%  1e6x:' + (curve.x1e6 * 100).toFixed(2)
-      + '%  1e9x:' + (curve.x1e9 * 100).toFixed(3) + '%');
+  // It has to bite: a thousandfold site cannot still be near list.
+  const bites = curve.x1e3 < 0.25;
+  // And it must never fall through the floor, at any size at all. Decaying
+  // towards nothing is what made the late game unwinnable: revenue went
+  // sublinear in site size while upkeep stayed linear, the two crossed, and
+  // a site at tier 8 sank for three hundred days with no move that helped.
+  // The floor is what keeps revenue scaling like the costs it has to cover,
+  // so it is the invariant worth pinning, not the depth of the decay.
+  const holdsFloor = curve.x1e9 >= curve.floor && curve.huge >= curve.floor
+    && curve.huge < curve.floor * 1.02;
+  if (monotone && earlyUntouched && bites && holdsFloor) {
+    pass('compute is worth less the more of it you sell, down to a floor',
+      '1e3x:' + (curve.x1e3 * 100).toFixed(1) + '%  1e6x:' + (curve.x1e6 * 100).toFixed(1)
+      + '%  floor ' + (curve.floor * 100).toFixed(0) + '% holds at 1e15x');
   } else {
-    fail('compute is worth less the more of it you sell', JSON.stringify(curve));
+    fail('compute is worth less the more of it you sell, down to a floor',
+      JSON.stringify({ ...curve, monotone, earlyUntouched, bites, holdsFloor }));
   }
   await page.close();
 }
