@@ -159,7 +159,7 @@ export function derive(state) {
   const coolers = [];
   const pdus = [];
   const counts = {};
-  let ownSupply = 0, miscDraw = 0, upkeep = 0, fuelCost = 0;
+  let ownSupply = 0, miscDraw = 0, upkeep = 0, fuelCost = 0, plantUpkeep = 0;
   let waterSupply = 0, waterCost = 0, netCap = 1.5, staffCap = mods.staffCap;
   let repairBoost = 1, uptimeBoost = 0, researchFlat = 0, boardBonus = 0, firmOwn = 0;
   let security = mods.securityBonus, genHeat = 0, freeSlots = 0, unitsTotal = 0;
@@ -178,6 +178,14 @@ export function derive(state) {
     if (b.net) counts.anySwitch = (counts.anySwitch || 0) + 1;
     if (b.supplyWater) counts.anyWater = (counts.anyWater || 0) + 1;
     if (b.upkeep) upkeep += b.upkeep;
+    // Tracked separately as well as in the total, because a player who builds
+    // their own generation stops paying an electricity bill and starts paying
+    // the same money as upkeep. One reported electricity at $27 a second
+    // against $50,000 a second of revenue and asked why power was free: it
+    // was not, it had moved to a line called something else. What power costs
+    // is the bill plus the fuel plus the cost of keeping the plant that makes
+    // and moves it, and the panel says so now.
+    if (b.upkeep && (b.supplyKW || b.powerCap || b.fuel)) plantUpkeep += b.upkeep;
     if (b.draw) miscDraw += b.draw * (b.cat === 'cooling' ? mods.coolDrawMult : 1);
 
     if (b.cat === 'compute') {
@@ -597,10 +605,17 @@ export function derive(state) {
     uptime, baseUptime, fleetCond, maxTemp, avgTemp: tempW > 0 ? tempSum / tempW : ambient, ambient,
     revenue, costs, netIncome: revenue - costs,
     powerCost, fuelCost, waterBill, upkeepCost, penalties, interestCost, dividendCost,
+    // What power costs all in: the utility bill, the fuel, and the upkeep of
+    // everything that makes or distributes it.
+    plantUpkeep: plantUpkeep * mods.upkeepMult / DAY_SECONDS,
+    powerAllIn: powerCost + fuelCost + plantUpkeep * mods.upkeepMult / DAY_SECONDS,
     // Salaries are folded into upkeep for the maths, but the player needs to
     // see the wage bill on its own — it is the cost they can actually choose.
     salaries, salaryCost: salaries * mods.upkeepMult / DAY_SECONDS,
-    machineUpkeep: upkeep * mods.upkeepMult / DAY_SECONDS,
+    // The rest of the site's upkeep, with the generating plant's share taken
+    // out — that has its own line, and a ledger that lists the same dollar
+    // twice is worse than one that hides it.
+    machineUpkeep: Math.max(0, upkeep - plantUpkeep) * mods.upkeepMult / DAY_SECONDS,
     debt, creditLimit: creditLine, creditFree: Math.max(0, creditLine - debt),
     // Below zero you buy nothing. It is the plainest rule in the game and the
     // one the whole fail state hangs off.

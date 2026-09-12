@@ -9,6 +9,8 @@
 //
 // The list is deliberately long: it is the spine of the whole progression.
 
+import { tune } from '../util.js';
+
 export const HARDWARE = [
   {
     id: 'desktop', name: 'Salvaged desktop', short: 'DSK', tier: 0,
@@ -473,6 +475,51 @@ export const HARDWARE = [
 ];
 
 
+
+// How much better each tier is per kilowatt, and why it must not be much.
+//
+// Every cost in this game is priced per kW, per tile or per head. Revenue is
+// near enough linear in compute. So the ratio that decides whether the cost
+// side means anything is compute per kW — and as written it improved 20,000x
+// from the first salvaged desktop to the last machine. The consequence,
+// measured over a full run: electricity is 90% of the ledger in the cupboard
+// and 1% of it by the third facility, and by tier 8 revenue is eighty
+// thousand times total costs. There is nothing to manage, which is the
+// opposite of what a datacentre game is about.
+//
+// It also quietly wasted half the build list. The power and cooling ladders
+// go up to a 300 GW tie and a 16 GW radiator, while the top machine drew
+// 205 kW — the entire top half of two categories was decoration, because no
+// site could ever be built that needed it.
+//
+// So machines still get better per watt, but a handful of times better over
+// the whole ladder rather than four orders of magnitude. Draw then scales
+// with compute, costs stay linear in compute the way revenue is, own
+// generation becomes the answer to a bill you cannot out-engineer, and the
+// plant is the game again.
+//
+// The spread inside a tier is deliberately left alone: the dense variant and
+// the efficient variant of the same generation keep their relationship to
+// each other, and only the tier's average moves onto the curve.
+export const HW_EFFICIENCY_BASE = tune('HW_EFFICIENCY_BASE', 4.55);
+export const HW_EFFICIENCY_GROWTH = tune('HW_EFFICIENCY_GROWTH', 1.0);
+
+if (HW_EFFICIENCY_GROWTH > 1.0001) {
+  const tiers = [...new Set(HARDWARE.map((h) => h.tier))].sort((a, b) => a - b);
+  for (const tier of tiers) {
+    const units = HARDWARE.filter((h) => h.tier === tier);
+    // Geometric mean, because efficiency spans decades and an arithmetic mean
+    // would let one dense outlier drag the whole tier.
+    const geo = Math.exp(units.reduce((t, h) => t + Math.log(h.compute / h.power), 0) / units.length);
+    const target = HW_EFFICIENCY_BASE * Math.pow(HW_EFFICIENCY_GROWTH, tier);
+    const factor = geo / target;
+    if (!(factor > 0) || !Number.isFinite(factor)) continue;
+    for (const h of units) {
+      h.power = h.power * factor;
+      h.heat = h.heat * factor;
+    }
+  }
+}
 
 export const HARDWARE_BY_ID = Object.fromEntries(HARDWARE.map((h) => [h.id, h]));
 

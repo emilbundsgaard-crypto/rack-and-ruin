@@ -290,9 +290,21 @@ export function maxGrid(state) {
 
 // -------------------------------------------------------------------- staff
 
+/**
+ * What it costs to sign somebody, on top of their wages.
+ *
+ * It was twelve days of salary, which made the up-front lump the whole
+ * decision and the wage an afterthought — the wrong way round for a game
+ * where the wage bill is the recurring cost you are meant to manage. It also
+ * put a wall in the middle of the guide: the step that tells you to hire a
+ * technician wanted $2,880 from an opening float of $5,200, and a third of
+ * guided starts stalled there waiting to afford the thing the game was
+ * pointing at. Four days is a recruiter's fee rather than a year's budget,
+ * and the wage still has to be earned every day after it.
+ */
 export function staffCost(role, have) {
   const def = STAFF_BY_ID[role];
-  return def.salary * 12 * Math.pow(1.04, have);
+  return def.salary * 4 * Math.pow(1.04, have);
 }
 
 export function hire(state, d, role, hooks) {

@@ -7,7 +7,7 @@ export const SAVE_VERSION = 1;
 // Bumped whenever the files change, and shown in the Menu. It exists so that
 // "is the server actually running the new code?" is a question you can answer
 // by looking, instead of by guessing from behaviour.
-export const BUILD = '2026-09-12c';
+export const BUILD = '2026-09-12d';
 
 /** Seconds of real time per in-game day. */
 export const DAY_SECONDS = 60;
@@ -27,14 +27,15 @@ export const WATER_RATE = 2.64;
  *
  * This is what the guide actually costs, added up and nothing more. A power
  * strip, a rack and a box fan is $1,850; the first kilowatt of utility power
- * is $657; the technician it tells you to hire is $2,880 to sign. That is
- * $5,387 before a single machine, so the float covers the guide and the
- * machines have to come out of what the site earns.
+ * is $657; the technician it tells you to hire is $960 to sign. That is
+ * $3,467 before a single machine, so the float covers the guide, leaves
+ * enough for a rack's worth of salvaged desktops, and nothing else.
  *
- * Going lower was tried and measured: at $3,600 the walk reaches the eighth
- * step and stops, unable to afford the technician the guide is pointing at,
- * and two of eight bot runs died inside fifty days. A squeeze is the point;
- * a guide you cannot finish is not.
+ * Going lower was tried and measured: at $3,600 — before the signing cost
+ * came down — the walk reached the eighth step and stopped, unable to afford
+ * the technician the guide was pointing at, and two of eight bot runs died
+ * inside fifty days. A squeeze is the point; a guide you cannot finish is
+ * not.
  */
 export const START_MONEY = tune('START_MONEY', 5_200);
 

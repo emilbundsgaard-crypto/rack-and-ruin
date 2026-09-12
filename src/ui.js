@@ -1399,6 +1399,8 @@ function panelUtilities(state, d) {
   }
   row('Power bill', rate(d.powerCost));
   row('Fuel bill', rate(d.fuelCost));
+  if (d.plantUpkeep > 0) row('Plant upkeep', rate(d.plantUpkeep));
+  row('Power, all in', rate(d.powerAllIn));
   if ((d.counts.rideSeconds || 0) > 0) row('UPS charge', Math.round(state.upsCharge * 100) + '%');
   p.append(kv);
   const bar = el('div', 'bar' + (d.rawPowerFactor < 1 ? ' bad' : ''));
@@ -1490,12 +1492,13 @@ function panelUtilities(state, d) {
   };
   line('Contract revenue', '+' + money(d.revenue), '#6fe0a0');
   line('Electricity', '−' + money(d.powerCost), '#e8615f');
+  if (d.plantUpkeep > 0) line('Generation upkeep', '−' + money(d.plantUpkeep), '#e8615f');
   line('Fuel', '−' + money(d.fuelCost), '#e8615f');
   line('Water', '−' + money(d.waterBill), '#e8615f');
   // Wages are the cost the player actually chooses, so they get their own line
   // rather than hiding inside upkeep.
   line('Wages', '−' + money(d.salaryCost), '#e8615f');
-  line('Machine upkeep', '−' + money(d.machineUpkeep), '#e8615f');
+  line('Site upkeep', '−' + money(d.machineUpkeep), '#e8615f');
   line('SLA penalties', '−' + money(d.penalties), '#e8615f');
   if (d.debt > 0) line('Loan interest', '−' + money(d.interestCost), '#e8615f');
   line('Net', (d.netIncome >= 0 ? '+' : '−') + money(Math.abs(d.netIncome)),

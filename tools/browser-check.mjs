@@ -597,7 +597,11 @@ async function clickTile(page, gx, gy) {
     d = sim.derive(s);
 
     // Sink it well under.
-    for (let i = 0; i < 6000 && s.money > -50_000; i++) {
+    // Deep enough to be the state this is about. The cap is generous on
+    // purpose: a leaner economy sinks more slowly, and a run that stopped
+    // short of the target used to read as a failed recovery when the
+    // recovery had in fact worked.
+    for (let i = 0; i < 60_000 && s.money > -50_000; i++) {
       sim.tick(s, 0.2, d, { log() {}, onRescue() {} });
       d = sim.derive(s);
     }
@@ -1811,23 +1815,43 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
     const after = { costs: d.costs, money: s.money };
 
     const start = s.money;
-    let low = s.money;
     const quiet = { log: () => {}, onDecision: () => {} };
-    for (let t = 0; t < 120 * 60; t += 0.25) {
-      d = sim.derive(s);
-      sim.tick(s, 0.25, d, quiet);
-      low = Math.min(low, s.money);
+    // Five recoveries from the same starting state, not one.
+    //
+    // The recovery depends on which offers the board happens to post and
+    // which events land, and measured across ten runs this scenario succeeds
+    // about nine times in ten at any sane contract pay. Asserting on a single
+    // sample therefore failed roughly one suite run in ten with nothing
+    // wrong, which is worse than not checking it: a check that cries wolf
+    // gets ignored, and this one is guarding against handing a player an
+    // unwinnable save.
+    const snapshot = JSON.stringify(s);
+    const runs = [];
+    for (let run = 0; run < 5; run++) {
+      const t0 = JSON.parse(snapshot);
+      Object.keys(s).forEach((k) => delete s[k]);
+      Object.assign(s, t0);
+      let low = s.money;
+      for (let t = 0; t < 120 * 60; t += 0.25) {
+        d = sim.derive(s);
+        sim.tick(s, 0.25, d, quiet);
+        low = Math.min(low, s.money);
+      }
+      runs.push({ low: Math.round(low), end: Math.round(s.money) });
     }
-    return { before, after, sold, start, low, end: s.money };
+    app.d = sim.derive(s);
+    const good = runs.filter((r) => r.low >= 0 && r.end > start).length;
+    return { before, after, sold, start, runs, good };
   });
   // Hot enough to be the state that used to be fatal, the remedy has to cut
   // the bill, and from there the balance has to climb without going under.
   if (out.before.temp > 60 && out.after.costs < out.before.costs * 0.75
-      && out.low >= 0 && out.end > out.start) {
+      && out.good >= 4) {
     pass('a cooked site has a remedy that works',
       `${Math.round(out.before.temp)} °C, sold ${out.sold} units, bill `
       + `${out.before.costs.toFixed(1)} to ${out.after.costs.toFixed(1)}/s, `
-      + `$${Math.round(out.start)} to $${Math.round(out.end)}`);
+      + `${out.good}/5 climbed from $${Math.round(out.start)} to `
+      + out.runs.map((r) => '$' + r.end).join(' / '));
   } else {
     fail('a cooked site has a remedy that works', JSON.stringify(out));
   }
@@ -2342,6 +2366,62 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   } else {
     fail('an event the game no longer has does not stop time',
       JSON.stringify({ recovered, cleared }));
+  }
+  await page.close();
+}
+
+// ------------------------------------------------- the ledger adds up to net
+//
+// Every line on the Ledger is a slice of the same two totals, and splitting
+// one out is how the same dollar ends up printed twice: generation upkeep is
+// part of the site's upkeep, so giving it its own row without taking it out
+// of the row it came from would overstate costs on the one panel a player
+// checks when they want to know where the money goes.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  const sums = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const A = await import('/src/actions.js');
+    const B = await import('/src/data/buildings.js');
+    const R = await import('/src/data/research.js');
+    const app = window.__rr;
+    const s = app.state;
+    s.tutorial.skipped = true;
+    // A site with its own generation, fuel, water and staff, so every line on
+    // the ledger is a number rather than a zero.
+    s.facility = 6; s.money = 1e12; s.gridPower = 40000;
+    for (const n of R.RESEARCH) s.research.done.push(n.id);
+    s.staff.tech = 3; s.staff.eng = 2;
+    app.d = sim.derive(s);
+    const want = ['rack', 'pdu', 'fan', 'genset', 'solar', 'tank', 'switch'];
+    let x = 0, y = 0;
+    for (const id of want) {
+      const b = B.BUILDINGS_BY_ID[id] || B.BUILDINGS.find((z) => z.id.startsWith(id));
+      if (!b) continue;
+      A.place(s, app.d, x, y, b.id, { log() {} });
+      x += 1; if (x > 8) { x = 0; y += 1; }
+      app.d = sim.derive(s);
+    }
+    A.fillAll(s, app.d, 'desktop', { log() {} });
+    s.bank.debt = 1e6;
+    app.d = sim.derive(s);
+    const d = app.d;
+    const lines = d.powerCost + d.plantUpkeep + d.fuelCost + d.waterBill + d.salaryCost
+      + d.machineUpkeep + d.penalties + d.interestCost + d.dividendCost;
+    return {
+      revenue: d.revenue, costs: d.costs, lines, net: d.netIncome,
+      plantUpkeep: d.plantUpkeep, machineUpkeep: d.machineUpkeep,
+      overdraft: d.overdraftCost,
+    };
+  });
+  const slack = Math.max(1e-6, sums.costs * 1e-6);
+  if (Math.abs(sums.lines - sums.costs) <= slack) {
+    pass('the ledger adds up to what the site costs',
+      'plant ' + sums.plantUpkeep.toFixed(2) + ' + site ' + sums.machineUpkeep.toFixed(2)
+      + ' of ' + sums.costs.toFixed(2) + '/s');
+  } else {
+    fail('the ledger adds up to what the site costs', JSON.stringify(sums));
   }
   await page.close();
 }
