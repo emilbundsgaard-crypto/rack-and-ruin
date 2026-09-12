@@ -1215,12 +1215,23 @@ export const RESEARCH_KNEE = tune('RESEARCH_KNEE', 50);
  * every ten days or so, start to finish, so there is always something about
  * to land.
  *
+ * The level was then swept rather than guessed, because the two ends pull
+ * against each other: a dearer tree is a slower run, a slower run has less
+ * compute at a given node, and less compute is a slower rate, so the cadence
+ * degrades as the tree gets dearer. Measured across a full run at three
+ * settings, holding everything else fixed — 2,500 gives a flat 7.5 days a
+ * node, 6,000 gives a steady 9.8, and 15,000 starts near 11 and drifts out
+ * past 20 by the two hundredth node. 7,500 is the setting that lands on a
+ * node every eleven or twelve days without drifting: about seventy seconds
+ * per unlock at 10x speed, and a tree that takes the ten hours it is
+ * supposed to.
+ *
  * Nothing at or below the knee moves. Those are the nodes the guide walks you
  * through in the first minute, and they were the one part of the curve that
  * was right.
  */
 export const RESEARCH_GROWTH = tune('RESEARCH_GROWTH', 1.0257);
-export const RESEARCH_FIRST = tune('RESEARCH_FIRST', 400);
+export const RESEARCH_FIRST = tune('RESEARCH_FIRST', 7500);
 
 {
   // Rank by the cost as written, so the designer's ordering survives intact.
