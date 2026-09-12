@@ -1862,6 +1862,130 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   await page.close();
 }
 
+// ------------------------------------------------ the data files are the shape
+// This exists because a generated merge put forty-five building objects into
+// the CATEGORIES array instead of BUILDINGS, and the build panel rendered every
+// one of their names as a category button across the top of the most used
+// screen in the game. Fifty-nine checks were green while it was broken, because
+// not one of them looked at the shape of the data — they all looked at
+// behaviour that happened to survive it.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(async () => {
+    const B = await import('/src/data/buildings.js');
+    const H = await import('/src/data/hardware.js');
+    const P = await import('/src/data/progression.js');
+    const C = await import('/src/data/contracts.js');
+    const E = await import('/src/data/events.js');
+    const R = await import('/src/data/research.js');
+    const bad = [];
+    // The category row is five buttons and has been for the life of the game.
+    if (B.CATEGORIES.length !== 5) bad.push(`CATEGORIES has ${B.CATEGORIES.length} entries`);
+    for (const c of B.CATEGORIES) {
+      const keys = Object.keys(c).sort().join(',');
+      if (keys !== 'id,name') bad.push(`category ${c.id} carries ${keys}`);
+    }
+    const cats = new Set(B.CATEGORIES.map((c) => c.id));
+    for (const b of B.BUILDINGS) {
+      if (!cats.has(b.cat)) bad.push(`building ${b.id} is in category ${b.cat}`);
+      if (!b.name || !b.desc || typeof b.cost !== 'number' || !b.color || !b.glyph) {
+        bad.push(`building ${b.id} is missing a field`);
+      }
+    }
+    for (const h of H.HARDWARE) {
+      if (!h.name || !h.desc || !(h.compute > 0) || !(h.power > 0) || typeof h.tier !== 'number') {
+        bad.push(`hardware ${h.id} is missing a field`);
+      }
+    }
+    for (const t of C.CONTRACT_TEMPLATES) {
+      if (!t.name || !t.blurb || !t.clients || !t.clients.length || !(t.size > 0) || !(t.pay > 0)) {
+        bad.push(`contract ${t.id} is missing a field`);
+      }
+    }
+    for (const e of E.EVENTS) {
+      if (!e.name || !e.text || (!e.mods && !e.choice)) bad.push(`event ${e.id} is missing a field`);
+      if (typeof e.when !== 'function') bad.push(`event ${e.id} has no condition`);
+    }
+    for (const u of P.UPGRADES) {
+      if (!u.name || !u.desc || !u.cat || !u.effects || !Object.keys(u.effects).length) {
+        bad.push(`upgrade ${u.id} is missing a field`);
+      }
+    }
+    for (const f of P.FACILITIES) {
+      if (!f.name || !(f.w > 0) || !(f.h > 0) || typeof f.cost !== 'number') {
+        bad.push(`facility ${f.id} is missing a field`);
+      }
+    }
+    for (const pair of [['building', B.BUILDINGS], ['hardware', H.HARDWARE],
+      ['research', R.RESEARCH], ['contract', C.CONTRACT_TEMPLATES], ['event', E.EVENTS],
+      ['upgrade', P.UPGRADES]]) {
+      const seen = new Set();
+      for (const x of pair[1]) {
+        if (seen.has(x.id)) bad.push(`duplicate ${pair[0]} id ${x.id}`);
+        seen.add(x.id);
+      }
+    }
+    return { bad: bad.slice(0, 8), total: bad.length,
+      counts: { buildings: B.BUILDINGS.length, hardware: H.HARDWARE.length,
+        research: R.RESEARCH.length, contracts: C.CONTRACT_TEMPLATES.length,
+        events: E.EVENTS.length, upgrades: P.UPGRADES.length } };
+  });
+  if (!r.total) {
+    pass('the data files are the shape they claim to be',
+      Object.keys(r.counts).map((k) => k + ' ' + r.counts[k]).join(', '));
+  } else {
+    fail('the data files are the shape they claim to be',
+      r.total + ' problems: ' + r.bad.join('; '));
+  }
+  await page.close();
+}
+
+// --------------------------------------- the biggest floor is still playable
+// The largest site is 6,600 tiles, ten times what it used to be, and every tile
+// is a depth-sorted draw. Before culling, the top tier cost 71.6 ms a frame.
+// Culling is what makes it hold, and a regression here would not throw or look
+// wrong — it would quietly make the last third of the game unplayable.
+{
+  const page = await newPage(1600, 950);
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(async () => {
+    const A = await import('/src/actions.js'); const sim = await import('/src/sim.js');
+    const R = await import('/src/data/research.js'); const St = await import('/src/state.js');
+    const app = window.__rr, s = app.state;
+    s.research.done = R.RESEARCH.map((x) => x.id);
+    s.money = 1e30; s.reputation = 1e7;
+    while (s.facility < 15 && !A.upgradeFacility(s, app.hooks)) { s.money = 1e30; }
+    s.money = 1e30; app.d = sim.derive(s);
+    const f = St.roomOf(s);
+    for (let x = 0; x < f.w; x++) {
+      for (let y = 0; y < f.h; y++) A.place(s, app.d, x, y, 'rack3', app.hooks);
+    }
+    app.d = sim.derive(s);
+    app.view.centred = false;
+    app.view.draw(s, app.d, 0);
+    const whole = app.view.drawnLastFrame;
+    app.view.zoom = 0.9;
+    app.view.ox = app.view.w / 2; app.view.oy = app.view.h / 2;
+    app.view.draw(s, app.d, 0);
+    const close = app.view.drawnLastFrame;
+    const t0 = performance.now();
+    for (let i = 0; i < 15; i++) app.view.draw(s, app.d, 0.016);
+    return { tier: s.facility, tiles: Object.keys(s.tiles).length, whole, close,
+      ms: (performance.now() - t0) / 15 };
+  });
+  if (r.tiles >= 6_000 && r.close < r.tiles / 4 && r.whole > r.close) {
+    pass('the biggest floor draws a screenful, not a siteful',
+      `${r.tiles} tiles, ${r.close} drawn zoomed in, ${r.ms.toFixed(0)} ms`);
+  } else {
+    fail('the biggest floor draws a screenful, not a siteful', JSON.stringify(r));
+  }
+  await page.close();
+}
+
 // ------------------------------------------------- compute is a commodity
 // Revenue used to be strictly linear in compute while every cost stayed tied
 // to kW, tiles or heads — so across a full game revenue went from 5x costs to

@@ -20,7 +20,15 @@ ZIP="$OUT_DIR/ClouterX-$BUILD.zip"
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
-ROOT="$STAGE/ClouterX"
+# Flat, with no wrapper folder.
+#
+# It used to pack everything inside a directory called ClouterX, which unzips
+# tidily and is a trap: dragging that folder into public_html puts the game at
+# public_html/ClouterX/ and leaves the old index.html in the root, which is the
+# one the domain actually serves. The site then looks completely unchanged and
+# nothing about it says why. Unzipping this gives exactly the things that go
+# into the web root, so there is nothing to get wrong.
+ROOT="$STAGE/site"
 mkdir -p "$ROOT/src/data" "$ROOT/styles" "$ROOT/api"
 
 cp index.html privatliv.html "$ROOT/"
@@ -40,6 +48,6 @@ else
 fi
 
 rm -f "$ZIP"
-( cd "$STAGE" && zip -qr "$ZIP" ClouterX )
+( cd "$ROOT" && zip -qr "$ZIP" . )
 echo "$ZIP"
 echo "build $BUILD, $(find "$ROOT" -type f | wc -l | tr -d ' ') files, $(du -h "$ZIP" | cut -f1), $SECRET"
