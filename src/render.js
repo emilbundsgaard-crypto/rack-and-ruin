@@ -409,14 +409,37 @@ export class FloorView {
       this.markTile(ctx, this.hover, this.tool === 'sell' ? '#e5614f' : '#f2a83c');
     }
 
-    // Everything on the floor, back to front.
+    // Everything on the floor that is actually on screen, back to front.
+    //
+    // Every tile here is a depth-sorted draw with several faces, so the cost
+    // is linear in how many there are — and the largest site is now 6,600 of
+    // them, ten times what it used to be. Measured before this: 71.6 ms a
+    // frame at the top tier, which is fourteen frames a second.
+    //
+    // A tile that projects outside the canvas cannot be seen, and the player
+    // spends most of a run zoomed in on one corner. So the projected bounds
+    // are checked first and the rest never enter the sort. The margin is
+    // generous because a building is drawn upwards from its tile: its body can
+    // reach well above the ground point, and clipping something whose feet are
+    // just off screen would pop the top of it out of view.
     const order = [];
+    const margin = 200;
+    const vx0 = -this.ox / this.zoom - margin;
+    const vx1 = (this.w - this.ox) / this.zoom + margin;
+    const vy0 = -this.oy / this.zoom - margin;
+    const vy1 = (this.h - this.oy) / this.zoom + margin;
     for (const k in state.tiles) {
       const [gx, gy] = k.split(',').map(Number);
       const r = this.rotate(gx, gy, f);
+      const p = this.isoR(r.x, r.y);
+      if (p.x < vx0 || p.x > vx1 || p.y < vy0 || p.y > vy1) continue;
       order.push({ gx, gy, depth: r.x + r.y, tie: r.x, tile: state.tiles[k] });
     }
     order.sort((a, b) => a.depth - b.depth || a.tie - b.tie);
+    // How many tiles the last frame actually drew, after culling. Read by the
+    // checks: if this stops being much smaller than the floor when zoomed in,
+    // the culling has regressed and the biggest sites become unplayable.
+    this.drawnLastFrame = order.length;
 
     const rackAt = new Map();
     for (const r of d.racks) rackAt.set(r.x + ',' + r.y, r);

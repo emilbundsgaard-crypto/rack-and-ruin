@@ -305,6 +305,31 @@ app.confirmPrestige = () => {
   ]);
 };
 
+/**
+ * The float. Deliberately a two-step, like the company sale: the money arrives
+ * once and the dividend is owed for ever, so it should not be one click away
+ * from a panel you were browsing.
+ */
+app.confirmFloat = () => {
+  const s = app.state, d = app.d;
+  const cap = SIM.marketCap(s, d);
+  const net = cap * SIM.IPO_FREE_FLOAT * (1 - SIM.IPO_FEES);
+  showModal('Take the company public?', 'There is no going private again.', [
+    `The market values it at ${money(cap)}. Selling ${Math.round(SIM.IPO_FREE_FLOAT * 100)}% `
+      + `raises ${money(net)} after the underwriters take their cut.`,
+    `From the moment it lists, the company owes a dividend every second — `
+      + `${money(net * SIM.dividendRate(0) / 365)} a day to start, and half a point more of the `
+      + 'float every year it stays listed, whether the site grows or not.',
+  ], [
+    { label: 'Float for ' + money(net), kind: 'primary', onClick: () => {
+      const err = SIM.floatCompany(s, d, app.hooks);
+      if (err) toast(err, 'warn');
+      markDirty(); renderUI();
+    } },
+    { label: 'Stay private' },
+  ]);
+};
+
 // ------------------------------------------------------------------- events
 
 /**

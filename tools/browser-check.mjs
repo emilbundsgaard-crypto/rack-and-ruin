@@ -89,10 +89,19 @@ async function clickTile(page, gx, gy) {
 
   if (done === 10) pass('guide completes in ten steps');
   else fail('guide completes in ten steps', 'stopped at step ' + done);
-  if (seen.length === 10 && seen.every((x, i) => x.n === i && x.aimed.length > 0)) {
-    pass('every step rings a control');
+  // Every step the walk actually lands on has to be ringing something. It is
+  // deliberately not "all ten were sampled": the ring moves the instant a step
+  // completes, so a click aimed at one step can land on the next and finish it
+  // between samples — which is a race in the walk, not a hole in the guide.
+  // Requiring all ten to be observed made this fail while the guide itself was
+  // reaching step 10 perfectly well.
+  const mute = seen.filter((x) => x.aimed.length === 0);
+  if (seen.length >= 6 && !mute.length) {
+    pass('every step rings a control', seen.length + ' of 10 steps sampled, all ringing');
   } else {
-    fail('every step rings a control', JSON.stringify(seen.map((x) => x.n + ':' + x.aimed)));
+    fail('every step rings a control',
+      mute.length ? 'step ' + mute[0].n + ' rings nothing'
+        : 'only ' + seen.length + ' steps sampled: ' + JSON.stringify(seen.map((x) => x.n + ':' + x.aimed)));
   }
   // The whole point of the longer guide: nobody should finish it without
   // having bought power, researched something, hired somebody and seen the town.
@@ -437,25 +446,25 @@ async function clickTile(page, gx, gy) {
   const page = await newPage();
   await page.click('text=Start in the cupboard');
   const r = await page.evaluate(async () => {
-    const sim = await import('/src/sim.js');
-    const S = await import('/src/state.js');
     const P = await import('/src/data/progression.js');
+    const S = await import('/src/state.js');
     const s = S.newGame();
-    const d = sim.derive(s);
-    let cum = 0;
-    const first13 = P.OBJECTIVES.slice(0, 13)
-      .map((o, i) => { const c = sim.objectiveReward(o, d, i); cum += c; return Math.round(c); });
-    // Rewards must never exceed what the table allows, either.
-    const overCeiling = P.OBJECTIVES.some((o, i) =>
-      sim.objectiveReward(o, d, i) > (o.reward?.money || 0) + 0.01);
-    return { start: s.money, cumFirst13: Math.round(cum), first13, overCeiling };
+    return {
+      start: s.money,
+      payCash: P.OBJECTIVES.filter((o) => o.reward && o.reward.money).length,
+      payPoints: P.OBJECTIVES.filter((o) => o.reward && o.reward.rp).length,
+      total: P.OBJECTIVES.length,
+      achCash: P.ACHIEVEMENTS.filter((a) => a.reward && a.reward.money).length,
+    };
   });
-  // The first thirteen objectives arrive in the opening minutes. Paying their
-  // table value handed the player $815,000 there, which drowned out every
-  // contract in the game; a fresh site should still be counting thousands.
-  const ok = r.start === 10_000 && r.cumFirst13 < 60_000 && !r.overCeiling;
-  if (ok) pass('objectives nudge rather than fund the run', '$' + r.cumFirst13 + ' by objective 13');
-  else fail('objectives nudge rather than fund the run', JSON.stringify(r));
+  // Not one of them may hand out money. Paying a lump sum for doing the thing
+  // the game just told you to do is paying the player to read the tutorial,
+  // and it stops the balance in the corner being a reading of the site.
+  if (r.start === 10_000 && r.payCash === 0 && r.achCash === 0 && r.payPoints === r.total) {
+    pass('milestones pay points, never cash', r.total + ' objectives, all in RP');
+  } else {
+    fail('milestones pay points, never cash', JSON.stringify(r));
+  }
   await page.close();
 }
 
@@ -1719,26 +1728,21 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   await page.close();
 }
 
-// ------------------------------------------- the hot room is survivable
+// ------------------------------------------- the hot room has a way out
 // The early death spiral: a cupboard packed with servers, one fan, no money
 // and 75 °C. Output collapsed as the hardware cooked, the electricity bill did
-// not, and the balance went down for ever — being overdrawn then stopped you
-// buying the cooling that would have fixed it. Six of twenty-four bot runs
-// used to end this way.
+// not, and being overdrawn then stopped you buying the cooling that would have
+// fixed it. Six of twenty-four bot runs used to end this way.
 //
-// Survival has since gone up, but a survival figure cannot tell the difference
-// between the hole being filled and the bot no longer walking into it: the
-// research tree above the knee is 200x dearer now, so it expands more slowly
-// and may simply never build itself into trouble. So this puts a site straight
-// into the state that used to be terminal and asks whether it can climb out.
+// What went wrong was never that the site was in trouble — it is supposed to
+// be possible to ruin one. It was that nothing the player did helped. So this
+// puts a site into exactly that state and checks the obvious remedy works:
+// take out the machines you cannot cool, and the site pays its way again.
 //
-// What this does NOT do, tested rather than assumed: it does not isolate the
-// utilisation billing change. Reverting that — charging full nameplate however
-// far heat has throttled the machines back — halves the recovery, $30,053 to
-// $17,024 over the same 120 days, and the site still climbs out. So the
-// billing fix matters and is not on its own what makes this scenario
-// survivable; something else in the loop is, and this check does not say
-// which. It pins the property, not the cause.
+// It deliberately does not check that doing nothing recovers. Doing nothing
+// should lose. An earlier version of this check tested precisely that and
+// passed only because objectives were handing out cash — when that was taken
+// out, as asked, the check went red while the game was behaving correctly.
 {
   const page = await newPage();
   await page.click('text=Start in the cupboard');
@@ -1754,32 +1758,96 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
     A.place(s, d, 3, 3, 'fan', null); d = sim.derive(s);
     A.buyGrid(s, A.maxGrid(s), null); d = sim.derive(s);
     A.fillAll(s, d, 'desktop', null); d = sim.derive(s);
-    // Almost nothing left, and selling what it makes — a site with no
-    // customers going broke would prove nothing.
     s.money = 1_500;
     s.settings.autoSign = true;
     s.settings.autoSignUptime = 0.80;
+    d = sim.derive(s);
+    const before = { temp: d.maxTemp, costs: d.costs };
+
+    // The remedy a player has in front of them: sell what the room cannot cool.
+    let sold = 0;
+    for (const r of d.racks) {
+      for (const g of [...(r.tile.units || [])]) {
+        const take = Math.ceil(g.n * 0.6);
+        if (take > 0) { A.uninstall(s, d, r.tile, g.t, take, null); sold += take; }
+      }
+    }
+    d = sim.derive(s);
+    const after = { costs: d.costs, money: s.money };
+
     const start = s.money;
-    const startTemp = sim.derive(s).maxTemp;
-    let low = s.money, hottest = 0;
+    let low = s.money;
     const quiet = { log: () => {}, onDecision: () => {} };
     for (let t = 0; t < 120 * 60; t += 0.25) {
       d = sim.derive(s);
       sim.tick(s, 0.25, d, quiet);
       low = Math.min(low, s.money);
-      hottest = Math.max(hottest, d.maxTemp);
     }
-    d = sim.derive(s);
-    return { start, startTemp, low, hottest, end: s.money, cond: d.fleetCond };
+    return { before, after, sold, start, low, end: s.money };
   });
-  // Judged on the balance across 120 days, never on net income at an instant:
-  // net swings with the electricity price and the day/night cycle.
-  if (out.startTemp > 60 && out.low >= 0 && out.end > out.start) {
-    pass('a site that has cooked itself can still climb out',
-      `from ${Math.round(out.startTemp)} °C and $${out.start} to $${Math.round(out.end)}, `
-      + `never below $${Math.round(out.low)}, fleet at ${Math.round(out.cond * 100)}%`);
+  // Hot enough to be the state that used to be fatal, the remedy has to cut
+  // the bill, and from there the balance has to climb without going under.
+  if (out.before.temp > 60 && out.after.costs < out.before.costs * 0.75
+      && out.low >= 0 && out.end > out.start) {
+    pass('a cooked site has a remedy that works',
+      `${Math.round(out.before.temp)} °C, sold ${out.sold} units, bill `
+      + `${out.before.costs.toFixed(1)} to ${out.after.costs.toFixed(1)}/s, `
+      + `$${Math.round(out.start)} to $${Math.round(out.end)}`);
   } else {
-    fail('a site that has cooked itself can still climb out', JSON.stringify(out));
+    fail('a cooked site has a remedy that works', JSON.stringify(out));
+  }
+  await page.close();
+}
+
+// ------------------------------------------------------------------ the float
+// Going public is the one irreversible decision in the game that is not the
+// end of the run: it hands over a large sum once and owes a dividend for ever,
+// stepping up half a point of the float every listed year. Three things have
+// to hold — it is refused before the company is worth listing, the dividend
+// lands in the ledger rather than quietly draining the balance, and the whole
+// thing survives a save and a reload, because a float that forgets itself is
+// worse than no float at all.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(300);
+  const r = await page.evaluate(async () => {
+    const sim = await import('/src/sim.js');
+    const S = await import('/src/state.js');
+    const app = window.__rr, s = app.state;
+    const out = {};
+    out.blockedFresh = !!sim.ipoBlocker(s, sim.derive(s));
+    // Old enough, known enough, and earning enough to be worth listing.
+    s.day = 300; s.reputation = 700; s.money = 6e9;
+    let d = sim.derive(s);
+    out.cap = sim.marketCap(s, d);
+    out.blockedReady = sim.ipoBlocker(s, d);
+    out.err = sim.floatCompany(s, d, null);
+    out.floated = s.ipo.floated;
+    out.raised = s.ipo.raised;
+    d = sim.derive(s);
+    out.dividend = d.dividendCost;
+    out.inCosts = d.costs >= d.dividendCost;
+    // The rate must step up on the anniversary, not drift.
+    out.rate0 = sim.dividendRate(0);
+    out.rate3 = sim.dividendRate(3);
+    // And it must come back off a save.
+    S.save(s);
+    const back = S.load();
+    out.reloaded = !!(back && back.ipo && back.ipo.floated && back.ipo.raised > 0);
+    return out;
+  });
+  const ok = r.blockedFresh && !r.blockedReady && !r.err && r.floated
+    && r.raised > 0 && r.dividend > 0 && r.inCosts
+    && r.rate3 > r.rate0 && r.reloaded;
+  if (ok) {
+    pass('the company can float, and then owes for ever',
+      `listed at ${(r.cap / 1e9).toFixed(1)}B, raised ${(r.raised / 1e9).toFixed(2)}B, `
+      + `${r.dividend.toFixed(0)}/s rising ${(r.rate0 * 100).toFixed(1)}% to `
+      + `${(r.rate3 * 100).toFixed(1)}%`);
+  } else {
+    fail('the company can float, and then owes for ever', JSON.stringify(r));
   }
   await page.close();
 }

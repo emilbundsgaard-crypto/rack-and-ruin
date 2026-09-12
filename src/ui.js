@@ -1590,12 +1590,72 @@ function bankCard(state, d) {
   return c;
 }
 
+/**
+ * The float, before and after.
+ *
+ * Before: what the company is worth, what a listing would raise, and the one
+ * line saying why it cannot happen yet. After: the dividend as a standing
+ * charge, the rate it steps to next, and what has gone out of the door so far.
+ *
+ * The valuation is shown whether or not it can be acted on, because "what is
+ * this worth" is a question the player has every reason to ask from the first
+ * contract onwards, and it is the only figure in the game that answers it.
+ */
+function ipoCard(state, d) {
+  const wrap = el('div', 'card');
+  const kv = el('div', 'kv');
+  const row = (k, v, cls) => kv.append(el('div', 'k', k), el('div', 'v' + (cls ? ' ' + cls : ''), v));
+  const ipo = state.ipo || {};
+  const cap = SIM.marketCap(state, d);
+
+  row('Market cap', money(cap));
+  row('Earnings multiple', SIM.earningsMultiple(state).toFixed(1) + '× on reputation');
+
+  if (!ipo.floated) {
+    const gross = cap * SIM.IPO_FREE_FLOAT;
+    row('Would sell', Math.round(SIM.IPO_FREE_FLOAT * 100) + '% of the company');
+    row('Would raise', money(gross * (1 - SIM.IPO_FEES)) + ' after fees');
+    row('Then owes', money(gross * (1 - SIM.IPO_FEES) * SIM.dividendRate(0) / 365) + ' a day, rising');
+    wrap.append(kv);
+    const blocked = SIM.ipoBlocker(state, d);
+    const btn = el('button', 'btn' + (blocked ? '' : ' primary'), 'Float the company');
+    btn.disabled = !!blocked;
+    btn.dataset.tip = 'Float the company|Sells a quarter of it for cash now, against a dividend '
+      + 'that is owed for ever and steps up half a point every year it stays listed.\n'
+      + 'There is no going private again.';
+    btn.onclick = () => app.confirmFloat();
+    const rowBtn = el('div', 'btnrow'); rowBtn.append(btn); wrap.append(rowBtn);
+    if (blocked) wrap.append(el('div', 'desc', blocked));
+    else wrap.append(el('div', 'desc', 'The book is covered. It is a decision, not a reward: '
+      + 'the money arrives once and the dividend never stops.'));
+    return wrap;
+  }
+
+  const years = ipo.years || 0;
+  row('Listed on', 'day ' + Math.floor(ipo.day));
+  row('Raised', money(ipo.raised));
+  row('Dividend', money(d.dividendCost) + '/s', 'warn');
+  row('Rate', (SIM.dividendRate(years) * 100).toFixed(1) + '% of the float, year ' + (years + 1));
+  row('Next year', (SIM.dividendRate(years + 1) * 100).toFixed(1) + '% in '
+    + fmtTime((365 - ((state.day - ipo.day) % 365)) * DAY_SECONDS));
+  row('Paid out', money(ipo.paid || 0));
+  const share = d.revenue > 0 ? d.dividendCost / d.revenue : null;
+  row('Share of income', share === null ? 'No income'
+    : Math.round(share * 100) + '% of what you earn',
+    share !== null && share > 0.4 ? 'bad' : share !== null && share > 0.2 ? 'warn' : '');
+  wrap.append(kv);
+  wrap.append(el('div', 'desc', 'The dividend is a standing charge on the business. It grows '
+    + 'whether or not the site does, which is what the shareholders were promised.'));
+  return wrap;
+}
+
 function panelSite(state, d) {
   const out = [];
   const f = d.fac;
   const next = A.nextFacility(state);
 
   out.push(sec('Bank', bankCard(state, d)));
+  out.push(sec(state.ipo?.floated ? 'Public company' : 'Flotation', ipoCard(state, d)));
 
   const c = el('div', 'card');
   const kv = el('div', 'kv');
@@ -1645,12 +1705,9 @@ function panelSite(state, d) {
     const title = el('div', 'title');
     title.append(el('b', null, (i + 1) + '. ' + o.name));
     if (cur) title.append(el('span', 'pill acc', 'current'));
-    const rw = [];
-    // Show what it will actually pay, not the ceiling in the table.
-    const cash = SIM.objectiveReward(o, d, i);
-    if (cash > 0) rw.push(money(cash));
-    if (o.reward?.rp) rw.push(fmt(o.reward.rp) + ' RP');
-    title.append(el('span', 'price', rw.join(' + ')));
+    // Points, never cash. An objective that pays money is paying you to read
+    // the tutorial, and it stops the balance in the corner meaning anything.
+    if (o.reward?.rp) title.append(el('span', 'price', fmt(o.reward.rp) + ' RP'));
     card.append(title);
     if (done || cur) card.append(el('div', 'desc', o.hint));
     return card;

@@ -381,7 +381,12 @@ export function derive(state) {
     9_000 * Math.pow(2.8, state.facility),
     Math.max(0, revenue) * DAY_SECONDS * 10,
   ) * (1 + Math.min(1.5, (state.reputation || 0) / 90));
-  const costs = powerCost + fuelCost + waterBill + upkeepCost + penalties + interestCost;
+  // The dividend is a running cost like interest: it shows in the ledger and in
+  // net income rather than quietly draining the balance, because a payment you
+  // cannot see is a payment you cannot plan around.
+  const dividendCost = dividendPerSecond(state);
+  const costs = powerCost + fuelCost + waterBill + upkeepCost + penalties + interestCost
+    + dividendCost;
 
   // What is holding the site back right now, in plain words.
   let bottleneck = null;
@@ -588,7 +593,7 @@ export function derive(state) {
     computeTotal, computeResearch, computeSellable, contractDemand, deliverRatio,
     uptime, baseUptime, fleetCond, maxTemp, avgTemp: tempW > 0 ? tempSum / tempW : ambient, ambient,
     revenue, costs, netIncome: revenue - costs,
-    powerCost, fuelCost, waterBill, upkeepCost, penalties, interestCost,
+    powerCost, fuelCost, waterBill, upkeepCost, penalties, interestCost, dividendCost,
     // Salaries are folded into upkeep for the maths, but the player needs to
     // see the wage bill on its own — it is the cost they can actually choose.
     salaries, salaryCost: salaries * mods.upkeepMult / DAY_SECONDS,
@@ -644,6 +649,19 @@ export function tick(state, dt, d, hooks) {
   // running totals rather than worked out at the end from a snapshot: a site
   // that ran hot for a hundred days and was then half sold off would otherwise
   // account for almost none of what it actually drank.
+  // The dividend is already inside d.costs, so the money has been taken by the
+  // ordinary ledger. This only records it, and steps the rate up on the
+  // anniversary — the schedule the shareholders were promised.
+  if (state.ipo?.floated) {
+    state.ipo.paid = (state.ipo.paid || 0) + d.dividendCost * dt;
+    const listedYears = Math.floor((state.day - state.ipo.day) / 365);
+    if (listedYears > (state.ipo.years || 0)) {
+      state.ipo.years = listedYears;
+      hooks?.log(`Dividend year ${listedYears + 1}: the rate steps up to `
+        + `${(dividendRate(listedYears) * 100).toFixed(1)}% of the float.`, 'warn');
+    }
+  }
+
   state.stats.waterTaken = (state.stats.waterTaken || 0) + d.waterUsed * dt;
   state.stats.powerDrawn = (state.stats.powerDrawn || 0) + d.billedDraw * (dt / 3600);
 
@@ -1227,6 +1245,105 @@ export function resolveDecision(state, d, effect, hooks) {
 
 // ------------------------------------------------------------------ the bank
 
+// ---------------------------------------------------------------- the float
+//
+// A datacentre company is valued on what it earns, not on what it owns: the
+// standard shorthand is a multiple of annual earnings, and the multiple rises
+// with how dependable those earnings look. Reputation stands in for that here,
+// because it is exactly what the game already means by "people trust you to
+// keep it running".
+//
+// The dividend is the point of the whole thing. Floating hands over a large
+// sum at once, and in return the company owes a payment for ever, on a
+// schedule that steps up every year it stays listed. It is the only cost in
+// the game that grows on its own without you building anything, which makes it
+// a genuine decision rather than free money with a delay.
+
+/** Multiple of annual earnings the market will pay, given the reputation. */
+export function earningsMultiple(state) {
+  const rep = Math.max(0, state.reputation || 0);
+  return 6 + 14 * (rep / (rep + 900));
+}
+
+/**
+ * What the company is worth right now.
+ *
+ * Annualised from current net income — a year is 365 game-days — plus what is
+ * on the balance sheet, less what is owed. A company losing money is worth its
+ * assets and no more; the market does not pay a multiple of a negative number.
+ */
+export function marketCap(state, d) {
+  const annual = Math.max(0, d.netIncome) * DAY_SECONDS * 365;
+  const equity = (state.money || 0) - (state.bank?.debt || 0);
+  return Math.max(0, annual * earningsMultiple(state) + equity);
+}
+
+// What has to be true before anyone will underwrite it.
+export const IPO_MIN_CAP = 5e9;
+export const IPO_MIN_REP = 120;
+export const IPO_MIN_DAYS = 60;
+
+/** Why the company cannot float yet, or null if it can. */
+export function ipoBlocker(state, d) {
+  if (state.ipo?.floated) return 'Already listed.';
+  if (state.day < IPO_MIN_DAYS) {
+    return `No underwriter will touch a company ${Math.floor(state.day)} days old. `
+      + `Come back after day ${IPO_MIN_DAYS}.`;
+  }
+  if ((state.reputation || 0) < IPO_MIN_REP) {
+    return `Reputation ${Math.floor(state.reputation || 0)} of ${IPO_MIN_REP}. `
+      + 'The book runners want a name people know.';
+  }
+  const cap = marketCap(state, d);
+  if (cap < IPO_MIN_CAP) {
+    return `Valued at ${money(cap)}. A listing needs ${money(IPO_MIN_CAP)}, and it is earnings `
+      + 'that carry the valuation, not the balance.';
+  }
+  if ((state.bank?.debt || 0) > cap * 0.4) {
+    return 'The debt is too large a share of the company to take public. Pay some of it down.';
+  }
+  return null;
+}
+
+// A quarter of the company is sold at the float, and the underwriters take
+// their cut off the top. Both numbers are shown before you agree to anything.
+export const IPO_FREE_FLOAT = 0.25;
+export const IPO_FEES = 0.07;
+
+/** The dividend rate in year n of being listed: 2% of the float, +0.5% a year. */
+export function dividendRate(years) {
+  return 0.02 + 0.005 * Math.max(0, years);
+}
+
+/** Dividend owed per second at the moment, or 0 while private. */
+export function dividendPerSecond(state) {
+  const ipo = state.ipo;
+  if (!ipo?.floated) return 0;
+  return ipo.raised * dividendRate(ipo.years) / (365 * DAY_SECONDS);
+}
+
+/**
+ * Take the company public. Returns a message, or an error string if it cannot.
+ */
+export function floatCompany(state, d, hooks) {
+  const blocked = ipoBlocker(state, d);
+  if (blocked) return blocked;
+  const cap = marketCap(state, d);
+  const gross = cap * IPO_FREE_FLOAT;
+  const net = gross * (1 - IPO_FEES);
+  state.ipo.floated = true;
+  state.ipo.day = state.day;
+  state.ipo.valuation = cap;
+  state.ipo.raised = net;
+  state.ipo.years = 0;
+  state.money += net;
+  state.lifetimeEarnings += net;
+  state.reputation += 25;
+  hooks?.log(`Listed at ${money(cap)}. ${money(net)} raised after fees, and a dividend to pay `
+    + 'for as long as the company exists.', 'good');
+  return null;
+}
+
 // What a rack draws with its machines idle, as a share of nameplate. Real
 // servers are nowhere near proportional: half the peak draw is there the
 // moment they are powered on, whatever they are doing.
@@ -1420,23 +1537,16 @@ export function repay(state, amount, hooks) {
 // -------------------------------------------------------- objectives & badges
 
 /**
- * What an objective actually pays. The numbers in the table are ceilings from
- * a time when they were the whole economy: taken literally they hand you
- * $815,000 by the thirteenth objective, which arrives in the first few minutes
- * and drowns out every contract you will ever sign.
+ * Objectives pay research points, never cash.
  *
- * A reward is a nudge towards the next purchase, not the income. So it is the
- * smaller of what the table says and half a day of what the site currently
- * earns, floored at an amount that keeps the opening hour moving before there
- * is any revenue at all.
+ * They used to pay money, scaled down from the table to stop the early ones
+ * drowning out every contract you would ever sign — which was a fix for the
+ * symptom. The cash itself was the problem: an incremental game that hands you
+ * a lump sum for doing the thing it just told you to do is paying you to read
+ * its own tutorial, and it means the balance in the corner is not a reading of
+ * how the site is doing. Points go into the tree instead, which is a nudge
+ * towards the next decision rather than a substitute for earning it.
  */
-export function objectiveReward(o, d, index) {
-  const declared = o.reward?.money || 0;
-  if (!declared) return 0;
-  const halfDay = Math.max(0, d.revenue) * DAY_SECONDS * 0.5;
-  const floor = 400 * Math.pow(1.3, index);
-  return Math.min(declared, Math.max(floor, halfDay));
-}
 
 export function checkObjectives(state, d, hooks) {
   const total = RESEARCH.length;
@@ -1453,8 +1563,6 @@ export function checkObjectives(state, d, hooks) {
     const ok = met(o) || OBJECTIVES.slice(i + 1).some(met);
     if (ok) {
       state.objectives.done.push(o.id);
-      const cash = objectiveReward(o, d, i);
-      if (cash > 0) { state.money += cash; state.lifetimeEarnings += cash; }
       if (o.reward?.rp) state.rp += o.reward.rp;
       hooks?.log(`Objective complete — ${o.name}.`, 'good', QUIET);
       hooks?.onObjective?.(o);

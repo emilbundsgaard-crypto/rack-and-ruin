@@ -67,6 +67,19 @@ export function newGame(legacy) {
       rescueLevel: 0, rescues: 0,
     },
 
+    // The public company, once there is one. Before the float this is all
+    // zeroes and the panel is a prospectus; after it, the dividend is a
+    // standing charge on income that never goes away and grows on a schedule
+    // the shareholders were promised in writing.
+    ipo: {
+      floated: false,      // has the company gone public
+      day: 0,              // the game-day it floated
+      raised: 0,           // cash the float put on the balance sheet
+      valuation: 0,        // what it was valued at on the day
+      paid: 0,             // dividends paid since
+      years: 0,            // completed dividend years, which set the rate
+    },
+
     market: { power: 0.16, compute: 3.36, phase: Math.random() * 1000 },
     history: { at: 0, income: [], compute: [], temp: [] },
     town: { damage: 0, seen: [], sinceDay: {} },
@@ -176,6 +189,9 @@ export function migrate(data) {
   merged.expand = { ...fresh.expand, ...(data.expand || {}) };
   merged.town = { ...fresh.town, ...(data.town || {}) };
   merged.bank = { ...fresh.bank, ...(data.bank || {}) };
+  // A save written before the company could float has no ipo block at all, so
+  // it takes the fresh one and stays private, which is the right answer.
+  merged.ipo = { ...fresh.ipo, ...(data.ipo || {}) };
   merged.version = SAVE_VERSION;
   return merged;
 }
