@@ -1719,6 +1719,71 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   await page.close();
 }
 
+// ------------------------------------------- the hot room is survivable
+// The early death spiral: a cupboard packed with servers, one fan, no money
+// and 75 °C. Output collapsed as the hardware cooked, the electricity bill did
+// not, and the balance went down for ever — being overdrawn then stopped you
+// buying the cooling that would have fixed it. Six of twenty-four bot runs
+// used to end this way.
+//
+// Survival has since gone up, but a survival figure cannot tell the difference
+// between the hole being filled and the bot no longer walking into it: the
+// research tree above the knee is 200x dearer now, so it expands more slowly
+// and may simply never build itself into trouble. So this puts a site straight
+// into the state that used to be terminal and asks whether it can climb out.
+//
+// What this does NOT do, tested rather than assumed: it does not isolate the
+// utilisation billing change. Reverting that — charging full nameplate however
+// far heat has throttled the machines back — halves the recovery, $30,053 to
+// $17,024 over the same 120 days, and the site still climbs out. So the
+// billing fix matters and is not on its own what makes this scenario
+// survivable; something else in the loop is, and this check does not say
+// which. It pins the property, not the cause.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+  await page.waitForTimeout(300);
+  const out = await page.evaluate(async () => {
+    const A = await import('/src/actions.js'); const sim = await import('/src/sim.js');
+    const app = window.__rr, s = app.state;
+    s.money = 400_000;
+    let d = sim.derive(s);
+    A.place(s, d, 2, 2, 'pdu', null); d = sim.derive(s);
+    for (let x = 0; x < 5; x++) { A.place(s, d, x, 1, 'rack', null); d = sim.derive(s); }
+    A.place(s, d, 3, 3, 'fan', null); d = sim.derive(s);
+    A.buyGrid(s, A.maxGrid(s), null); d = sim.derive(s);
+    A.fillAll(s, d, 'desktop', null); d = sim.derive(s);
+    // Almost nothing left, and selling what it makes — a site with no
+    // customers going broke would prove nothing.
+    s.money = 1_500;
+    s.settings.autoSign = true;
+    s.settings.autoSignUptime = 0.80;
+    const start = s.money;
+    const startTemp = sim.derive(s).maxTemp;
+    let low = s.money, hottest = 0;
+    const quiet = { log: () => {}, onDecision: () => {} };
+    for (let t = 0; t < 120 * 60; t += 0.25) {
+      d = sim.derive(s);
+      sim.tick(s, 0.25, d, quiet);
+      low = Math.min(low, s.money);
+      hottest = Math.max(hottest, d.maxTemp);
+    }
+    d = sim.derive(s);
+    return { start, startTemp, low, hottest, end: s.money, cond: d.fleetCond };
+  });
+  // Judged on the balance across 120 days, never on net income at an instant:
+  // net swings with the electricity price and the day/night cycle.
+  if (out.startTemp > 60 && out.low >= 0 && out.end > out.start) {
+    pass('a site that has cooked itself can still climb out',
+      `from ${Math.round(out.startTemp)} °C and $${out.start} to $${Math.round(out.end)}, `
+      + `never below $${Math.round(out.low)}, fleet at ${Math.round(out.cond * 100)}%`);
+  } else {
+    fail('a site that has cooked itself can still climb out', JSON.stringify(out));
+  }
+  await page.close();
+}
+
 // ------------------------------------------------- compute is a commodity
 // Revenue used to be strictly linear in compute while every cost stayed tied
 // to kW, tiles or heads — so across a full game revenue went from 5x costs to
