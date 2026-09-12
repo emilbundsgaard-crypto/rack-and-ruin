@@ -55,6 +55,9 @@ export function newGame(legacy) {
 
   const state = {
     version: SAVE_VERSION,
+    // Which build wrote this save, so a balance change that alters what an
+    // existing site draws can say so instead of silently throttling it.
+    build: BUILD,
     createdAt: Date.now(),
     lastTick: Date.now(),
     playtime: 0,
@@ -219,6 +222,21 @@ export function migrate(data) {
   // it takes the fresh one and stays private, which is the right answer.
   merged.ipo = { ...fresh.ipo, ...(data.ipo || {}) };
   merged.version = SAVE_VERSION;
+
+  // A save from before machines stopped being free to power needs telling.
+  //
+  // Hardware draw is read from the data files, not from the save, so a site
+  // built under the old efficiency curve wakes up drawing far more than it
+  // did and browns out on the spot through no fault of its owner. The
+  // connection is topped up to whatever the site is allowed, for nothing, and
+  // the player gets told what changed and what to build — which is a great
+  // deal better than opening the tab to a throttled site and no explanation.
+  if (merged.build && merged.build !== BUILD && Object.keys(merged.tiles || {}).length) {
+    merged.powerRebalance = merged.build;
+    const cap = facilityOf(merged).gridCap;
+    if (merged.gridPower < cap) merged.gridPower = cap;
+  }
+  merged.build = BUILD;
   return merged;
 }
 

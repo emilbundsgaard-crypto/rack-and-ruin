@@ -14,6 +14,8 @@
 //   upkeep       – $/day fixed running cost
 //   fuel         – $/kWh burned on top of upkeep (generators)
 
+import { tune } from '../util.js';
+
 export const BUILDINGS = [
   // ---------------------------------------------------------------- compute
   {
@@ -1181,6 +1183,33 @@ export const BUILDINGS = [
   },
 ];
 
+
+// A floor under what it costs to keep your own generation running, in dollars
+// per kilowatt of capacity per game-day.
+//
+// Utility power is $0.16/kWh at the opening price, which is $92 per kW per
+// day in this game's compressed time. Almost every generator in the list is
+// priced somewhere between five and three hundred percent of that, which is
+// the right shape: you paid capital for the plant, so its running cost is
+// lower than the bill it replaces.
+//
+// Two were not. The solar array was $0.16 and the wind turbine $0.36 per kW
+// per day — two hundred and fifty to six hundred times cheaper than buying
+// the same power — so a site that built a few of either stopped paying for
+// electricity altogether. That is most of the answer to a player asking why
+// electricity cost $27 a second against $50,000 a second of revenue: it did
+// not, they had bought their way out of the meter for nothing.
+//
+// A floor rather than a formula, so it only catches the outliers and leaves
+// the hand-set prices on everything else alone. Fuel-burning plant is exempt:
+// its fuel is already a per-kilowatt cost, and diesel is dearer than the grid
+// as it should be.
+export const GEN_UPKEEP_FLOOR = tune('GEN_UPKEEP_FLOOR', 10);
+
+for (const b of BUILDINGS) {
+  if (!b.supplyKW || b.fuel) continue;
+  b.upkeep = Math.max(b.upkeep || 0, Math.round(b.supplyKW * GEN_UPKEEP_FLOOR));
+}
 
 export const BUILDINGS_BY_ID = Object.fromEntries(BUILDINGS.map((b) => [b.id, b]));
 

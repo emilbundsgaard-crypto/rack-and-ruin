@@ -2453,6 +2453,54 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   await page.close();
 }
 
+// --------------------------- an old save is told its machines draw more now
+//
+// Hardware draw is read from the data files, not from the save, so the
+// efficiency rebalance changes what an existing site pulls the moment it
+// loads. A site that browns out with no explanation looks like a bug in the
+// game rather than a change to it, so the migration tops the connection up to
+// the site's allowance and says what happened.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  const planted = await page.evaluate(async () => {
+    const S = await import('/src/state.js');
+    const A = await import('/src/actions.js');
+    const sim = await import('/src/sim.js');
+    const app = window.__rr;
+    const s = app.state;
+    s.tutorial.skipped = true;
+    s.money = 5e5;
+    let d = sim.derive(s);
+    A.place(s, d, 2, 2, 'pdu', null); d = sim.derive(s);
+    A.place(s, d, 2, 1, 'rack', null); d = sim.derive(s);
+    s.gridPower = 8;
+    // A save written by an older build, which is the whole trigger.
+    s.build = '2000-01-01a';
+    window.__rr.save();
+    return { wrote: s.build, grid: s.gridPower, cap: A.gridCap(s) };
+  });
+  await page.goto(URL, { waitUntil: 'networkidle' });
+  await page.click('text=Continue');
+  await page.waitForTimeout(1200);
+  const after = await page.evaluate(() => ({
+    modal: !!document.getElementById('modal') && !document.getElementById('modal').hidden,
+    title: document.querySelector('#modal h2')?.textContent || '',
+    grid: window.__rr.state.gridPower,
+    build: window.__rr.state.build,
+    flag: window.__rr.state.powerRebalance,
+  }));
+  if (after.modal && /draw/i.test(after.title) && after.grid === planted.cap
+      && after.build !== planted.wrote && !after.flag) {
+    pass('an old save is told its machines draw more now',
+      `connection ${planted.grid} -> ${after.grid} kW, and said so once`);
+  } else {
+    fail('an old save is told its machines draw more now',
+      JSON.stringify({ planted, after }));
+  }
+  await page.close();
+}
+
 await browser.close();
 
 if (errors.length) fail('no page errors', errors.slice(0, 4).join(' | '));

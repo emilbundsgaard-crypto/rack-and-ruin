@@ -663,6 +663,27 @@ function startGame(state, fresh) {
   renderUI();
   refreshLive(state, app.d, 0);
   if (fresh) logLine('A cupboard, a socket and an idea.', 'info');
+  // The rebalance notice goes up first and whatever is holding the clock
+  // second: there is one modal slot, and the watchdog will bring a held
+  // decision back a second after this one is dismissed either way.
+  if (!fresh && state.powerRebalance) {
+    const from = state.powerRebalance;
+    state.powerRebalance = null;
+    showModal('Your machines now draw what they are worth',
+      'Build ' + from + ' to ' + BUILD, [
+        'Servers used to get twenty thousand times more efficient per kilowatt across the '
+        + 'hardware tree, which meant that past the first few hours electricity, cooling and '
+        + 'water stopped mattering at all — and that the largest generators and radiators in '
+        + 'the build list could never be needed by any site.',
+        'Machines still get better per watt, about five times better from the first to the '
+        + 'last, but no longer enough to make the plant irrelevant. Your site draws a great '
+        + 'deal more than it did, so it will want more power, more cooling and more water '
+        + 'before it runs at full output again.',
+        'Your utility connection has been topped up to the most this site is allowed, at no '
+        + 'charge, to give you something to work with. Check the Running tab: the Cooling and '
+        + 'Water bars are the ones to watch.',
+      ], [{ label: 'Get to work', kind: 'primary' }]);
+  }
   // A save can hold the clock. Whatever is holding it gets put back in front
   // of the player rather than left invisible.
   if (!fresh) resumeHeld(state);
