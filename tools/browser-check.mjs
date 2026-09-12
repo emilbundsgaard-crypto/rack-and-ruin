@@ -2630,6 +2630,52 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   await page.close();
 }
 
+// -------------------- placing something does not cover the floor on a phone
+//
+// On a phone the inspector is a sheet over the floor rather than a band that
+// is always there, and placing a building selected it — so laying out a row
+// meant dismissing a panel between every two taps. Tapping a tile still opens
+// it, because that is the only way to find out why something is warning at
+// you; it is placing that must not.
+{
+  for (const [w, h, name] of [[1500, 940, 'desktop'], [390, 844, 'phone']]) {
+    const page = await newPage(w, h);
+    await page.click('text=Start in the cupboard');
+    await page.evaluate(() => { window.__rr.state.tutorial.skipped = true; });
+    await page.waitForTimeout(400);
+    const mode = await page.evaluate(() => getComputedStyle(document.documentElement)
+      .getPropertyValue('--inspector').trim());
+    // Place a power strip by picking the tool and tapping the floor.
+    await page.evaluate(() => { window.__rr.view.tool = 'pdu'; });
+    await clickTile(page, 2, 2);
+    await page.waitForTimeout(400);
+    const afterPlace = await page.evaluate(() => ({
+      sel: !!window.__rr.view.sel,
+      shown: document.getElementById('inspector').dataset.mode === 'tile',
+    }));
+    // And a plain tap on the tile just placed, which must open it either way.
+    // The selection is cleared first because a tap on the already-selected
+    // tile is a deselect — correct behaviour, and not what is under test.
+    await page.evaluate(() => { window.__rr.view.tool = null; window.__rr.view.sel = null; });
+    await clickTile(page, 2, 2);
+    await page.waitForTimeout(400);
+    const afterTap = await page.evaluate(() => ({
+      sel: !!window.__rr.view.sel,
+      shown: document.getElementById('inspector').dataset.mode === 'tile',
+    }));
+
+    const wantSelected = mode !== 'sheet';
+    if (afterPlace.sel === wantSelected && afterTap.sel === true && afterTap.shown === true) {
+      pass(`placing does not open the inspector on a ${name}`,
+        `--inspector: ${mode}, selected after placing: ${afterPlace.sel}, after tapping: true`);
+    } else {
+      fail(`placing does not open the inspector on a ${name}`,
+        JSON.stringify({ mode, afterPlace, afterTap }));
+    }
+    await page.close();
+  }
+}
+
 await browser.close();
 
 if (errors.length) fail('no page errors', errors.slice(0, 4).join(' | '));

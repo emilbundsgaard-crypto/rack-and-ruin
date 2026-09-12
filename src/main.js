@@ -689,6 +689,19 @@ function startGame(state, fresh) {
   if (!fresh) resumeHeld(state);
 }
 
+/**
+ * Is the inspector a permanent band, or a sheet that covers the floor?
+ *
+ * The breakpoints are declared once, in the stylesheet, and read back from a
+ * custom property — repeating the media queries here is how the two drift
+ * apart the first time one of them moves.
+ */
+function inspectorIsBand() {
+  const mode = getComputedStyle(document.documentElement)
+    .getPropertyValue('--inspector').trim();
+  return mode !== 'sheet';
+}
+
 function handleClick(x, y, shift, painting) {
   const state = app.state;
   const view = app.view;
@@ -709,7 +722,11 @@ function handleClick(x, y, shift, painting) {
     if (err && !painting) toast(err, 'warn');
     if (!err) { view.pop(x, y, 'place'); sfx.place(); }
     app.d = derive(state);
-    if (!painting) { view.sel = { x, y }; }
+    // Select what you just put down — but only where the inspector is a band
+    // that is always on screen anyway. On a phone it is a sheet over the
+    // floor, and opening it after every placement means dismissing a panel
+    // between every two taps while you are laying out a row.
+    if (!painting && inspectorIsBand()) { view.sel = { x, y }; }
     markDirty(); renderUI();
     return;
   }

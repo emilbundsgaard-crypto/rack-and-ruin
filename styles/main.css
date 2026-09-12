@@ -5,6 +5,12 @@
    not the rule. */
 
 :root {
+  /* Whether the inspector is a band that is always there or a sheet that
+     covers the floor. Declared here so the breakpoint lives in one place:
+     the script reads this rather than repeating the media queries, which
+     is how the two drift apart. */
+  --inspector: band;
+
   --bg: #0e0c0a;
   --panel: #15120f;
   --panel2: #1b1713;
@@ -787,6 +793,7 @@ button:focus:not(:focus-visible) { outline: none; }
    in the panels a tap away), the footer goes (the objective moves into the
    bar), and the panel becomes a sheet under the floor with its tabs pinned.  */
 @media (max-width: 700px) {
+  :root { --inspector: sheet; }
   #app { grid-template-rows: auto 1fr; }
   #logbar { display: none; }
   /* The inspector used to be switched off entirely here, which meant tapping a
@@ -875,6 +882,7 @@ button:focus:not(:focus-visible) { outline: none; }
 
 /* Landscape phone: height is the scarce thing, so go back to side by side. */
 @media (max-height: 500px) and (orientation: landscape) {
+  :root { --inspector: sheet; }
   #app { grid-template-rows: auto 1fr; }
   #logbar { display: none; }
   /* Same reasoning as portrait: hidden until you tap something, then a sheet.
