@@ -451,6 +451,43 @@ function onDecision(ev) {
   showModal(ev.name, 'Somebody needs an answer.', body, buttons, { sticky: true });
 }
 
+/**
+ * Re-open whatever is holding the clock, and say so if it cannot be re-opened.
+ *
+ * Two things in this game stop time on purpose: a decision event and the
+ * bank's rescue offer. Both live in the save, and both used to be shown only
+ * from the hook that set them — so a save written while one was outstanding
+ * came back with the clock held and no modal to answer. The site rendered,
+ * the ledger showed income, and not one second passed, with nothing the
+ * player could do about it and a reload no help because the flag was in the
+ * file. That is the worst failure this game has: it looks like a dead game
+ * rather than a stuck one.
+ *
+ * Returns true if the clock is (still, legitimately) held.
+ */
+function resumeHeld(state) {
+  if (state.rescue) {
+    if (!modalOpen()) onRescue(state.rescue);
+    return true;
+  }
+  const pending = state.events.pending;
+  if (!pending) return false;
+  const ev = EVENTS_BY_ID[pending.id];
+  if (!ev || !ev.options) {
+    // An event that no longer exists, or one whose choices have been edited
+    // away by an update, must not cost the player their game.
+    state.events.pending = null;
+    return false;
+  }
+  if (!modalOpen()) onDecision(ev);
+  return true;
+}
+
+function modalOpen() {
+  const m = document.getElementById('modal');
+  return !!m && !m.hidden;
+}
+
 // ------------------------------------------------------------------- offline
 
 function offlineProgress(state) {
@@ -467,7 +504,11 @@ function offlineProgress(state) {
   const step = used / steps;
   const before = state.money;
   const beforeRp = state.rp;
-  const quiet = { log: () => {}, onDecision: () => {} };
+  // Offline running is gentle by design — it does not break hardware and it
+  // does not ask questions. A decision fired inside the catch-up has no modal
+  // to appear in, so it is dropped rather than left set: left set, it holds
+  // the clock from the first frame of the session it was meant to enliven.
+  const quiet = { log: () => {}, onDecision: () => { state.events.pending = null; } };
   for (let i = 0; i < steps; i++) {
     d = derive(state);
     // Offline runs at a reduced rate and never breaks hardware.
@@ -479,6 +520,7 @@ function offlineProgress(state) {
     tick(state, step, d, quiet);
     d.mods.wearMult = wear;
   }
+  state.events.pending = null;
   return {
     seconds: used, capped: elapsed > hours * 3600,
     money: state.money - before, rp: state.rp - beforeRp, hours,
@@ -489,6 +531,7 @@ function offlineProgress(state) {
 
 let acc = 0;
 let last = performance.now();
+let heldFor = 0;
 let uiClock = 0;
 let saveClock = 0;
 
@@ -517,6 +560,17 @@ function step(now) {
   // A pending decision or the bank's rescue offer both hold the clock: the
   // player is being asked a question and the site should not sink while they
   // read it.
+  // The clock being held is normal; the clock being held with nothing on
+  // screen to answer is a dead game. Anything that holds it for more than a
+  // second without a modal open gets one, or gets cleared. This is a
+  // last-resort guard, not the mechanism: resumeHeld on startup is.
+  if (state.events.pending || state.rescue) {
+    heldFor += real;
+    if (heldFor > 1) { heldFor = 0; resumeHeld(state); }
+  } else {
+    heldFor = 0;
+  }
+
   if (speed > 0 && !state.events.pending && !state.rescue) {
     acc += real * speed;
     const cap = MAX_CATCHUP * Math.max(1, speed);
@@ -609,6 +663,9 @@ function startGame(state, fresh) {
   renderUI();
   refreshLive(state, app.d, 0);
   if (fresh) logLine('A cupboard, a socket and an idea.', 'info');
+  // A save can hold the clock. Whatever is holding it gets put back in front
+  // of the player rather than left invisible.
+  if (!fresh) resumeHeld(state);
 }
 
 function handleClick(x, y, shift, painting) {
@@ -897,4 +954,5 @@ boot();
 
 // Exposed for debugging and for the automated smoke test.
 app.refreshLive = () => refreshLive(app.state, app.d, 0.2);
+app.save = () => save(app.state);
 window.__rr = app;

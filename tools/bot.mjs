@@ -7,6 +7,7 @@ import { BUILDINGS } from '../src/data/buildings.js';
 import { RESEARCH, available } from '../src/data/research.js';
 import { UPGRADES, OBJECTIVES, STAFF_BY_ID } from '../src/data/progression.js';
 import { fmt, money, fmtTime } from '../src/util.js';
+import { writeFileSync } from 'node:fs';
 
 const quiet = { log: () => {}, onDecision: (ev) => { pending = ev; } };
 let pending = null;
@@ -249,6 +250,13 @@ const t0 = Date.now();
 // the finish is the most expensive part of the measurement: a mature site is
 // hundreds of tiles and every step derives every one of them.
 const STOP_WHEN_DONE = process.env.BOT_STOP_DONE === '1';
+// A machine-readable trace of the quantities balance work is about. Tuning a
+// curve by re-running a twenty-hour game per candidate is not tuning, it is
+// waiting: with the trajectory on disk you can integrate any number of
+// candidate curves over the same run offline and only re-run to confirm.
+const TRACE = process.env.BOT_TRACE || '';
+const trace = [];
+let nextTrace = 0;
 while (t < total) {
   if (STOP_WHEN_DONE && dayResearch !== null && dayTier9 !== null && objDone) break;
   d = derive(s);
@@ -291,6 +299,23 @@ while (t < total) {
       + ' | contracts ' + s.contracts.active.length
       + ' | uptime ' + (d.uptime * 100).toFixed(0) + '%');
   }
+  if (TRACE && t >= nextTrace) {
+    nextTrace = t + 60;
+    d = derive(s);
+    trace.push({
+      day: Math.round(t / 60), tier: s.facility, money: s.money,
+      computeTotal: d.computeTotal, computeResearch: d.computeResearch,
+      computeSellable: d.computeSellable, contractDemand: d.contractDemand,
+      rpCompute: d.rpCompute, rpFlat: d.rpFlat,
+      revenue: d.revenue, costs: d.costs,
+      powerCost: d.powerCost, fuelCost: d.fuelCost, waterBill: d.waterBill,
+      upkeepCost: d.upkeepCost, interestCost: d.interestCost,
+      actualDraw: d.actualDraw, billedDraw: d.billedDraw, gridUsed: d.gridUsed,
+      sellPrice: d.sellPrice, listPrice: d.listPrice,
+      rnd: s.research.done.length, contracts: s.contracts.active.length,
+      eng: s.staff.eng, alloc: s.researchAlloc,
+    });
+  }
   if (t >= nextReport) {
     // Dense at the start. Most losing runs are over inside ten minutes, and a
     // quarter-hour report shows one row before the balance is already gone.
@@ -307,6 +332,10 @@ while (t < total) {
       '| r/c', (d.costs > 0 ? (d.revenue / d.costs) : 0).toFixed(1).padStart(9),
       '| $/cu', (d.computeTotal > 0 ? d.revenue / d.computeTotal : 0).toExponential(1).padStart(8),
       '| kW', fmt(d.actualDraw).padStart(7),
+      '| rp', (d.rpCompute + d.rpFlat).toFixed(1).padStart(7),
+      '| rpC%', String(Math.round(100 * d.rpCompute / Math.max(1e-9, d.rpCompute + d.rpFlat))).padStart(3),
+      '| pwr%', String(Math.round(100 * (d.powerCost + d.fuelCost) / Math.max(1e-9, d.costs))).padStart(3),
+      '| mkt%', String(Math.round(100 * d.sellPrice / Math.max(1e-9, d.listPrice))).padStart(3),
       '| rnd', String(s.research.done.length).padStart(2) + '/' + RESEARCH.length,
       '| rep', fmt(s.reputation).padStart(6),
       '| obj', String(s.objectives.done.length).padStart(2),
@@ -343,6 +372,10 @@ while (t < total) {
 }
 say('wall time', ((Date.now() - t0) / 1000).toFixed(1) + 's');
 // One machine-readable line, so many runs can be compared without parsing prose.
+if (TRACE) {
+  writeFileSync(TRACE, JSON.stringify(trace));
+  say('TRACE ' + trace.length + ' samples -> ' + TRACE);
+}
 console.log('RESULT ' + JSON.stringify({
   style: process.env.BOT_STYLE || 'balanced',
   tier: s.facility,

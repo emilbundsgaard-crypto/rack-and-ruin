@@ -2242,6 +2242,77 @@ for (const [w, h] of [[1024, 720], [520, 900]]) {
   await page.close();
 }
 
+// ------------------------------------------- a held clock never hides itself
+//
+// A decision event and the bank's rescue offer both stop time on purpose, and
+// both live in the save. Written into a save and reloaded, they used to come
+// back holding the clock with no modal on screen: the site rendered, the
+// ledger showed income per second, and the day never moved. This walks that
+// exact path — set it, save it, reload, continue — and then does it again with
+// an id no longer in the game, which must not cost the player their save.
+{
+  const page = await newPage();
+  await page.click('text=Start in the cupboard');
+  await page.waitForTimeout(400);
+
+  const plant = (id) => page.evaluate((id) => {
+    const s = window.__rr.state;
+    s.events.pending = { id, at: s.day };
+    s.tutorial.skipped = true;
+    window.__rr.save();
+  }, id);
+  // Long enough for the offline-progress threshold to be irrelevant either way.
+  const resume = async () => {
+    await page.goto(URL, { waitUntil: 'networkidle' });
+    await page.click('text=Continue');
+    await page.waitForTimeout(1600);
+  };
+  const probe = async () => {
+    const before = await page.evaluate(() => {
+      window.__rr.state.settings.speed = 5;
+      return window.__rr.state.day;
+    });
+    await page.waitForTimeout(1200);
+    const after = await page.evaluate(() => window.__rr.state.day);
+    return { before, after, moved: after > before + 0.05 };
+  };
+
+  await plant('poach');
+  await resume();
+  const held = await page.evaluate(() => ({
+    modal: !!document.getElementById('modal') && !document.getElementById('modal').hidden,
+    title: document.querySelector('#modal h2')?.textContent || '',
+    pending: window.__rr.state.events.pending?.id || null,
+  }));
+  if (held.modal && held.pending === 'poach') {
+    pass('a decision saved mid-answer comes back on screen', held.title || 'modal open');
+  } else {
+    fail('a decision saved mid-answer comes back on screen', JSON.stringify(held));
+  }
+
+  // Answering it must release the clock.
+  await page.evaluate(() => document.querySelector('#modal .btnrow .btn')?.click());
+  await page.waitForTimeout(300);
+  const freed = await probe();
+  if (freed.moved) pass('answering it starts the clock again', `day ${freed.before} -> ${freed.after}`);
+  else fail('answering it starts the clock again', JSON.stringify(freed));
+
+  // An event id an update has removed: the watchdog clears it rather than
+  // holding the clock for a modal that can never be built.
+  await plant('an-event-that-no-longer-exists');
+  await resume();
+  const recovered = await probe();
+  const cleared = await page.evaluate(() => window.__rr.state.events.pending);
+  if (recovered.moved && !cleared) {
+    pass('an event the game no longer has does not stop time',
+      `day ${recovered.before} -> ${recovered.after}`);
+  } else {
+    fail('an event the game no longer has does not stop time',
+      JSON.stringify({ recovered, cleared }));
+  }
+  await page.close();
+}
+
 await browser.close();
 
 if (errors.length) fail('no page errors', errors.slice(0, 4).join(' | '));

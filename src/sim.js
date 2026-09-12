@@ -341,8 +341,10 @@ export function derive(state) {
   const engBonus = 1
     + 0.9 * state.staff.eng / (state.staff.eng + 15)
     + 0.9 * researchFlat / (researchFlat + 12);
-  const rpPerSec = (0.075 * Math.pow(Math.max(0, computeResearch), 0.30) * engBonus
-    + researchFlat / DAY_SECONDS + contractResearch / DAY_SECONDS) * mods.researchMult;
+  const rpCompute = RESEARCH_RATE * Math.pow(Math.max(0, computeResearch), RESEARCH_EXP)
+    * engBonus * mods.researchMult;
+  const rpFlat = (researchFlat / DAY_SECONDS + contractResearch / DAY_SECONDS) * mods.researchMult;
+  const rpPerSec = rpCompute + rpFlat;
 
   // --- costs.
   const actualDraw = demandKW * powerFactor;
@@ -603,7 +605,7 @@ export function derive(state) {
     // one the whole fail state hangs off.
     overdrawn: state.money < 0,
     overdraftCost: state.money < 0 ? -state.money * OVERDRAFT_RATE / DAY_SECONDS : 0,
-    rpPerSec, freeCompute: computeSellable - contractDemand,
+    rpPerSec, rpCompute, rpFlat, freeCompute: computeSellable - contractDemand,
     boardSize: Math.max(3, Math.round(5 + mods.boardSize + boardBonus + Math.min(4, state.staff.sales / 2))),
     repairRate: (0.12 + state.staff.tech * 1.35) * repairBoost * mods.repairMult,
     rackCount: Math.max(1, racks.length),
@@ -1343,6 +1345,27 @@ export function floatCompany(state, d, hooks) {
     + 'for as long as the company exists.', 'good');
   return null;
 }
+
+// What dedicated compute earns you in research points per second.
+//
+// The exponent is the important number, and it is the one that was wrong. At
+// 0.30 ten times the compute bought twice the points: a player who moved from
+// a thousand units to a hundred and sixty-eight thousand went from 0.60/s to
+// 2.77/s and reasonably concluded the thing was broken. Worse, a single
+// research contract pays a flat 6.67/s at the top of the template list, so
+// for most of the game no amount of dedicated compute could match one signed
+// contract. Compute allocation — a slider the game puts in front of the
+// player on the research tab — was the weakest research lever in the game.
+//
+// The exponent has to be read against the tree, not on its own. Node costs
+// span roughly three and a half decades from the first paid tier to the last,
+// and compute spans about six over a full run. An exponent of 0.55 turns
+// those six decades of compute into 3.3 decades of research rate, so the
+// wall-clock cost of a node stays roughly flat across the whole run instead
+// of ballooning 200x by the end. Doubling the allocation is then worth a
+// visible 46% more points, which is what the slider ought to feel like.
+export const RESEARCH_EXP = 0.30;
+export const RESEARCH_RATE = 0.075;
 
 // What a rack draws with its machines idle, as a share of nameplate. Real
 // servers are nowhere near proportional: half the peak draw is there the
